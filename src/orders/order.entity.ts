@@ -10,7 +10,7 @@ import {
 
 import { User } from '../users/user.entity';
 import { Restaurant } from '../restaurants/restaurant.entity';
-import { OrderItem } from './order-item.entity';
+import { OrderItem } from '../order-items/order-item.entity';
 import { Status } from './enums/status.enum';
 
 @Entity('orders')
@@ -18,15 +18,15 @@ export class Order {
   @PrimaryGeneratedColumn({ name: 'id' })
   id: number;
 
-  @ManyToOne(() => User, (user) => user.customerOrders)
+  @ManyToOne(() => User, (user) => user.customerOrders, { nullable: false })
   @JoinColumn({ name: 'customer_id' })
   customer: User;
 
-  @ManyToOne(() => User, (user) => user.customerOrders)
+  @ManyToOne(() => User, (user) => user.courierOrders, { nullable: true })
   @JoinColumn({ name: 'courier_id' })
   courier: User;
 
-  @ManyToOne(() => Restaurant)
+  @ManyToOne(() => Restaurant, { nullable: false })
   @JoinColumn({ name: 'restaurant_id' })
   restaurant: Restaurant;
 
@@ -47,7 +47,4 @@ export class Order {
 
   @OneToMany(() => OrderItem, (item) => item.order)
   items: OrderItem[];
-
-  @Column({ nullable: true })
-  comment: string;
 }

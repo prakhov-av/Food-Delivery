@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -11,54 +10,58 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { Order } from './order.entity';
 import { Status } from './enums/status.enum';
+import { OrderUpdateDto } from './dto/order.update-dto';
+import { OrdersService } from './orders.service';
+import { ApiOkResponse } from '@nestjs/swagger';
+import { OrderDto } from './dto/order.dto';
+import { OrderSaveDto } from './dto/order.save-dto';
 
 @Controller('orders')
 export class OrdersController {
+  constructor(private readonly service: OrdersService) {}
+
   @Post()
-  create(@Body() order: Order): Order {
-    console.log('Saved order:', order);
-    return order;
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOkResponse({
+    type: OrderDto,
+  })
+  async create(@Body() saveDto: OrderSaveDto): Promise<OrderDto> {
+    return this.service.create(saveDto);
   }
 
   @Get()
-  getAll(): Order[] {
-    const firstOrder = new Order();
-    firstOrder.status = Status.CREATED;
-    const secondOrder = new Order();
-    secondOrder.status = Status.ACCEPTED;
-    return [firstOrder, secondOrder];
+  @ApiOkResponse({
+    type: OrderDto,
+    isArray: true,
+  })
+  async getAll(): Promise<OrderDto[]> {
+    return this.service.getAllOrders();
   }
 
   @Get(':id')
-  getById(@Param('id', ParseIntPipe) id: number): Order {
-    console.log('ID:', id);
-    const order = new Order();
-    order.status = Status.CREATED;
-    return order;
+  @ApiOkResponse({
+    type: OrderDto,
+  })
+  async getById(@Param('id', ParseIntPipe) id: number): Promise<OrderDto> {
+    return this.service.getOrderById(id);
   }
 
   @Patch(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  update(@Param('id', ParseIntPipe) id: number, @Body() order: Order): void {
-    console.log('ID:', id);
-    console.log('New status:', order.status);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  deleteById(@Param('id', ParseIntPipe) id: number): void {
-    console.log('ID:', id);
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDto: OrderUpdateDto,
+  ): Promise<void> {
+    await this.service.update(id, updateDto);
   }
 
   @Patch(':id/set-status/:status')
   @HttpCode(HttpStatus.NO_CONTENT)
-  setStatus(
+  async setStatus(
     @Param('id', ParseIntPipe) id: number,
     @Param('status', new ParseEnumPipe(Status)) status: Status,
-  ): void {
-    console.log('ID:', id);
-    console.log('Status:', status);
+  ): Promise<void> {
+    await this.service.setStatus(id, status);
   }
 }

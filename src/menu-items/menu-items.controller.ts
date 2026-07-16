@@ -10,46 +10,60 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { MenuItem } from './menu-item.entity';
+import { MenuItemsService } from './menu-items.service';
+import { ApiOkResponse } from '@nestjs/swagger';
+import { MenuItemDto } from './dto/menu-item.dto';
+import { MenuItemSaveDto } from './dto/menu-item.save-dto';
+import { MenuItemUpdateDto } from './dto/menu-item.update-dto';
 
 @Controller('menu-items')
 export class MenuItemsController {
+  constructor(private readonly service: MenuItemsService) {}
+
   @Post()
-  create(@Body() menuItem: MenuItem): MenuItem {
-    console.log('Saved menu item:', menuItem);
-    return menuItem;
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOkResponse({
+    type: MenuItemDto,
+  })
+  async create(@Body() saveDto: MenuItemSaveDto): Promise<MenuItemDto> {
+    return this.service.create(saveDto);
   }
 
   @Get()
-  getAll(): MenuItem[] {
-    const firstItem = new MenuItem();
-    firstItem.name = 'Burger';
-    const secondItem = new MenuItem();
-    secondItem.name = 'Pizza';
-    return [firstItem, secondItem];
+  @ApiOkResponse({
+    type: MenuItemDto,
+    isArray: true,
+  })
+  async getAll(): Promise<MenuItemDto[]> {
+    return this.service.getAllActiveMenuItems();
   }
 
   @Get(':id')
-  getById(@Param('id', ParseIntPipe) id: number): MenuItem {
-    console.log('ID:', id);
-    const menuItem = new MenuItem();
-    menuItem.name = 'Burger';
-    return menuItem;
+  @ApiOkResponse({
+    type: MenuItemDto,
+  })
+  async getById(@Param('id', ParseIntPipe) id: number): Promise<MenuItemDto> {
+    return this.service.getActiveMenuItemById(id);
   }
 
   @Patch(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  update(
+  async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() menuItem: MenuItem,
-  ): void {
-    console.log('ID:', id);
-    console.log('New name:', menuItem.name);
+    @Body() updateDto: MenuItemUpdateDto,
+  ): Promise<void> {
+    await this.service.update(id, updateDto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  deleteById(@Param('id', ParseIntPipe) id: number): void {
-    console.log('ID:', id);
+  async deleteById(@Param('id', ParseIntPipe) id: number): Promise<void> {
+    await this.service.deleteById(id);
+  }
+
+  @Patch(':id/restore')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async restoreById(@Param('id', ParseIntPipe) id: number): Promise<void> {
+    await this.service.restoreById(id);
   }
 }

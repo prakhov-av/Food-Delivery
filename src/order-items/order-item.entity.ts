@@ -6,7 +6,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 
-import { Order } from './order.entity';
+import { Order } from '../orders/order.entity';
 import { MenuItem } from '../menu-items/menu-item.entity';
 
 @Entity('order_items')

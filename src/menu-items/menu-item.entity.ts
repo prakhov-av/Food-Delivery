@@ -8,7 +8,7 @@ import {
 } from 'typeorm';
 
 import { Menu } from '../menus/menu.entity';
-import { OrderItem } from '../orders/order-item.entity';
+import { OrderItem } from '../order-items/order-item.entity';
 
 @Entity('menu_items')
 export class MenuItem {
@@ -18,6 +18,9 @@ export class MenuItem {
   @ManyToOne(() => Menu, (menu) => menu.items)
   @JoinColumn({ name: 'menu_id' })
   menu: Menu;
+
+  @OneToMany(() => OrderItem, (item) => item.menuItem)
+  orderItems: OrderItem[];
 
   @Column()
   name: string;
@@ -34,8 +37,5 @@ export class MenuItem {
   price: number;
 
   @Column({ default: true })
-  isAvailable: boolean;
-
-  @OneToMany(() => OrderItem, (item) => item.menuItem)
-  orderItems: OrderItem[];
+  active: boolean;
 }
