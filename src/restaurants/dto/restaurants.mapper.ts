@@ -6,6 +6,10 @@ import { RestaurantSaveDto } from './restaurant.save-dto';
 @Injectable()
 export class RestaurantsMapper {
   mapEntityToDto(entity: Restaurant): RestaurantDto {
+    if (!entity) {
+      return new RestaurantDto();
+    }
+
     const dto: RestaurantDto = new RestaurantDto();
     dto.id = entity.id;
     dto.name = entity.name;

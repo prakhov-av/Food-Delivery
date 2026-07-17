@@ -6,6 +6,10 @@ import { MenuSaveDto } from './menu.save-dto';
 @Injectable()
 export class MenusMapper {
   mapEntityToDto(entity: Menu): MenuDto {
+    if (!entity) {
+      return new MenuDto();
+    }
+
     const dto: MenuDto = new MenuDto();
     dto.id = entity.id;
     dto.name = entity.name;

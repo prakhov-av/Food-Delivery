@@ -11,6 +11,6 @@ import { MenuItemsMapper } from './dto/menu-items.mapper';
   imports: [TypeOrmModule.forFeature([MenuItem]), MenusModule],
   controllers: [MenuItemsController],
   providers: [MenuItemsService, MenuItemsRepository, MenuItemsMapper],
-  exports: [MenuItemsService],
+  exports: [MenuItemsService, MenuItemsMapper],
 })
 export class MenuItemsModule {}

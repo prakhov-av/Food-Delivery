@@ -5,6 +5,7 @@ import { MenuItemsModule } from './menu-items/menu-items.module';
 import { OrdersModule } from './orders/orders.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MenusModule } from './menus/menus.module';
+import { OrderItemsModule } from './order-items/order-items.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { MenusModule } from './menus/menus.module';
     RestaurantsModule,
     MenuItemsModule,
     OrdersModule,
+    OrderItemsModule,
     MenusModule,
     TypeOrmModule.forRoot({
       type: 'postgres',

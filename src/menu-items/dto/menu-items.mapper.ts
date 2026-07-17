@@ -6,6 +6,10 @@ import { MenuItemDto } from './menu-item.dto';
 @Injectable()
 export class MenuItemsMapper {
   mapEntityToDto(entity: MenuItem): MenuItemDto {
+    if (!entity) {
+      return new MenuItemDto();
+    }
+
     const dto: MenuItemDto = new MenuItemDto();
     dto.id = entity.id;
     dto.name = entity.name;

@@ -10,61 +10,54 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { OrderItem } from './order-item.entity';
-import { MenuItem } from '../menu-items/menu-item.entity';
+import { ApiOkResponse } from '@nestjs/swagger';
+import { OrderItemsService } from './order-items.service';
+import { OrderItemDto } from './dto/order-item.dto';
+import { OrderItemSaveDto } from './dto/order-item.save-dto';
+import { OrderItemUpdateDto } from './dto/order-item.update-dto';
 
 @Controller('order-items')
-export class OrdersItemsController {
+export class OrderItemsController {
+  constructor(private readonly service: OrderItemsService) {}
+
   @Post()
-  create(@Body() orderItem: OrderItem): OrderItem {
-    console.log('Saved menu item:', orderItem);
-    return orderItem;
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOkResponse({
+    type: OrderItemDto,
+  })
+  async create(@Body() saveDto: OrderItemSaveDto): Promise<OrderItemDto> {
+    return this.service.create(saveDto);
   }
 
   @Get()
-  getAll(): OrderItem[] {
-    const menuItem = new MenuItem();
-    menuItem.name = 'Burger';
-
-    const firstItem = new OrderItem();
-    firstItem.menuItem = menuItem;
-    firstItem.quantity = 2;
-    firstItem.price = 10;
-
-    const secondItem = new OrderItem();
-    secondItem.menuItem = menuItem;
-    secondItem.quantity = 3;
-    secondItem.price = 20;
-
-    return [firstItem, secondItem];
+  @ApiOkResponse({
+    type: OrderItemDto,
+    isArray: true,
+  })
+  async getAll(): Promise<OrderItemDto[]> {
+    return this.service.getAll();
   }
 
   @Get(':id')
-  getById(@Param('id', ParseIntPipe) id: number): OrderItem {
-    const menuItem = new MenuItem();
-    menuItem.name = 'Burger';
-
-    const orderItem = new OrderItem();
-    orderItem.menuItem = menuItem;
-    orderItem.quantity = 2;
-    orderItem.price = 10;
-
-    return orderItem;
+  @ApiOkResponse({
+    type: OrderItemDto,
+  })
+  async getById(@Param('id', ParseIntPipe) id: number): Promise<OrderItemDto> {
+    return this.service.getById(id);
   }
 
   @Patch(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  update(
+  async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() orderItem: OrderItem,
-  ): void {
-    console.log('ID:', id);
-    console.log('Updated order item:', orderItem);
+    @Body() updateDto: OrderItemUpdateDto,
+  ): Promise<void> {
+    await this.service.update(id, updateDto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  deleteById(@Param('id', ParseIntPipe) id: number): void {
-    console.log('ID:', id);
+  async deleteById(@Param('id', ParseIntPipe) id: number): Promise<void> {
+    await this.service.deleteById(id);
   }
 }

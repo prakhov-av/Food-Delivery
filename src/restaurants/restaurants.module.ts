@@ -10,6 +10,6 @@ import { RestaurantsMapper } from './dto/restaurants.mapper';
   controllers: [RestaurantsController],
   imports: [TypeOrmModule.forFeature([Restaurant])],
   providers: [RestaurantsService, RestaurantsRepository, RestaurantsMapper],
-  exports: [RestaurantsService],
+  exports: [RestaurantsService, RestaurantsMapper],
 })
 export class RestaurantsModule {}

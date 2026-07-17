@@ -24,12 +24,4 @@ export class OrderItem {
 
   @Column()
   quantity: number;
-
-  @Column({
-    name: 'item_price',
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-  })
-  price: number;
 }
