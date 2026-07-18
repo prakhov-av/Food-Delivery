@@ -7,6 +7,7 @@ import { MenuItem } from './menu-item.entity';
 import { MenuItemUpdateDto } from './dto/menu-item.update-dto';
 import { MenusService } from '../menus/menus.service';
 import { Menu } from '../menus/menu.entity';
+import { MenuItemsValidator } from './validation/menu-items.validator';
 
 @Injectable()
 export class MenuItemsService {
@@ -14,9 +15,11 @@ export class MenuItemsService {
     private readonly repository: MenuItemsRepository,
     private readonly mapper: MenuItemsMapper,
     private readonly menusService: MenusService,
+    private readonly validator: MenuItemsValidator,
   ) {}
 
   async create(saveDto: MenuItemSaveDto): Promise<MenuItemDto> {
+    this.validator.validateSaveDto(saveDto);
     const entity: MenuItem = this.mapper.mapDtoToEntity(saveDto);
     const menu: Menu = await this.menusService.getActiveEntityById(
       saveDto.menuId,
@@ -41,17 +44,20 @@ export class MenuItemsService {
     const menuItem: MenuItem | null = await this.repository.findById(id);
 
     if (!menuItem || !menuItem.active) {
-      throw Error();
+      throw Error('Menu item not found');
     }
 
     return menuItem;
   }
 
   async update(id: number, updateItemDto: MenuItemUpdateDto): Promise<void> {
+    this.validator.validateUpdateDto(updateItemDto);
     const foundMenuItem: MenuItem | null = await this.repository.findById(id);
 
     if (foundMenuItem) {
       foundMenuItem.name = updateItemDto.newName;
+      foundMenuItem.description = updateItemDto.newDescription;
+      foundMenuItem.price = updateItemDto.newPrice;
       await this.repository.save(foundMenuItem);
     }
   }

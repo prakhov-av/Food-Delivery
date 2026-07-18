@@ -8,6 +8,7 @@ import { OrderItemDto } from './dto/order-item.dto';
 import { OrderItem } from './order-item.entity';
 import { OrderItemUpdateDto } from './dto/order-item.update-dto';
 import { MenuItemsService } from '../menu-items/menu-items.service';
+import { OrderItemsValidator } from './validation/order-items.validator';
 
 @Injectable()
 export class OrderItemsService {
@@ -16,14 +17,17 @@ export class OrderItemsService {
     private readonly mapper: OrderItemsMapper,
     private readonly ordersService: OrdersService,
     private readonly menuItemsService: MenuItemsService,
+    private readonly validator: OrderItemsValidator,
   ) {}
 
   async create(saveDto: OrderItemSaveDto): Promise<OrderItemDto> {
+    this.validator.validateSaveDto(saveDto);
     const entity: OrderItem = this.mapper.mapDtoToEntity(saveDto);
     const order: Order = await this.ordersService.getEntityById(
       saveDto.orderId,
     );
     entity.order = order;
+    entity.active = true;
     entity.menuItem = await this.menuItemsService.getActiveEntityById(
       saveDto.menuItemId,
     );
@@ -31,12 +35,12 @@ export class OrderItemsService {
     return this.mapper.mapEntityToDto(entity);
   }
 
-  async getAll(): Promise<OrderItemDto[]> {
-    const orderItems: OrderItem[] = await this.repository.findAll();
+  async getAllActiveOrderItems(): Promise<OrderItemDto[]> {
+    const orderItems: OrderItem[] = await this.repository.findAllActive();
     return this.mapper.mapEntityListToDtoList(orderItems);
   }
 
-  async getById(id: number): Promise<OrderItemDto> {
+  async getActiveOrderItemById(id: number): Promise<OrderItemDto> {
     const orderItem: OrderItem = await this.getActiveEntityById(id);
     return this.mapper.mapEntityToDto(orderItem);
   }
@@ -44,7 +48,7 @@ export class OrderItemsService {
   async getActiveEntityById(id: number): Promise<OrderItem> {
     const orderItem: OrderItem | null = await this.repository.findById(id);
 
-    if (!orderItem) {
+    if (!orderItem || !orderItem.active) {
       throw Error('Order item not found');
     }
 
@@ -52,16 +56,25 @@ export class OrderItemsService {
   }
 
   async update(id: number, updateItemDto: OrderItemUpdateDto): Promise<void> {
-    const foundOrderItem = await this.getActiveEntityById(id);
+    this.validator.validateUpdateDto(updateItemDto);
+    const foundOrderItem: OrderItem | null = await this.getActiveEntityById(id);
 
-    if (foundOrderItem) {
-      foundOrderItem.quantity = updateItemDto.quantity;
-      await this.repository.save(foundOrderItem);
-    }
+    foundOrderItem.quantity = updateItemDto.newQuantity;
+    await this.repository.save(foundOrderItem);
   }
 
   async deleteById(id: number): Promise<void> {
-    await this.getActiveEntityById(id);
-    await this.repository.deleteById(id);
+    const orderItem: OrderItem = await this.getActiveEntityById(id);
+    orderItem.active = false;
+    await this.repository.save(orderItem);
+  }
+
+  async restoreById(id: number): Promise<void> {
+    const orderItem: OrderItem | null = await this.repository.findById(id);
+
+    if (orderItem && !orderItem.active) {
+      orderItem.active = true;
+      await this.repository.save(orderItem);
+    }
   }
 }

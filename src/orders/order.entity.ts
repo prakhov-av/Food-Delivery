@@ -47,4 +47,7 @@ export class Order {
 
   @OneToMany(() => OrderItem, (item) => item.order)
   items: OrderItem[];
+
+  @Column({ name: 'active', nullable: false, default: true })
+  active: boolean;
 }

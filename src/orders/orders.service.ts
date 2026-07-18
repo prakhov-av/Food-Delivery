@@ -8,6 +8,7 @@ import { Status } from './enums/status.enum';
 import { OrderUpdateDto } from './dto/order.update-dto';
 import { UsersService } from '../users/users.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
+import { OrdersValidator } from './validation/orders.validator';
 
 @Injectable()
 export class OrdersService {
@@ -16,23 +17,25 @@ export class OrdersService {
     private readonly mapper: OrdersMapper,
     private readonly usersService: UsersService,
     private readonly restaurantsService: RestaurantsService,
+    private readonly validator: OrdersValidator,
   ) {}
 
   async create(saveDto: OrderSaveDto): Promise<OrderDto> {
+    this.validator.validateSaveDto(saveDto);
     const entity: Order = this.mapper.mapDtoToEntity(saveDto);
-    entity.status = Status.CREATED;
     entity.customer = await this.usersService.getActiveEntityById(
       saveDto.customerId,
     );
     entity.restaurant = await this.restaurantsService.getActiveEntityById(
       saveDto.restaurantId,
     );
+    entity.status = Status.NEW;
     await this.repository.save(entity);
     return this.mapper.mapEntityToDto(entity);
   }
 
   async getAllOrders(): Promise<OrderDto[]> {
-    const orders: Order[] = await this.repository.findAll();
+    const orders: Order[] = await this.repository.findAllActive();
     return this.mapper.mapEntityListToDtoList(orders);
   }
 
@@ -45,24 +48,40 @@ export class OrdersService {
     const order: Order | null = await this.repository.findById(id);
 
     if (!order) {
-      throw Error();
+      throw Error('Order not found');
     }
 
     return order;
   }
 
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
-    const order = await this.getEntityById(id);
+    this.validator.validateUpdateDto(updateDto);
+    const order: Order = await this.getEntityById(id);
 
     order.status = updateDto.status;
 
-    if (updateDto.courierId) {
+    if (updateDto.courierId !== undefined) {
       order.courier = await this.usersService.getActiveEntityById(
         updateDto.courierId,
       );
     }
 
     await this.repository.save(order);
+  }
+
+  async deleteById(id: number): Promise<void> {
+    const order: Order = await this.getEntityById(id);
+    order.active = false;
+    await this.repository.save(order);
+  }
+
+  async restoreById(id: number): Promise<void> {
+    const order: Order = await this.getEntityById(id);
+
+    if (order && !order.active) {
+      order.active = true;
+      await this.repository.save(order);
+    }
   }
 
   async setStatus(id: number, status: Status): Promise<void> {

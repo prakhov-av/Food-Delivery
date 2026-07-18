@@ -1,4 +1,5 @@
 export enum Status {
+  NEW = 'NEW',
   CREATED = 'CREATED',
   ACCEPTED = 'ACCEPTED',
   COOKING = 'COOKING',

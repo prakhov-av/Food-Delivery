@@ -5,15 +5,18 @@ import { Restaurant } from './restaurant.entity';
 import { RestaurantDto } from './dto/restaurant.dto';
 import { RestaurantSaveDto } from './dto/restaurant.save-dto';
 import { RestaurantUpdateDto } from './dto/restaurant.update-dto';
+import { RestaurantsValidator } from './validation/restaurants.validator';
 
 @Injectable()
 export class RestaurantsService {
   constructor(
     private readonly repository: RestaurantsRepository,
     private readonly mapper: RestaurantsMapper,
+    private readonly validator: RestaurantsValidator,
   ) {}
 
   async create(saveDto: RestaurantSaveDto): Promise<RestaurantDto> {
+    this.validator.validateSaveDto(saveDto);
     const entity: Restaurant = this.mapper.mapDtoToEntity(saveDto);
     entity.active = true;
     await this.repository.save(entity);
@@ -34,13 +37,14 @@ export class RestaurantsService {
     const restaurant: Restaurant | null = await this.repository.findById(id);
 
     if (!restaurant || !restaurant.active) {
-      throw Error();
+      throw Error('Restaurant not found');
     }
 
     return restaurant;
   }
 
   async update(id: number, updateDto: RestaurantUpdateDto): Promise<void> {
+    this.validator.validateUpdateDto(updateDto);
     const foundRestaurant: Restaurant | null =
       await this.repository.findById(id);
 

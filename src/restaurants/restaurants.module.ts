@@ -5,11 +5,17 @@ import { Restaurant } from './restaurant.entity';
 import { RestaurantsService } from './restaurants.service';
 import { RestaurantsRepository } from './restaurants.repository';
 import { RestaurantsMapper } from './dto/restaurants.mapper';
+import { RestaurantsValidator } from './validation/restaurants.validator';
 
 @Module({
   controllers: [RestaurantsController],
   imports: [TypeOrmModule.forFeature([Restaurant])],
-  providers: [RestaurantsService, RestaurantsRepository, RestaurantsMapper],
+  providers: [
+    RestaurantsService,
+    RestaurantsRepository,
+    RestaurantsMapper,
+    RestaurantsValidator,
+  ],
   exports: [RestaurantsService, RestaurantsMapper],
 })
 export class RestaurantsModule {}

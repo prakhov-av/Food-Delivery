@@ -7,6 +7,7 @@ import { Menu } from './menu.entity';
 import { RestaurantsService } from '../restaurants/restaurants.service';
 import { Restaurant } from '../restaurants/restaurant.entity';
 import { MenuUpdateDto } from './dto/menu.update-dto';
+import { MenusValidator } from './validation/menus.validator';
 
 @Injectable()
 export class MenusService {
@@ -14,12 +15,15 @@ export class MenusService {
     private readonly repository: MenusRepository,
     private readonly mapper: MenusMapper,
     private readonly restaurantsService: RestaurantsService,
+    private readonly validator: MenusValidator,
   ) {}
 
   async create(saveDto: MenuSaveDto): Promise<MenuDto> {
+    this.validator.validateSaveDto(saveDto);
     const entity: Menu = this.mapper.mapDtoToEntity(saveDto);
     const restaurant: Restaurant =
       await this.restaurantsService.getActiveEntityById(saveDto.restaurantId);
+
     entity.restaurant = restaurant;
     entity.active = true;
     await this.repository.save(entity);
@@ -40,13 +44,14 @@ export class MenusService {
     const menu: Menu | null = await this.repository.findById(id);
 
     if (!menu || !menu.active) {
-      throw Error();
+      throw Error('Menu not found');
     }
 
     return menu;
   }
 
   async update(id: number, updateDto: MenuUpdateDto): Promise<void> {
+    this.validator.validateUpdateDto(updateDto);
     const foundMenu: Menu | null = await this.repository.findById(id);
 
     if (foundMenu) {

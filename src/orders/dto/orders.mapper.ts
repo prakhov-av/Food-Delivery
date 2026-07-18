@@ -28,7 +28,7 @@ export class OrdersMapper {
     return dto;
   }
 
-  mapDtoToEntity(saveDto: OrderSaveDto): Order {
+  mapDtoToEntity(_saveDto: OrderSaveDto): Order {
     const entity = new Order();
     return entity;
   }

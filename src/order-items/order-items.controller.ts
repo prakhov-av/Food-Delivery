@@ -35,7 +35,7 @@ export class OrderItemsController {
     isArray: true,
   })
   async getAll(): Promise<OrderItemDto[]> {
-    return this.service.getAll();
+    return this.service.getAllActiveOrderItems();
   }
 
   @Get(':id')
@@ -43,7 +43,7 @@ export class OrderItemsController {
     type: OrderItemDto,
   })
   async getById(@Param('id', ParseIntPipe) id: number): Promise<OrderItemDto> {
-    return this.service.getById(id);
+    return this.service.getActiveOrderItemById(id);
   }
 
   @Patch(':id')
@@ -59,5 +59,11 @@ export class OrderItemsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteById(@Param('id', ParseIntPipe) id: number): Promise<void> {
     await this.service.deleteById(id);
+  }
+
+  @Patch(':id/restore')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async restoreById(@Param('id', ParseIntPipe) id: number): Promise<void> {
+    await this.service.restoreById(id);
   }
 }

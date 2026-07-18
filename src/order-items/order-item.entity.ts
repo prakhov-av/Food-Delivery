@@ -24,4 +24,7 @@ export class OrderItem {
 
   @Column()
   quantity: number;
+
+  @Column({ default: true })
+  active: boolean;
 }

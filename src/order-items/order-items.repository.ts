@@ -14,7 +14,7 @@ export class OrderItemsRepository {
     return this.repository.save(orderItem);
   }
 
-  async findAll(): Promise<OrderItem[]> {
+  async findAllActive(): Promise<OrderItem[]> {
     return this.repository.find({
       relations: {
         menuItem: true,

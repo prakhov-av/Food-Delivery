@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Min } from 'class-validator';
 
 export class OrderItemUpdateDto {
   @ApiProperty()
-  quantity: number;
+  @Min(1)
+  newQuantity: number;
 }

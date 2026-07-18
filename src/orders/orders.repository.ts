@@ -18,7 +18,7 @@ export class OrdersRepository {
     return this.repository.findOneBy({ id });
   }
 
-  async findAll(): Promise<Order[]> {
+  async findAllActive(): Promise<Order[]> {
     return this.repository.find();
   }
 }

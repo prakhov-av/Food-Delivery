@@ -7,6 +7,7 @@ import { OrderItemsRepository } from './order-items.repository';
 import { OrderItemsMapper } from './dto/order-items.mapper';
 import { OrdersModule } from '../orders/orders.module';
 import { MenuItemsModule } from '../menu-items/menu-items.module';
+import { OrderItemsValidator } from './validation/order-items.validator';
 
 @Module({
   controllers: [OrderItemsController],
@@ -15,7 +16,12 @@ import { MenuItemsModule } from '../menu-items/menu-items.module';
     OrdersModule,
     MenuItemsModule,
   ],
-  providers: [OrderItemsService, OrderItemsRepository, OrderItemsMapper],
+  providers: [
+    OrderItemsService,
+    OrderItemsRepository,
+    OrderItemsMapper,
+    OrderItemsValidator,
+  ],
   exports: [OrderItemsService],
 })
 export class OrderItemsModule {}
