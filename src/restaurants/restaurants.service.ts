@@ -6,6 +6,8 @@ import { RestaurantDto } from './dto/restaurant.dto';
 import { RestaurantSaveDto } from './dto/restaurant.save-dto';
 import { RestaurantUpdateDto } from './dto/restaurant.update-dto';
 import { RestaurantsValidator } from './validation/restaurants.validator';
+import { EntitySaveException } from '../exceptions/types/entity-save.exception';
+import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 
 @Injectable()
 export class RestaurantsService {
@@ -16,6 +18,10 @@ export class RestaurantsService {
   ) {}
 
   async create(saveDto: RestaurantSaveDto): Promise<RestaurantDto> {
+    if (await this.repository.isPhoneExists(saveDto.phone)) {
+      throw new EntitySaveException(Restaurant.name, 'phone');
+    }
+
     this.validator.validateSaveDto(saveDto);
     const entity: Restaurant = this.mapper.mapDtoToEntity(saveDto);
     entity.active = true;
@@ -25,6 +31,11 @@ export class RestaurantsService {
 
   async getAllActiveRestaurants(): Promise<RestaurantDto[]> {
     const restaurants: Restaurant[] = await this.repository.findAllActive();
+
+    if (restaurants.length === 0) {
+      throw new EntityNotFoundException(Restaurant.name);
+    }
+
     return this.mapper.mapEntityListToDtoList(restaurants);
   }
 
@@ -37,7 +48,7 @@ export class RestaurantsService {
     const restaurant: Restaurant | null = await this.repository.findById(id);
 
     if (!restaurant || !restaurant.active) {
-      throw Error('Restaurant not found');
+      throw new EntityNotFoundException(Restaurant.name, id);
     }
 
     return restaurant;
@@ -45,13 +56,10 @@ export class RestaurantsService {
 
   async update(id: number, updateDto: RestaurantUpdateDto): Promise<void> {
     this.validator.validateUpdateDto(updateDto);
-    const foundRestaurant: Restaurant | null =
-      await this.repository.findById(id);
+    const foundRestaurant: Restaurant = await this.getActiveEntityById(id);
 
-    if (foundRestaurant) {
-      foundRestaurant.name = updateDto.newName;
-      await this.repository.save(foundRestaurant);
-    }
+    foundRestaurant.name = updateDto.newName;
+    await this.repository.save(foundRestaurant);
   }
 
   async deleteById(id: number): Promise<void> {
@@ -63,7 +71,11 @@ export class RestaurantsService {
   async restoreById(id: number): Promise<void> {
     const restaurant: Restaurant | null = await this.repository.findById(id);
 
-    if (restaurant && !restaurant.active) {
+    if (!restaurant) {
+      throw new EntityNotFoundException(Restaurant.name, id);
+    }
+
+    if (!restaurant.active) {
       restaurant.active = true;
       await this.repository.save(restaurant);
     }

@@ -9,6 +9,8 @@ import { OrderUpdateDto } from './dto/order.update-dto';
 import { UsersService } from '../users/users.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
 import { OrdersValidator } from './validation/orders.validator';
+import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
+import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
 
 @Injectable()
 export class OrdersService {
@@ -36,19 +38,24 @@ export class OrdersService {
 
   async getAllOrders(): Promise<OrderDto[]> {
     const orders: Order[] = await this.repository.findAllActive();
+
+    if (orders.length === 0) {
+      throw new EntityNotFoundException(Order.name);
+    }
+
     return this.mapper.mapEntityListToDtoList(orders);
   }
 
   async getOrderById(id: number): Promise<OrderDto> {
-    const order: Order = await this.getEntityById(id);
+    const order: Order = await this.getActiveEntityById(id);
     return this.mapper.mapEntityToDto(order);
   }
 
-  async getEntityById(id: number): Promise<Order> {
+  async getActiveEntityById(id: number): Promise<Order> {
     const order: Order | null = await this.repository.findById(id);
 
-    if (!order) {
-      throw Error('Order not found');
+    if (!order || !order.active) {
+      throw new EntityNotFoundException(Order.name, id);
     }
 
     return order;
@@ -56,7 +63,7 @@ export class OrdersService {
 
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
     this.validator.validateUpdateDto(updateDto);
-    const order: Order = await this.getEntityById(id);
+    const order: Order = await this.getActiveEntityById(id);
 
     order.status = updateDto.status;
 
@@ -70,22 +77,33 @@ export class OrdersService {
   }
 
   async deleteById(id: number): Promise<void> {
-    const order: Order = await this.getEntityById(id);
+    const order: Order = await this.getActiveEntityById(id);
     order.active = false;
     await this.repository.save(order);
   }
 
   async restoreById(id: number): Promise<void> {
-    const order: Order = await this.getEntityById(id);
+    const order: Order | null = await this.repository.findById(id);
 
-    if (order && !order.active) {
+    if (!order) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
+
+    if (!order.active) {
       order.active = true;
       await this.repository.save(order);
     }
   }
 
   async setStatus(id: number, status: Status): Promise<void> {
-    const order: Order = await this.getEntityById(id);
+    const order: Order = await this.getActiveEntityById(id);
+
+    if (order.status === status) {
+      throw new EntityUpdateException(
+        `Order id ${id} already has status ${status}`,
+      );
+    }
+
     order.status = status;
     await this.repository.save(order);
   }

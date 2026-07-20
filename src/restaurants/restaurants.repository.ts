@@ -25,4 +25,8 @@ export class RestaurantsRepository {
   async deleteById(id: number): Promise<void> {
     await this.repository.delete(id);
   }
+
+  async isPhoneExists(phone: string): Promise<boolean> {
+    return this.repository.existsBy({ phone });
+  }
 }

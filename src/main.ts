@@ -11,7 +11,7 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('Food Delivery API')
     .setDescription('REST API for Food Delivery Service')
-    .setVersion('1.0.1')
+    .setVersion('1.0.2')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

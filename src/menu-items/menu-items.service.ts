@@ -8,6 +8,7 @@ import { MenuItemUpdateDto } from './dto/menu-item.update-dto';
 import { MenusService } from '../menus/menus.service';
 import { Menu } from '../menus/menu.entity';
 import { MenuItemsValidator } from './validation/menu-items.validator';
+import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 
 @Injectable()
 export class MenuItemsService {
@@ -32,6 +33,11 @@ export class MenuItemsService {
 
   async getAllActiveMenuItems(): Promise<MenuItemDto[]> {
     const menuItems: MenuItem[] = await this.repository.findAllActive();
+
+    if (menuItems.length === 0) {
+      throw new EntityNotFoundException(MenuItem.name);
+    }
+
     return this.mapper.mapEntityListToDtoList(menuItems);
   }
 
@@ -44,7 +50,7 @@ export class MenuItemsService {
     const menuItem: MenuItem | null = await this.repository.findById(id);
 
     if (!menuItem || !menuItem.active) {
-      throw Error('Menu item not found');
+      throw new EntityNotFoundException(MenuItem.name, id);
     }
 
     return menuItem;
@@ -52,14 +58,12 @@ export class MenuItemsService {
 
   async update(id: number, updateItemDto: MenuItemUpdateDto): Promise<void> {
     this.validator.validateUpdateDto(updateItemDto);
-    const foundMenuItem: MenuItem | null = await this.repository.findById(id);
+    const foundMenuItem: MenuItem = await this.getActiveEntityById(id);
 
-    if (foundMenuItem) {
-      foundMenuItem.name = updateItemDto.newName;
-      foundMenuItem.description = updateItemDto.newDescription;
-      foundMenuItem.price = updateItemDto.newPrice;
-      await this.repository.save(foundMenuItem);
-    }
+    foundMenuItem.name = updateItemDto.newName;
+    foundMenuItem.description = updateItemDto.newDescription;
+    foundMenuItem.price = updateItemDto.newPrice;
+    await this.repository.save(foundMenuItem);
   }
 
   async deleteById(id: number): Promise<void> {
@@ -71,7 +75,11 @@ export class MenuItemsService {
   async restoreById(id: number): Promise<void> {
     const menuItem: MenuItem | null = await this.repository.findById(id);
 
-    if (menuItem && !menuItem.active) {
+    if (!menuItem) {
+      throw new EntityNotFoundException(MenuItem.name, id);
+    }
+
+    if (!menuItem.active) {
       menuItem.active = true;
       await this.repository.save(menuItem);
     }

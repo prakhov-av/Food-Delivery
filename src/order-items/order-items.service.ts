@@ -9,6 +9,7 @@ import { OrderItem } from './order-item.entity';
 import { OrderItemUpdateDto } from './dto/order-item.update-dto';
 import { MenuItemsService } from '../menu-items/menu-items.service';
 import { OrderItemsValidator } from './validation/order-items.validator';
+import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 
 @Injectable()
 export class OrderItemsService {
@@ -23,7 +24,7 @@ export class OrderItemsService {
   async create(saveDto: OrderItemSaveDto): Promise<OrderItemDto> {
     this.validator.validateSaveDto(saveDto);
     const entity: OrderItem = this.mapper.mapDtoToEntity(saveDto);
-    const order: Order = await this.ordersService.getEntityById(
+    const order: Order = await this.ordersService.getActiveEntityById(
       saveDto.orderId,
     );
     entity.order = order;
@@ -37,6 +38,11 @@ export class OrderItemsService {
 
   async getAllActiveOrderItems(): Promise<OrderItemDto[]> {
     const orderItems: OrderItem[] = await this.repository.findAllActive();
+
+    if (orderItems.length === 0) {
+      throw new EntityNotFoundException(OrderItem.name);
+    }
+
     return this.mapper.mapEntityListToDtoList(orderItems);
   }
 
@@ -49,7 +55,7 @@ export class OrderItemsService {
     const orderItem: OrderItem | null = await this.repository.findById(id);
 
     if (!orderItem || !orderItem.active) {
-      throw Error('Order item not found');
+      throw new EntityNotFoundException(OrderItem.name, id);
     }
 
     return orderItem;
@@ -57,7 +63,7 @@ export class OrderItemsService {
 
   async update(id: number, updateItemDto: OrderItemUpdateDto): Promise<void> {
     this.validator.validateUpdateDto(updateItemDto);
-    const foundOrderItem: OrderItem | null = await this.getActiveEntityById(id);
+    const foundOrderItem: OrderItem = await this.getActiveEntityById(id);
 
     foundOrderItem.quantity = updateItemDto.newQuantity;
     await this.repository.save(foundOrderItem);
@@ -72,7 +78,11 @@ export class OrderItemsService {
   async restoreById(id: number): Promise<void> {
     const orderItem: OrderItem | null = await this.repository.findById(id);
 
-    if (orderItem && !orderItem.active) {
+    if (!orderItem) {
+      throw new EntityNotFoundException(OrderItem.name, id);
+    }
+
+    if (!orderItem.active) {
       orderItem.active = true;
       await this.repository.save(orderItem);
     }
