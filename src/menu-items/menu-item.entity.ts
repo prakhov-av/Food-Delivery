@@ -29,7 +29,7 @@ export class MenuItem {
   description: string;
 
   @Column({
-    name: 'item_price',
+    name: 'price',
     type: 'decimal',
     precision: 10,
     scale: 2,

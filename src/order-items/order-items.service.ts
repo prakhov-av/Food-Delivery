@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Order } from '../orders/order.entity';
 import { OrderItemsRepository } from './order-items.repository';
 import { OrderItemsMapper } from './dto/order-items.mapper';
@@ -13,6 +13,8 @@ import { EntityNotFoundException } from '../exceptions/types/entity-not-found.ex
 
 @Injectable()
 export class OrderItemsService {
+  private readonly logger: Logger = new Logger(OrderItemsService.name);
+
   constructor(
     private readonly repository: OrderItemsRepository,
     private readonly mapper: OrderItemsMapper,
@@ -33,6 +35,11 @@ export class OrderItemsService {
       saveDto.menuItemId,
     );
     await this.repository.save(entity);
+
+    this.logger.log(
+      `Order item created: id ${entity.id}, order id ${entity.order.id}, menu item id ${entity.menuItem.id}`,
+    );
+
     return this.mapper.mapEntityToDto(entity);
   }
 
@@ -67,12 +74,18 @@ export class OrderItemsService {
 
     foundOrderItem.quantity = updateItemDto.newQuantity;
     await this.repository.save(foundOrderItem);
+
+    this.logger.log(
+      `Order item updated: id ${id}, new quantity ${foundOrderItem.quantity}`,
+    );
   }
 
   async deleteById(id: number): Promise<void> {
     const orderItem: OrderItem = await this.getActiveEntityById(id);
     orderItem.active = false;
     await this.repository.save(orderItem);
+
+    this.logger.log(`Order item marked as inactive: id ${id}`);
   }
 
   async restoreById(id: number): Promise<void> {
@@ -85,6 +98,8 @@ export class OrderItemsService {
     if (!orderItem.active) {
       orderItem.active = true;
       await this.repository.save(orderItem);
+
+      this.logger.log(`Order item marked as active: id ${id}`);
     }
   }
 }

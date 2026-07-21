@@ -30,7 +30,7 @@ export class OrderItemsValidator {
       throw Error();
     }
 
-    if (updateDto.quantity !== undefined && updateDto.quantity < 1) {
+    if (updateDto.newQuantity !== undefined && updateDto.newQuantity < 1) {
       throw Error();
     }
   }

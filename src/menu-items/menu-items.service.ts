@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { MenuItemsRepository } from './menu-items.repository';
 import { MenuItemsMapper } from './dto/menu-items.mapper';
 import { MenuItemSaveDto } from './dto/menu-item.save-dto';
@@ -12,6 +12,8 @@ import { EntityNotFoundException } from '../exceptions/types/entity-not-found.ex
 
 @Injectable()
 export class MenuItemsService {
+  private readonly logger: Logger = new Logger(MenuItemsService.name);
+
   constructor(
     private readonly repository: MenuItemsRepository,
     private readonly mapper: MenuItemsMapper,
@@ -28,6 +30,10 @@ export class MenuItemsService {
     entity.menu = menu;
     entity.active = true;
     await this.repository.save(entity);
+
+    this.logger.log(
+      `Menu item created: id ${entity.id}, menu ${entity.menu.id}`,
+    );
     return this.mapper.mapEntityToDto(entity);
   }
 
@@ -64,12 +70,17 @@ export class MenuItemsService {
     foundMenuItem.description = updateItemDto.newDescription;
     foundMenuItem.price = updateItemDto.newPrice;
     await this.repository.save(foundMenuItem);
+
+    this.logger.log(
+      `Menu item updated: id ${id}, new name ${foundMenuItem.name}, new description ${foundMenuItem.description}, new price ${foundMenuItem.price}`,
+    );
   }
 
   async deleteById(id: number): Promise<void> {
     const menuItem: MenuItem = await this.getActiveEntityById(id);
     menuItem.active = false;
     await this.repository.save(menuItem);
+    this.logger.log(`Menu item marked as inactive: id ${id}`);
   }
 
   async restoreById(id: number): Promise<void> {
@@ -82,6 +93,7 @@ export class MenuItemsService {
     if (!menuItem.active) {
       menuItem.active = true;
       await this.repository.save(menuItem);
+      this.logger.log(`Menu item marked as active: id ${id}`);
     }
   }
 }

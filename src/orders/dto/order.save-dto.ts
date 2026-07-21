@@ -8,5 +8,9 @@ export class OrderSaveDto {
 
   @ApiProperty()
   @Min(1)
+  courierId: number;
+
+  @ApiProperty()
+  @Min(1)
   restaurantId: number;
 }

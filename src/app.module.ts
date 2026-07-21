@@ -21,7 +21,7 @@ import { OrderItemsModule } from './order-items/order-items.module';
       port: 5432,
       username: 'postgres',
       password: 'qwerty123',
-      database: 'food_delivery',
+      database: 'FoodDelivery',
       autoLoadEntities: true,
       synchronize: true,
     }),

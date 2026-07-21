@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { OrdersRepository } from './orders.repository';
 import { OrdersMapper } from './dto/orders.mapper';
 import { OrderSaveDto } from './dto/order.save-dto';
@@ -11,9 +11,13 @@ import { RestaurantsService } from '../restaurants/restaurants.service';
 import { OrdersValidator } from './validation/orders.validator';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
+import { Role } from '../users/enums/role.enum';
+import { RoleMismatchException } from '../exceptions/types/role-mismatch.exception';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger: Logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly repository: OrdersRepository,
     private readonly mapper: OrdersMapper,
@@ -31,8 +35,21 @@ export class OrdersService {
     entity.restaurant = await this.restaurantsService.getActiveEntityById(
       saveDto.restaurantId,
     );
+    entity.courier = await this.usersService.getActiveEntityById(
+      saveDto.courierId,
+    );
+
+    if (entity.courier.role !== Role.COURIER) {
+      throw new RoleMismatchException(saveDto.courierId, Role.COURIER);
+    }
+
     entity.status = Status.NEW;
     await this.repository.save(entity);
+
+    this.logger.log(
+      `Order created: id ${entity.id}, customer id ${entity.customer.id}, courier id ${entity.courier.id}, restaurant id ${entity.restaurant.id}`,
+    );
+
     return this.mapper.mapEntityToDto(entity);
   }
 
@@ -63,23 +80,34 @@ export class OrdersService {
 
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
     this.validator.validateUpdateDto(updateDto);
-    const order: Order = await this.getActiveEntityById(id);
 
-    order.status = updateDto.status;
+    const order = await this.getActiveEntityById(id);
 
     if (updateDto.courierId !== undefined) {
-      order.courier = await this.usersService.getActiveEntityById(
+      const courier = await this.usersService.getActiveEntityById(
         updateDto.courierId,
       );
-    }
 
-    await this.repository.save(order);
+      if (courier.role !== Role.COURIER) {
+        throw new RoleMismatchException(updateDto.courierId, Role.COURIER);
+      }
+
+      order.courier = courier;
+
+      await this.repository.save(order);
+
+      this.logger.log(
+        `Order updated: id ${id}, new courier ${order.courier.id}`,
+      );
+    }
   }
 
   async deleteById(id: number): Promise<void> {
     const order: Order = await this.getActiveEntityById(id);
     order.active = false;
     await this.repository.save(order);
+
+    this.logger.log(`Order marked as inactive: id ${id}`);
   }
 
   async restoreById(id: number): Promise<void> {
@@ -92,6 +120,8 @@ export class OrdersService {
     if (!order.active) {
       order.active = true;
       await this.repository.save(order);
+
+      this.logger.log(`Order marked as active: id ${id}`);
     }
   }
 
@@ -106,5 +136,7 @@ export class OrdersService {
 
     order.status = status;
     await this.repository.save(order);
+
+    this.logger.log(`Order status changed: id ${id}, status ${status}`);
   }
 }

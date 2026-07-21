@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { RestaurantsRepository } from './restaurants.repository';
 import { RestaurantsMapper } from './dto/restaurants.mapper';
 import { Restaurant } from './restaurant.entity';
@@ -11,6 +11,8 @@ import { EntityNotFoundException } from '../exceptions/types/entity-not-found.ex
 
 @Injectable()
 export class RestaurantsService {
+  private readonly logger: Logger = new Logger(RestaurantsService.name);
+
   constructor(
     private readonly repository: RestaurantsRepository,
     private readonly mapper: RestaurantsMapper,
@@ -26,6 +28,11 @@ export class RestaurantsService {
     const entity: Restaurant = this.mapper.mapDtoToEntity(saveDto);
     entity.active = true;
     await this.repository.save(entity);
+
+    this.logger.log(
+      `Restaurant created: id ${entity.id}, phone number ${entity.phone}`,
+    );
+
     return this.mapper.mapEntityToDto(entity);
   }
 
@@ -58,14 +65,24 @@ export class RestaurantsService {
     this.validator.validateUpdateDto(updateDto);
     const foundRestaurant: Restaurant = await this.getActiveEntityById(id);
 
-    foundRestaurant.name = updateDto.newName;
-    await this.repository.save(foundRestaurant);
+    if (foundRestaurant) {
+      foundRestaurant.name = updateDto.newName;
+      await this.repository.save(foundRestaurant);
+
+      this.logger.log(
+        `Restaurant updated: id ${id}, new name ${foundRestaurant.name}`,
+      );
+    } else {
+      throw new EntityNotFoundException(Restaurant.name, id);
+    }
   }
 
   async deleteById(id: number): Promise<void> {
     const restaurant: Restaurant = await this.getActiveEntityById(id);
     restaurant.active = false;
     await this.repository.save(restaurant);
+
+    this.logger.log(`Restaurant marked as inactive: id ${id}`);
   }
 
   async restoreById(id: number): Promise<void> {
@@ -78,6 +95,8 @@ export class RestaurantsService {
     if (!restaurant.active) {
       restaurant.active = true;
       await this.repository.save(restaurant);
+
+      this.logger.log(`Restaurant marked as active: id ${id}`);
     }
   }
 }

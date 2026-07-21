@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { UsersRepository } from './users.repository';
 import { User } from './user.entity';
 import { Role } from './enums/role.enum';
@@ -13,6 +13,8 @@ import { EntityUpdateException } from '../exceptions/types/entity-update.excepti
 
 @Injectable()
 export class UsersService {
+  private readonly logger: Logger = new Logger(UsersService.name);
+
   constructor(
     private readonly repository: UsersRepository,
     private readonly mapper: UsersMapper,
@@ -29,6 +31,9 @@ export class UsersService {
     entity.role = Role.CUSTOMER;
     entity.active = true;
     await this.repository.save(entity);
+
+    this.logger.log(`User created: id ${entity.id}, email ${entity.email}`);
+
     return this.mapper.mapEntityToDto(entity);
   }
 
@@ -61,14 +66,22 @@ export class UsersService {
     this.validator.validateUpdateDto(updateDto);
     const foundUser: User = await this.getActiveEntityById(id);
 
-    foundUser.name = updateDto.newName;
-    await this.repository.save(foundUser);
+    if (foundUser) {
+      foundUser.name = updateDto.newName;
+      await this.repository.save(foundUser);
+
+      this.logger.log(`User updated: id ${id}, new name ${foundUser.name}`);
+    } else {
+      throw new EntityNotFoundException(User.name, id);
+    }
   }
 
   async deleteById(id: number): Promise<void> {
     const user: User = await this.getActiveEntityById(id);
     user.active = false;
     await this.repository.save(user);
+
+    this.logger.log(`User marked as inactive: id ${id}`);
   }
 
   async restoreById(id: number): Promise<void> {
@@ -82,6 +95,8 @@ export class UsersService {
       user.active = true;
       await this.repository.save(user);
     }
+
+    this.logger.log(`User marked as active: id ${id}`);
   }
 
   async setRole(id: number, role: Role): Promise<void> {
@@ -93,5 +108,7 @@ export class UsersService {
 
     user.role = role;
     await this.repository.save(user);
+
+    this.logger.log(`User updated: ${id}, new role ${role}`);
   }
 }
