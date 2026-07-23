@@ -5,7 +5,7 @@ import { Restaurant } from './restaurant.entity';
 import { RestaurantDto } from './dto/restaurant.dto';
 import { RestaurantSaveDto } from './dto/restaurant.save-dto';
 import { RestaurantUpdateDto } from './dto/restaurant.update-dto';
-import { RestaurantsValidator } from './validation/restaurants.validator';
+// import { RestaurantsValidator } from './validation/restaurants.validator';
 import { EntitySaveException } from '../exceptions/types/entity-save.exception';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 
@@ -16,7 +16,7 @@ export class RestaurantsService {
   constructor(
     private readonly repository: RestaurantsRepository,
     private readonly mapper: RestaurantsMapper,
-    private readonly validator: RestaurantsValidator,
+    // private readonly validator: RestaurantsValidator,
   ) {}
 
   async create(saveDto: RestaurantSaveDto): Promise<RestaurantDto> {
@@ -24,7 +24,7 @@ export class RestaurantsService {
       throw new EntitySaveException(Restaurant.name, 'phone');
     }
 
-    this.validator.validateSaveDto(saveDto);
+    // this.validator.validateSaveDto(saveDto);
     const entity: Restaurant = this.mapper.mapDtoToEntity(saveDto);
     entity.active = true;
     await this.repository.save(entity);
@@ -62,7 +62,7 @@ export class RestaurantsService {
   }
 
   async update(id: number, updateDto: RestaurantUpdateDto): Promise<void> {
-    this.validator.validateUpdateDto(updateDto);
+    // this.validator.validateUpdateDto(updateDto);
     const foundRestaurant: Restaurant = await this.getActiveEntityById(id);
 
     if (foundRestaurant) {

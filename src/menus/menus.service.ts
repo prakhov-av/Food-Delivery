@@ -7,7 +7,7 @@ import { Menu } from './menu.entity';
 import { RestaurantsService } from '../restaurants/restaurants.service';
 import { Restaurant } from '../restaurants/restaurant.entity';
 import { MenuUpdateDto } from './dto/menu.update-dto';
-import { MenusValidator } from './validation/menus.validator';
+// import { MenusValidator } from './validation/menus.validator';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 
 @Injectable()
@@ -18,11 +18,11 @@ export class MenusService {
     private readonly repository: MenusRepository,
     private readonly mapper: MenusMapper,
     private readonly restaurantsService: RestaurantsService,
-    private readonly validator: MenusValidator,
+    // private readonly validator: MenusValidator,
   ) {}
 
   async create(saveDto: MenuSaveDto): Promise<MenuDto> {
-    this.validator.validateSaveDto(saveDto);
+    // this.validator.validateSaveDto(saveDto);
     const entity: Menu = this.mapper.mapDtoToEntity(saveDto);
     const restaurant: Restaurant =
       await this.restaurantsService.getActiveEntityById(saveDto.restaurantId);
@@ -64,7 +64,7 @@ export class MenusService {
   }
 
   async update(id: number, updateDto: MenuUpdateDto): Promise<void> {
-    this.validator.validateUpdateDto(updateDto);
+    // this.validator.validateUpdateDto(updateDto);
     const foundMenu: Menu = await this.getActiveEntityById(id);
 
     if (foundMenu) {

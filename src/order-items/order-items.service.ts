@@ -8,7 +8,7 @@ import { OrderItemDto } from './dto/order-item.dto';
 import { OrderItem } from './order-item.entity';
 import { OrderItemUpdateDto } from './dto/order-item.update-dto';
 import { MenuItemsService } from '../menu-items/menu-items.service';
-import { OrderItemsValidator } from './validation/order-items.validator';
+// import { OrderItemsValidator } from './validation/order-items.validator';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 
 @Injectable()
@@ -20,11 +20,11 @@ export class OrderItemsService {
     private readonly mapper: OrderItemsMapper,
     private readonly ordersService: OrdersService,
     private readonly menuItemsService: MenuItemsService,
-    private readonly validator: OrderItemsValidator,
+    // private readonly validator: OrderItemsValidator,
   ) {}
 
   async create(saveDto: OrderItemSaveDto): Promise<OrderItemDto> {
-    this.validator.validateSaveDto(saveDto);
+    // this.validator.validateSaveDto(saveDto);
     const entity: OrderItem = this.mapper.mapDtoToEntity(saveDto);
     const order: Order = await this.ordersService.getActiveEntityById(
       saveDto.orderId,
@@ -69,7 +69,7 @@ export class OrderItemsService {
   }
 
   async update(id: number, updateItemDto: OrderItemUpdateDto): Promise<void> {
-    this.validator.validateUpdateDto(updateItemDto);
+    // this.validator.validateUpdateDto(updateItemDto);
     const foundOrderItem: OrderItem = await this.getActiveEntityById(id);
 
     foundOrderItem.quantity = updateItemDto.newQuantity;

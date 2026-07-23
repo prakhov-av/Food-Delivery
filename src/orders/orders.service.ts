@@ -8,7 +8,7 @@ import { Status } from './enums/status.enum';
 import { OrderUpdateDto } from './dto/order.update-dto';
 import { UsersService } from '../users/users.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
-import { OrdersValidator } from './validation/orders.validator';
+// import { OrdersValidator } from './validation/orders.validator';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
 import { Role } from '../users/enums/role.enum';
@@ -23,11 +23,11 @@ export class OrdersService {
     private readonly mapper: OrdersMapper,
     private readonly usersService: UsersService,
     private readonly restaurantsService: RestaurantsService,
-    private readonly validator: OrdersValidator,
+    // private readonly validator: OrdersValidator,
   ) {}
 
   async create(saveDto: OrderSaveDto): Promise<OrderDto> {
-    this.validator.validateSaveDto(saveDto);
+    // this.validator.validateSaveDto(saveDto);
     const entity: Order = this.mapper.mapDtoToEntity(saveDto);
     entity.customer = await this.usersService.getActiveEntityById(
       saveDto.customerId,
@@ -44,6 +44,8 @@ export class OrdersService {
     }
 
     entity.status = Status.NEW;
+    entity.active = true;
+    entity.totalPrice = 0;
     await this.repository.save(entity);
 
     this.logger.log(
@@ -79,7 +81,7 @@ export class OrdersService {
   }
 
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
-    this.validator.validateUpdateDto(updateDto);
+    // this.validator.validateUpdateDto(updateDto);
 
     const order = await this.getActiveEntityById(id);
 

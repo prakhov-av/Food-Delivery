@@ -20,7 +20,9 @@ export class OrdersMapper {
     const dto: OrderDto = new OrderDto();
     dto.id = entity.id;
     dto.customer = this.usersMapper.mapEntityToDto(entity.customer);
-    dto.courier = this.usersMapper.mapEntityToDto(entity.courier);
+    dto.courier = entity.courier
+      ? this.usersMapper.mapEntityToDto(entity.courier)
+      : null;
     dto.restaurant = this.restaurantsMapper.mapEntityToDto(entity.restaurant);
     dto.status = entity.status;
     dto.totalPrice = entity.totalPrice;
@@ -29,8 +31,7 @@ export class OrdersMapper {
   }
 
   mapDtoToEntity(_saveDto: OrderSaveDto): Order {
-    const entity = new Order();
-    return entity;
+    return new Order();
   }
 
   mapEntityListToDtoList(entityList: Order[]): OrderDto[] {
