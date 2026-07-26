@@ -22,6 +22,7 @@ export class UsersMapper {
     entity.email = saveDto.email;
     entity.password = saveDto.password;
     entity.name = saveDto.name;
+    entity.phone = saveDto.phone;
     return entity;
   }
 

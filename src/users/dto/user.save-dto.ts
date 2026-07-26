@@ -21,4 +21,8 @@ export class UserSaveDto {
       'Name should contain only capital and small letters, spaces, dashes and apostrophes',
   })
   name: string;
+
+  @ApiProperty()
+  @Matches(/^\+?[0-9\s\-()]{7,20}$/)
+  phone: string;
 }

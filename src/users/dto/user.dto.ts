@@ -10,4 +10,7 @@ export class UserDto {
 
   @ApiProperty()
   role: Role;
+
+  @ApiProperty()
+  phone: string;
 }

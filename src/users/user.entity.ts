@@ -1,5 +1,11 @@
 import { Role } from './enums/role.enum';
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  OneToMany,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { Order } from '../orders/order.entity';
 
 @Entity('users')
@@ -22,10 +28,10 @@ export class User {
   @Column({ name: 'role', nullable: false, type: 'enum', enum: Role })
   role: Role;
 
-  @Column({ name: 'created_at', nullable: false, unique: false })
+  @CreateDateColumn({ name: 'created_at', nullable: false, unique: false })
   createdAt: Date;
 
-  @Column({ name: 'deleted_at', nullable: true, unique: false })
+  @CreateDateColumn({ name: 'deleted_at', nullable: true, unique: false })
   deletedAt: Date;
 
   @Column({ name: 'active', nullable: false, unique: false })
