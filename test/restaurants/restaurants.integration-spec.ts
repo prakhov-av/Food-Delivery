@@ -13,6 +13,7 @@ import { RestaurantSaveDto } from '../../src/restaurants/dto/restaurant.save-dto
 import { RestaurantUpdateDto } from '../../src/restaurants/dto/restaurant.update-dto';
 import { Restaurant } from '../../src/restaurants/restaurant.entity';
 import { Menu } from '../../src/menus/menu.entity';
+import { MenuItem } from '../../src/menu-items/menu-item.entity';
 
 describe('RestaurantsController (IT)', (): void => {
   const RESOURCE_NAME: string = '/restaurants';
@@ -45,6 +46,7 @@ describe('RestaurantsController (IT)', (): void => {
   let menusRepository: Repository<Menu>;
   let activeRestaurant: Restaurant;
   let inactiveRestaurant: Restaurant;
+  let menuItemsRepository: Repository<MenuItem>;
 
   beforeAll(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
@@ -75,6 +77,7 @@ describe('RestaurantsController (IT)', (): void => {
     httpServer = app.getHttpServer();
     repository = module.get(getRepositoryToken(Restaurant));
     menusRepository = module.get(getRepositoryToken(Menu));
+    menuItemsRepository = module.get(getRepositoryToken(MenuItem));
   });
 
   beforeEach(async (): Promise<void> => {
@@ -96,6 +99,7 @@ describe('RestaurantsController (IT)', (): void => {
   });
 
   afterEach(async (): Promise<void> => {
+    await menuItemsRepository.deleteAll();
     await menusRepository.deleteAll();
     await repository.deleteAll();
   });
