@@ -10,17 +10,13 @@ import { MenusModule } from '../../src/menus/menus.module';
 import { MenuItemsModule } from '../../src/menu-items/menu-items.module';
 import { OrderItemsModule } from '../../src/order-items/order-items.module';
 import { Restaurant } from '../../src/restaurants/restaurant.entity';
-import { MenuSaveDto } from '../../src/menus/dto/menu.save-dto';
-import { MenuUpdateDto } from '../../src/menus/dto/menu.update-dto';
-import { Menu } from '../../src/menus/menu.entity';
-import { MenuItem } from '../../src/menu-items/menu-item.entity';
 import { OrderSaveDto } from '../../src/orders/dto/order.save-dto';
 import { OrderUpdateDto } from '../../src/orders/dto/order.update-dto';
-import { Status } from '../../src/orders/enums/status.enum';
 import { Order } from '../../src/orders/order.entity';
 import { User } from '../../src/users/user.entity';
 import { OrderItem } from '../../src/order-items/order-item.entity';
 import { Role } from '../../src/users/enums/role.enum';
+import { Status } from '../../src/orders/enums/status.enum';
 
 describe('OrdersController (IT)', (): void => {
   const RESOURCE_NAME: string = '/orders';
@@ -65,7 +61,7 @@ describe('OrdersController (IT)', (): void => {
 
   let activeCustomer: User;
   let activeCourier: User;
-
+  let secondActiveCourier: User;
   let inactiveCustomer: User;
   let inactiveCourier: User;
 
@@ -76,9 +72,6 @@ describe('OrdersController (IT)', (): void => {
   let usersRepository: Repository<User>;
   let restaurantsRepository: Repository<Restaurant>;
   let orderItemsRepository: Repository<OrderItem>;
-
-  let customerWithoutOrders: User;
-  let courierWithoutOrders: User;
 
   beforeAll(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
@@ -133,6 +126,16 @@ describe('OrdersController (IT)', (): void => {
     activeCourier.active = true;
 
     await usersRepository.save(activeCourier);
+
+    secondActiveCourier = new User();
+    secondActiveCourier.email = 'second-active-courier@test.com';
+    secondActiveCourier.password = 'SecondCourierPass';
+    secondActiveCourier.name = 'Second courier';
+    secondActiveCourier.phone = '+380501111115';
+    secondActiveCourier.role = Role.COURIER;
+    secondActiveCourier.active = true;
+
+    await usersRepository.save(secondActiveCourier);
 
     inactiveCustomer = new User();
     inactiveCustomer.email = 'inactive-customer@test.com';
@@ -194,6 +197,8 @@ describe('OrdersController (IT)', (): void => {
     activeOrder.customer = activeCustomer;
     activeOrder.courier = activeCourier;
     activeOrder.restaurant = activeRestaurant;
+    activeOrder.status = Status.NEW;
+    activeOrder.totalPrice = 0;
     activeOrder.active = true;
 
     await repository.save(activeOrder);
@@ -202,15 +207,17 @@ describe('OrdersController (IT)', (): void => {
     inactiveOrder.customer = inactiveCustomer;
     inactiveOrder.courier = inactiveCourier;
     inactiveOrder.restaurant = inactiveRestaurant;
+    inactiveOrder.status = Status.NEW;
+    inactiveOrder.totalPrice = 0;
     inactiveOrder.active = false;
 
     await repository.save(inactiveOrder);
   });
 
   afterEach(async (): Promise<void> => {
-    await repository.delete({});
-    await restaurantsRepository.delete({});
-    await usersRepository.delete({});
+    await repository.deleteAll();
+    await restaurantsRepository.deleteAll();
+    await usersRepository.deleteAll();
   });
 
   afterAll(async (): Promise<void> => {
@@ -224,31 +231,9 @@ describe('OrdersController (IT)', (): void => {
         .send(VALID_SAVE_DTO)
         .expect(HttpStatus.CREATED);
 
-      expect(response.body).toBeDefined();
       expect(response.body).toEqual(
         expect.objectContaining({
           id: expect.any(Number),
-          customerId: VALID_SAVE_DTO.customerId,
-          courierId: VALID_SAVE_DTO.courierId,
-          restaurantId: VALID_SAVE_DTO.restaurantId,
-        }),
-      );
-
-      const savedOrder: Order | null = await repository.findOne({
-        where: {
-          id: response.body.id,
-        },
-        relations: {
-          customer: true,
-          courier: true,
-          restaurant: true,
-        },
-      });
-
-      expect(savedOrder).toBeDefined();
-      expect(savedOrder).toEqual(
-        expect.objectContaining({
-          active: true,
           customer: expect.objectContaining({
             id: activeCustomer.id,
           }),
@@ -260,27 +245,9 @@ describe('OrdersController (IT)', (): void => {
           }),
         }),
       );
-    });
-
-    it('should create order', async (): Promise<void> => {
-      const response: Response = await request(httpServer)
-        .post(RESOURCE_NAME)
-        .send(VALID_SAVE_DTO)
-        .expect(HttpStatus.CREATED);
-
-      expect(response.body).toEqual(
-        expect.objectContaining({
-          id: expect.any(Number),
-          customerId: VALID_SAVE_DTO.customerId,
-          courierId: VALID_SAVE_DTO.courierId,
-          restaurantId: VALID_SAVE_DTO.restaurantId,
-        }),
-      );
 
       const savedOrder = await repository.findOne({
-        where: {
-          id: response.body.id,
-        },
+        where: { id: response.body.id },
         relations: {
           customer: true,
           courier: true,
@@ -314,27 +281,45 @@ describe('OrdersController (IT)', (): void => {
 
       expect(response.body.message).toContain('not found');
     });
+
+    it('should return 404 if customer is not found', async (): Promise<void> => {
+      const response: Response = await request(httpServer)
+        .post(RESOURCE_NAME)
+        .send(VALID_SAVE_DTO_WITH_NOT_EXISTING_CUSTOMER)
+        .expect(HttpStatus.NOT_FOUND);
+
+      expect(response.body.message).toContain('not found');
+    });
+
+    it('should return 404 if courier is not found', async (): Promise<void> => {
+      const response: Response = await request(httpServer)
+        .post(RESOURCE_NAME)
+        .send(VALID_SAVE_DTO_WITH_NOT_EXISTING_COURIER)
+        .expect(HttpStatus.NOT_FOUND);
+
+      expect(response.body.message).toContain('not found');
+    });
   });
 
   describe('getById', (): void => {
-    it('should return menu', async (): Promise<void> => {
-      // /menus/5
+    it('should return order', async (): Promise<void> => {
       const response: Response = await request(httpServer)
-        .get(`${RESOURCE_NAME}/${activeMenu.id}`)
+        .get(`${RESOURCE_NAME}/${activeOrder.id}`)
         .expect(HttpStatus.OK);
 
       expect(response.body).toBeDefined();
       expect(response.body).toEqual(
         expect.objectContaining({
-          id: activeMenu.id,
-          name: activeMenu.name,
+          id: activeOrder.id,
+          status: activeOrder.status,
+          totalPrice: activeOrder.totalPrice.toFixed(2),
         }),
       );
     });
 
-    it('should return 404 if inactive menu is requested', async (): Promise<void> => {
+    it('should return 404 if inactive order is requested', async (): Promise<void> => {
       const response: Response = await request(httpServer)
-        .get(`${RESOURCE_NAME}/${inactiveMenu.id}`)
+        .get(`${RESOURCE_NAME}/${inactiveOrder.id}`)
         .expect(HttpStatus.NOT_FOUND);
 
       expect(response.body.message).toContain('not found');
@@ -342,61 +327,57 @@ describe('OrdersController (IT)', (): void => {
   });
 
   describe('update', (): void => {
-    it('should update menu name', async (): Promise<void> => {
+    it('should update order', async (): Promise<void> => {
+      VALID_UPDATE_DTO.courierId = secondActiveCourier.id;
+
       await request(httpServer)
-        .patch(`${RESOURCE_NAME}/${activeMenu.id}`)
+        .patch(`${RESOURCE_NAME}/${activeOrder.id}`)
         .send(VALID_UPDATE_DTO)
         .expect(HttpStatus.NO_CONTENT);
 
-      const updatedMenu = await repository.findOne({
+      const updatedOrder: Order | null = await repository.findOne({
         where: {
-          id: activeMenu.id,
+          id: activeOrder.id,
         },
         relations: {
+          customer: true,
+          courier: true,
           restaurant: true,
-          items: true,
         },
       });
 
-      expect(updatedMenu).toBeDefined();
-      expect(updatedMenu).toEqual(
+      expect(updatedOrder).toBeDefined();
+      expect(updatedOrder).toEqual(
         expect.objectContaining({
-          name: VALID_UPDATE_DTO.newName,
-          restaurant: activeMenu.restaurant,
-          items: activeMenu.items,
+          customer: expect.objectContaining({
+            id: activeCustomer.id,
+          }),
+          courier: expect.objectContaining({
+            id: secondActiveCourier.id,
+          }),
+          restaurant: expect.objectContaining({
+            id: activeRestaurant.id,
+          }),
         }),
       );
     });
 
-    it('should return 400 if new menu name is incorrect', async (): Promise<void> => {
-      const response = await request(httpServer)
-        .patch(`${RESOURCE_NAME}/${activeMenu.id}`)
-        .send(UPDATE_DTO_WITH_INCORRECT_NAME)
-        .expect(HttpStatus.BAD_REQUEST);
+    it('should return 404 if inactive order is updated', async (): Promise<void> => {
+      const response: Response = await request(httpServer)
+        .patch(`${RESOURCE_NAME}/${inactiveOrder.id}`)
+        .send(VALID_UPDATE_DTO)
+        .expect(HttpStatus.NOT_FOUND);
 
-      expect(response.body.message).toEqual(
-        expect.arrayContaining([expect.stringContaining('Name')]),
-      );
+      expect(response.body.message).toContain('not found');
+    });
 
-      const existingMenu: Menu | null = await repository.findOne({
-        where: {
-          id: activeMenu.id,
-        },
-        relations: {
-          restaurant: true,
-          items: true,
-        },
-      });
+    it('should return 404 if courier is not found', async (): Promise<void> => {
+      const response: Response = await request(httpServer)
+        .patch(`${RESOURCE_NAME}/${activeOrder.id}`)
+        .send(VALID_UPDATE_DTO_WITH_NOT_EXISTING_COURIER)
+        .expect(HttpStatus.NOT_FOUND);
 
-      expect(existingMenu).toBeDefined();
-      expect(existingMenu).toEqual(
-        expect.objectContaining({
-          name: activeMenu.name,
-          restaurant: activeMenu.restaurant,
-          items: activeMenu.items,
-          active: true,
-        }),
-      );
+      expect(response.body.message).toContain('not found');
     });
   });
 });
