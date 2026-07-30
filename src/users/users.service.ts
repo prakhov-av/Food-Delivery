@@ -85,6 +85,7 @@ export class UsersService {
   async deleteById(id: number): Promise<void> {
     const user: User = await this.getActiveEntityById(id);
     user.active = false;
+    user.deletedAt = new Date();
     await this.repository.save(user);
 
     this.logger.log(`User marked as inactive: id ${id}`);
@@ -147,6 +148,7 @@ export class UsersService {
 
     user.password = await bcrypt.hash(registrationDto.password, 10);
     user.name = registrationDto.name;
+    user.phone = registrationDto.phone;
 
     await this.repository.save(user);
 

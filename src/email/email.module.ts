@@ -24,7 +24,7 @@ import { ConfirmationCodesModule } from '../confirmation-codes/confirmation-code
           },
         },
         defaults: {
-          from: '"Insurance company" <prakhov.test@gmail.com>',
+          from: '"Food Delivery Service" <prakhov.test@gmail.com>',
         },
       }),
     }),

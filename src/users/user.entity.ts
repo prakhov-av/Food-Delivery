@@ -31,7 +31,7 @@ export class User {
   @CreateDateColumn({ name: 'created_at', nullable: false, unique: false })
   createdAt: Date;
 
-  @CreateDateColumn({ name: 'deleted_at', nullable: true, unique: false })
+  @Column({ name: 'deleted_at', nullable: true, unique: false })
   deletedAt: Date;
 
   @Column({ name: 'active', nullable: false, unique: false })
