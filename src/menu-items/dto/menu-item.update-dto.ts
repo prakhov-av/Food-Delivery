@@ -9,4 +9,12 @@ export class MenuItemUpdateDto {
       'Name should contain only capital and small letters, spaces, dashes and apostrophes',
   })
   newName: string;
+
+  @ApiProperty()
+  @Length(2, 200)
+  newDescription: string;
+
+  @ApiProperty()
+  @Min(0.01)
+  newPrice: number;
 }

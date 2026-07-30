@@ -17,11 +17,15 @@ import { UserDto } from './dto/user.dto';
 import { UserSaveDto } from './dto/user.save-dto';
 import { UserUpdateDto } from './dto/user.update-dto';
 import { ApiOkResponse } from '@nestjs/swagger';
+import { Public, Roles } from '../auth/types/auth.decorators';
 
+// localhost:3000/users
 @Controller('users')
 export class UsersController {
   constructor(private readonly service: UsersService) {}
 
+  // CRUD - Create Read Update Delete
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOkResponse({
@@ -31,6 +35,7 @@ export class UsersController {
     return this.service.create(saveDto);
   }
 
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Get()
   @ApiOkResponse({
     type: UserDto,
@@ -40,6 +45,9 @@ export class UsersController {
     return this.service.getAllActiveUsers();
   }
 
+  // GET 10.20.30.40:3000/users?id=7 -> '7'
+  // GET 10.20.30.40:3000/users/7 - предпочтительный подход для id
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Get(':id')
   @ApiOkResponse({
     type: UserDto,
@@ -48,6 +56,7 @@ export class UsersController {
     return this.service.getActiveUserById(id);
   }
 
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Patch(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async update(
@@ -57,18 +66,22 @@ export class UsersController {
     await this.service.update(id, updateDto);
   }
 
+  @Roles(Role.ADMIN)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteById(@Param('id', ParseIntPipe) id: number): Promise<void> {
     await this.service.deleteById(id);
   }
 
+  @Roles(Role.ADMIN)
   @Patch(':id/restore')
   @HttpCode(HttpStatus.NO_CONTENT)
   async restoreById(@Param('id', ParseIntPipe) id: number): Promise<void> {
     await this.service.restoreById(id);
   }
 
+  // PATCH 10.20.30.40:3000/users/5/set-role/ADMIN
+  @Roles(Role.ADMIN)
   @Patch(':id/set-role/:role')
   @HttpCode(HttpStatus.NO_CONTENT)
   async setRole(
@@ -76,5 +89,22 @@ export class UsersController {
     @Param('role', new ParseEnumPipe(Role)) role: Role,
   ): Promise<void> {
     await this.service.setRole(id, role);
+  }
+
+  @Public()
+  @Post('register')
+  @HttpCode(HttpStatus.OK)
+  async register(@Body() registrationDto: UserSaveDto): Promise<string> {
+    await this.service.register(registrationDto);
+    return 'Registration complete. Check your email.';
+  }
+
+  @Public()
+  @Get('confirm/:codeValue')
+  async confirmRegistration(
+    @Param('codeValue') codeValue: string,
+  ): Promise<string> {
+    await this.service.confirmRegistration(codeValue);
+    return 'Registration confirmed';
   }
 }

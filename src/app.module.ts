@@ -6,6 +6,13 @@ import { OrdersModule } from './orders/orders.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MenusModule } from './menus/menus.module';
 import { OrderItemsModule } from './order-items/order-items.module';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthGuard } from './auth/guards/auth.guard';
+import { AuthModule } from './auth/auth.module';
+import { RolesGuard } from './auth/guards/roles.guard';
+import { ConfigModule } from '@nestjs/config';
+import { EmailModule } from './email/email.module';
+import { ConfirmationCodesModule } from './confirmation-codes/confirmation-codes.module';
 
 @Module({
   imports: [
@@ -15,6 +22,9 @@ import { OrderItemsModule } from './order-items/order-items.module';
     OrdersModule,
     OrderItemsModule,
     MenusModule,
+    AuthModule,
+    ConfirmationCodesModule,
+    EmailModule,
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: 'localhost',
@@ -25,8 +35,20 @@ import { OrderItemsModule } from './order-items/order-items.module';
       autoLoadEntities: true,
       synchronize: true,
     }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: AuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+  ],
 })
 export class AppModule {}

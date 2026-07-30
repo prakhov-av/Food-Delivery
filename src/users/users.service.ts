@@ -6,10 +6,14 @@ import { UserDto } from './dto/user.dto';
 import { UsersMapper } from './dto/users.mapper';
 import { UserSaveDto } from './dto/user.save-dto';
 import { UserUpdateDto } from './dto/user.update-dto';
-// import { UsersValidator } from './validation/users.validator';
 import { EntitySaveException } from '../exceptions/types/entity-save.exception';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
+import { UserIsNotConfirmedException } from '../exceptions/types/user-is-not-confirmed.exception';
+import * as bcrypt from 'bcrypt';
+import { RegistrationException } from '../exceptions/types/registration.exception';
+import { EmailService } from '../email/email.service';
+import { ConfirmationCodesService } from '../confirmation-codes/confirmation-codes.service';
 
 @Injectable()
 export class UsersService {
@@ -18,7 +22,8 @@ export class UsersService {
   constructor(
     private readonly repository: UsersRepository,
     private readonly mapper: UsersMapper,
-    // private readonly validator: UsersValidator,
+    private readonly emailService: EmailService,
+    private readonly confirmationCodeService: ConfirmationCodesService,
   ) {}
 
   async create(saveDto: UserSaveDto): Promise<UserDto> {
@@ -28,6 +33,7 @@ export class UsersService {
 
     // this.validator.validateSaveDto(saveDto);
     const entity: User = this.mapper.mapDtoToEntity(saveDto);
+    entity.password = await bcrypt.hash(entity.password, 10);
     entity.role = Role.CUSTOMER;
     entity.active = true;
     await this.repository.save(entity);
@@ -110,5 +116,48 @@ export class UsersService {
     await this.repository.save(user);
 
     this.logger.log(`User updated: ${id}, new role ${role}`);
+  }
+
+  async getConfirmedByEmail(email: string): Promise<User> {
+    const user: User | null = await this.repository.findByEmail(email);
+
+    if (!user) {
+      throw new EntityNotFoundException(User.name, undefined, email);
+    }
+
+    if (!user.active) {
+      throw new UserIsNotConfirmedException(email);
+    }
+
+    return user;
+  }
+
+  async register(registrationDto: UserSaveDto): Promise<void> {
+    const email: string = registrationDto.email;
+    let user: User | null = await this.repository.findByEmail(email);
+
+    if (!user) {
+      user = new User();
+      user.email = email;
+      user.role = Role.CUSTOMER;
+      user.active = false;
+    } else if (user.active) {
+      throw new RegistrationException(`Email ${email} already in use`);
+    }
+
+    user.password = await bcrypt.hash(registrationDto.password, 10);
+    user.name = registrationDto.name;
+
+    await this.repository.save(user);
+
+    await this.emailService.sendConfirmationEmail(user);
+  }
+
+  async confirmRegistration(codeValue: string): Promise<void> {
+    const user: User =
+      await this.confirmationCodeService.validateCodeAndGetUser(codeValue);
+
+    user.active = true;
+    await this.repository.save(user);
   }
 }
