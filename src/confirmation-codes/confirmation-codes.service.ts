@@ -10,6 +10,8 @@ export class ConfirmationCodesService {
   constructor(private readonly repository: ConfirmationCodesRepository) {}
 
   async generateConfirmationCode(user: User): Promise<string> {
+    await this.repository.deleteByUser(user);
+
     const codeValue: string = randomUUID();
     const now: number = Date.now();
     const expiration: Date = new Date(now + 24 * 60 * 60 * 1000);
