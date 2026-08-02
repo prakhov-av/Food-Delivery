@@ -2,6 +2,7 @@ import { ConfirmationCodesService } from './confirmation-codes.service';
 import { ConfirmationCodesRepository } from './confirmation-codes.repository';
 import { User } from '../users/user.entity';
 import { ConfirmationCode } from './confirmation-code.entity';
+import { RegistrationException } from '../exceptions/types/registration.exception';
 
 describe('ConfirmationCodesService', (): void => {
   let service: ConfirmationCodesService;
@@ -72,7 +73,9 @@ describe('ConfirmationCodesService', (): void => {
     it('should throw RegistrationException when code is not found', async (): Promise<void> => {
       repository.findByValue.mockResolvedValue(null);
 
-      await expect(service.validateCodeAndGetUser('code')).rejects.toThrow();
+      await expect(
+        service.validateCodeAndGetUser('code'),
+      ).rejects.toBeInstanceOf(RegistrationException);
 
       expect(repository.delete).not.toHaveBeenCalled();
     });
@@ -84,7 +87,9 @@ describe('ConfirmationCodesService', (): void => {
 
       repository.findByValue.mockResolvedValue(confirmationCode);
 
-      await expect(service.validateCodeAndGetUser('code')).rejects.toThrow();
+      await expect(
+        service.validateCodeAndGetUser('code'),
+      ).rejects.toBeInstanceOf(RegistrationException);
 
       expect(repository.delete).not.toHaveBeenCalled();
     });

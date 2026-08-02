@@ -98,11 +98,14 @@ export class UsersService {
       throw new EntityNotFoundException(User.name, id);
     }
 
-    if (!user.active) {
-      user.active = true;
-      user.deletedAt = null;
-      await this.repository.save(user);
+    if (user.active) {
+      return;
     }
+
+    user.active = true;
+    user.deletedAt = null;
+
+    await this.repository.save(user);
 
     this.logger.log(`User marked as active: id ${id}`);
   }
