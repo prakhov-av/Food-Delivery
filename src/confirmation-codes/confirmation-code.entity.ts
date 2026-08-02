@@ -15,7 +15,11 @@ export class ConfirmationCode {
   @Column({ name: 'value', unique: true, nullable: false })
   value: string;
 
-  @Column({ name: 'expiration', unique: false, nullable: false })
+  @Column({
+    name: 'expiration',
+    type: 'timestamp',
+    nullable: false,
+  })
   expiration: Date;
 
   @ManyToOne((): typeof User => User, { nullable: false })

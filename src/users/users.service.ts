@@ -100,6 +100,7 @@ export class UsersService {
 
     if (!user.active) {
       user.active = true;
+      user.deletedAt = null;
       await this.repository.save(user);
     }
 

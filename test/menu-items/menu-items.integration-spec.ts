@@ -27,6 +27,8 @@ describe('MenuItemsController (IT)', (): void => {
 
   const VALID_UPDATE_DTO: MenuItemUpdateDto = {
     newName: 'New MenuItem Name',
+    newDescription: 'New MenuItem Description',
+    newPrice: 150,
   };
 
   const SAVE_DTO_WITH_INCORRECT_NAME: MenuItemSaveDto = {
@@ -338,6 +340,8 @@ describe('MenuItemsController (IT)', (): void => {
       expect(updatedMenuItem).toEqual(
         expect.objectContaining({
           name: VALID_UPDATE_DTO.newName,
+          description: VALID_UPDATE_DTO.newDescription,
+          price: VALID_UPDATE_DTO.newPrice.toFixed(2),
           active: true,
         }),
       );

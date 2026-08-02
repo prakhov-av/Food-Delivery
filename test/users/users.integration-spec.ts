@@ -124,20 +124,22 @@ describe('UsersController (IT)', (): void => {
         id: response.body.id,
       });
 
+      // В реальном приложении пароль, сохранённый в БД не будет соответствовать
+      // паролю в ДТО. Потому что в БД пароль зашифрованный, а в ДТО - в сыром виде.
+      // Но в качестве учебного примера оставим, т.к. в нашем случае пока
+      // пароль в ДТО полностью соответствует паролю в БД.
       expect(savedUser).toBeDefined();
       expect(savedUser).toEqual(
         expect.objectContaining({
           email: VALID_SAVE_DTO.email,
-          // В реальном приложении пароль, сохранённый в БД не будет соответствовать
-          // паролю в ДТО. Потому что в БД пароль зашифрованный, а в ДТО - в сыром виде.
-          // Но в качестве учебного примера оставим, т.к. в нашем случае пока
-          // пароль в ДТО полностью соответствует паролю в БД.
-          password: VALID_SAVE_DTO.password,
           name: VALID_SAVE_DTO.name,
           role: Role.CUSTOMER,
           active: true,
         }),
       );
+
+      expect(savedUser?.password).not.toEqual(VALID_SAVE_DTO.password);
+      expect(savedUser?.password).toMatch(/^\$2[aby]\$/);
     });
 
     it('should return 400 if email is incorrect', async (): Promise<void> => {

@@ -31,8 +31,13 @@ export class User {
   @CreateDateColumn({ name: 'created_at', nullable: false, unique: false })
   createdAt: Date;
 
-  @Column({ name: 'deleted_at', nullable: true, unique: false })
-  deletedAt: Date;
+  @Column({
+    name: 'deleted_at',
+    type: 'timestamp',
+    nullable: true,
+    unique: false,
+  })
+  deletedAt: Date | null;
 
   @Column({ name: 'active', nullable: false, unique: false })
   active: boolean;

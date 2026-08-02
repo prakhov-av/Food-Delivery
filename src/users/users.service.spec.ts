@@ -9,6 +9,8 @@ import { EntitySaveException } from '../exceptions/types/entity-save.exception';
 import { User } from './user.entity';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { UserUpdateDto } from './dto/user.update-dto';
+import { EmailService } from '../email/email.service';
+import { ConfirmationCodesService } from '../confirmation-codes/confirmation-codes.service';
 
 describe('UsersService', (): void => {
   const VALID_SAVE_DTO: UserSaveDto = {
@@ -70,6 +72,18 @@ describe('UsersService', (): void => {
             findAllActive: jest.fn(),
             findById: jest.fn(),
             isEmailExists: jest.fn(),
+          },
+        },
+        {
+          provide: EmailService,
+          useValue: {
+            sendConfirmationEmail: jest.fn(),
+          },
+        },
+        {
+          provide: ConfirmationCodesService,
+          useValue: {
+            validateCodeAndGetUser: jest.fn(),
           },
         },
       ],

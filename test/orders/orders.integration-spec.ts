@@ -46,10 +46,12 @@ describe('OrdersController (IT)', (): void => {
   };
 
   const VALID_UPDATE_DTO: OrderUpdateDto = {
+    status: Status.CREATED,
     courierId: 0,
   };
 
   const VALID_UPDATE_DTO_WITH_NOT_EXISTING_COURIER: OrderUpdateDto = {
+    status: Status.CREATED,
     courierId: 100000000,
   };
 

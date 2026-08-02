@@ -1,14 +1,16 @@
 import { Module } from '@nestjs/common';
 import { EmailService } from './email.service';
 import { MailerModule } from '@nestjs-modules/mailer';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ConfirmationCodesModule } from '../confirmation-codes/confirmation-codes.module';
 
 @Module({
   providers: [EmailService],
   imports: [
+    ConfigModule,
     ConfirmationCodesModule,
     MailerModule.forRootAsync({
+      imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         transport: {
