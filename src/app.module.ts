@@ -13,6 +13,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { ConfigModule } from '@nestjs/config';
 import { EmailModule } from './email/email.module';
 import { ConfirmationCodesModule } from './confirmation-codes/confirmation-codes.module';
+// import { typeOrmConfig } from './database/typeorm.config';
+import { AiModule } from './ai/ai.module';
+import { EmbeddingsModule } from './embeddings/embeddings.module';
 
 @Module({
   imports: [
@@ -25,13 +28,16 @@ import { ConfirmationCodesModule } from './confirmation-codes/confirmation-codes
     AuthModule,
     ConfirmationCodesModule,
     EmailModule,
+    AiModule,
+    EmbeddingsModule,
+    // TypeOrmModule.forRoot(typeOrmConfig),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: 'localhost',
       port: 5432,
       username: 'postgres',
       password: 'qwerty123',
-      database: 'FoodDelivery',
+      database: 'food_delivery',
       autoLoadEntities: true,
       synchronize: true,
     }),
