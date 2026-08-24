@@ -17,6 +17,7 @@ import { ConfirmationCodesModule } from './confirmation-codes/confirmation-codes
 import { AiModule } from './ai/ai.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { VectorStorageModule } from './vector-storage/vector-storage.module';
+import { IngestionModule } from './ingestion/ingestion.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { VectorStorageModule } from './vector-storage/vector-storage.module';
     AiModule,
     EmbeddingsModule,
     VectorStorageModule,
+    IngestionModule,
     // TypeOrmModule.forRoot(typeOrmConfig),
     TypeOrmModule.forRoot({
       type: 'postgres',
