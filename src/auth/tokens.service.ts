@@ -26,14 +26,7 @@ export class TokensService {
   }
 
   private validateTokenAndGetEmail(token: string, secret: string): string {
-    let payload: string | JwtPayload;
-
-    try {
-      payload = jwt.verify(token, secret);
-    } catch {
-      throw new UnauthorizedException('Token is invalid');
-    }
-
+    const payload: string | JwtPayload = jwt.verify(token, secret);
     if (
       payload !== null &&
       typeof payload === 'object' &&
@@ -42,7 +35,6 @@ export class TokensService {
     ) {
       return payload.email;
     }
-
     throw new UnauthorizedException('Token is invalid');
   }
 

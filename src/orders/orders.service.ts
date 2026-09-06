@@ -80,6 +80,16 @@ export class OrdersService {
     return order;
   }
 
+  async getActiveOrderByIdWithRelations(id: number): Promise<OrderDto> {
+    const order: Order | null = await this.repository.findByIdWithRelations(id);
+
+    if (!order || !order.active) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
+
+    return this.mapper.mapEntityToDto(order);
+  }
+
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
     // this.validator.validateUpdateDto(updateDto);
 

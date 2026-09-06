@@ -18,6 +18,17 @@ export class OrdersRepository {
     return this.repository.findOneBy({ id });
   }
 
+  async findByIdWithRelations(id: number): Promise<Order | null> {
+    return this.repository.findOne({
+      where: { id },
+      relations: {
+        customer: true,
+        courier: true,
+        restaurant: true,
+      },
+    });
+  }
+
   async findAllActive(): Promise<Order[]> {
     return this.repository.find();
   }

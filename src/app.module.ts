@@ -18,6 +18,7 @@ import { AiModule } from './ai/ai.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { VectorStorageModule } from './vector-storage/vector-storage.module';
 import { IngestionModule } from './ingestion/ingestion.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { IngestionModule } from './ingestion/ingestion.module';
     EmbeddingsModule,
     VectorStorageModule,
     IngestionModule,
+    ChatModule,
     // TypeOrmModule.forRoot(typeOrmConfig),
     TypeOrmModule.forRoot({
       type: 'postgres',

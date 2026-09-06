@@ -1,28 +1,31 @@
 import { Injectable } from '@nestjs/common';
-import { TxtExtractor } from './extractors/txt.extractor';
 import { CleanService } from './clean.service';
 import { ChunkingService } from './chunking.service';
 import { VectorStorageService } from '../vector-storage/vector-storage.service';
+import { MultiformatExtractor } from './extractors/multiformat.extractor';
+import { Chunk } from './types/chunk';
+import { IngestDocumentDto } from './dto/ingest-document.dto';
 
 @Injectable()
 export class IngestionService {
   constructor(
-    private readonly txtExtractor: TxtExtractor,
+    private readonly multiformatExtractor: MultiformatExtractor,
     private readonly cleanService: CleanService,
     private readonly chunkingService: ChunkingService,
     private readonly vectorStorageService: VectorStorageService,
   ) {}
 
-  async ingest(file: Express.Multer.File): Promise<void> {
-    const text: string = this.txtExtractor.extract(file.buffer);
-    const cleanedText: string = this.cleanService.cleanText(text);
-    const chunks: string[] =
-      this.chunkingService.chunkBySizeWithOverlap(cleanedText);
-    const payloads: object[] = this.mapChunksToPayloads(chunks);
-    await this.vectorStorageService.saveToDb(payloads);
-  }
-
-  private mapChunksToPayloads(chunks: string[]): object[] {
-    return chunks.map((c: string): object => ({ text: c }));
+  async ingest(
+    file: Express.Multer.File,
+    ingestDocumentDto: IngestDocumentDto,
+  ): Promise<void> {
+    const pages: string[] = await this.multiformatExtractor.extract(file);
+    const cleanedPages: string[] = this.cleanService.cleanTexts(pages);
+    const chunks: Chunk[] = this.chunkingService.chunkBySizeWithOverlap(
+      cleanedPages,
+      file.originalname,
+      ingestDocumentDto,
+    );
+    await this.vectorStorageService.saveToDb(chunks);
   }
 }
