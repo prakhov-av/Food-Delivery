@@ -3,7 +3,9 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsEnum,
+  IsInt,
   IsString,
+  Min,
 } from 'class-validator';
 import { Role } from '../../users/enums/role.enum';
 import { DocumentType } from '../enums/document-type.enum';
@@ -22,5 +24,11 @@ export class IngestDocumentDto {
 
   @IsString()
   language: string;
-}
 
+  @Transform(({ value }: TransformFnParams): number => Number(value))
+  @IsInt()
+  @Min(1)
+  documentVersion: number;
+
+  documentId: string;
+}

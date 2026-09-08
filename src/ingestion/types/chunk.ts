@@ -8,4 +8,6 @@ export class Chunk {
   documentType: DocumentType;
   allowedRoles: Role[];
   language: string;
+  documentVersion: number;
+  documentId: string;
 }

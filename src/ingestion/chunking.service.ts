@@ -71,6 +71,8 @@ export class ChunkingService {
     chunk.documentType = ingestDocumentDto.documentType;
     chunk.allowedRoles = ingestDocumentDto.allowedRoles;
     chunk.language = ingestDocumentDto.language;
+    chunk.documentVersion = ingestDocumentDto.documentVersion;
+    chunk.documentId = ingestDocumentDto.documentId;
     return chunk;
   }
 
