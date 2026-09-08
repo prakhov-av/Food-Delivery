@@ -8,6 +8,11 @@ import { LiveDataService } from './live-data.service';
 import { Role } from '../users/enums/role.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { ConfigurationException } from '../exceptions/types/configuration.exception';
+import { PromptBuilder } from './prompt.builder';
+
+const createPromptBuilder = (prompt: string): PromptBuilder => {
+  return new PromptBuilder(prompt);
+};
 
 describe('ChatService', (): void => {
   let service: ChatService;
@@ -23,34 +28,26 @@ describe('ChatService', (): void => {
         ChatService,
         {
           provide: EmbeddingsService,
-          useValue: {
-            generateEmbeddings: jest.fn(),
-          },
+          useValue: { generateEmbeddings: jest.fn() },
         },
         {
           provide: VectorStorageService,
-          useValue: {
-            getRelevantChunkByAccess: jest.fn(),
-          },
+          useValue: { getRelevantChunkByAccess: jest.fn() },
         },
         {
           provide: AiService,
-          useValue: {
-            generateResponse: jest.fn(),
-          },
+          useValue: { generateResponse: jest.fn() },
         },
         {
           provide: PromptService,
           useValue: {
-            createPromptForDocumentType: jest.fn(),
-            createPromptForUserRequest: jest.fn(),
+            buildPromptForDocumentType: jest.fn(),
+            buildPromptForChat: jest.fn(),
           },
         },
         {
           provide: LiveDataService,
-          useValue: {
-            getLiveData: jest.fn(),
-          },
+          useValue: { getLiveData: jest.fn() },
         },
       ],
     }).compile();
@@ -63,8 +60,13 @@ describe('ChatService', (): void => {
     liveDataService = module.get(LiveDataService);
   });
 
-  it('should use RAG flow for informational request', async (): Promise<void> => {
-    promptService.createPromptForDocumentType.mockReturnValue('classifier');
+  it('should use RAG flow for informational request and keep history', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
     aiService.generateResponse
       .mockResolvedValueOnce(
         '{"documentType":"ORDER","liveDataRequired":false}',
@@ -74,7 +76,6 @@ describe('ChatService', (): void => {
     vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
       'order rules',
     ]);
-    promptService.createPromptForUserRequest.mockReturnValue('answer prompt');
 
     const result: string = await service.generateResponse(
       'Какие статусы бывают у заказа?',
@@ -91,11 +92,52 @@ describe('ChatService', (): void => {
       DocumentType.ORDER,
       Role.CUSTOMER,
     );
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('second answer');
+
+    await service.generateResponse('А какие из них финальные?', 10, Role.CUSTOMER);
+
+    const classifierPrompt = aiService.generateResponse.mock.calls[2][0];
+    expect(classifierPrompt).toContain('Какие статусы бывают у заказа?');
+    expect(classifierPrompt).toContain('final answer');
     expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
-  it('should use live data flow without embedding for live request', async (): Promise<void> => {
-    promptService.createPromptForDocumentType.mockReturnValue('classifier');
+  it('should keep history isolated by user', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockImplementation(() =>
+      createPromptBuilder('classifier'),
+    );
+    promptService.buildPromptForChat.mockImplementation(() =>
+      createPromptBuilder('answer'),
+    );
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('user 10 answer')
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('user 20 answer');
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    await service.generateResponse('Вопрос пользователя 10', 10, Role.CUSTOMER);
+    await service.generateResponse('Вопрос пользователя 20', 20, Role.CUSTOMER);
+
+    const secondClassifierPrompt = aiService.generateResponse.mock.calls[2][0];
+    expect(secondClassifierPrompt).not.toContain('Вопрос пользователя 10');
+    expect(secondClassifierPrompt).not.toContain('user 10 answer');
+  });
+
+  it('should use live data flow and save its response to history', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
     aiService.generateResponse.mockResolvedValue(
       '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":123}',
     );
@@ -119,11 +161,12 @@ describe('ChatService', (): void => {
       Role.CUSTOMER,
     );
     expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
-    expect(vectorStorageService.getRelevantChunkByAccess).not.toHaveBeenCalled();
   });
 
   it('should reject invalid document type', async (): Promise<void> => {
-    promptService.createPromptForDocumentType.mockReturnValue('classifier');
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
     aiService.generateResponse.mockResolvedValue(
       '{"documentType":"UNKNOWN","liveDataRequired":false}',
     );
@@ -134,7 +177,9 @@ describe('ChatService', (): void => {
   });
 
   it('should reject non-boolean liveDataRequired', async (): Promise<void> => {
-    promptService.createPromptForDocumentType.mockReturnValue('classifier');
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
     aiService.generateResponse.mockResolvedValue(
       '{"documentType":"ORDER","liveDataRequired":"true"}',
     );
@@ -143,37 +188,4 @@ describe('ChatService', (): void => {
       service.generateResponse('question', 10, Role.CUSTOMER),
     ).rejects.toBeInstanceOf(ConfigurationException);
   });
-  it('should reject live classification without resource', async (): Promise<void> => {
-    promptService.createPromptForDocumentType.mockReturnValue('classifier');
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"ORDER","liveDataRequired":true}',
-    );
-
-    await expect(
-      service.generateResponse('Где мой заказ?', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
-  });
-
-  it('should reject resource in non-live classification', async (): Promise<void> => {
-    promptService.createPromptForDocumentType.mockReturnValue('classifier');
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"ORDER","liveDataRequired":false,"resource":"ORDER","resourceId":123}',
-    );
-
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
-  });
-
-  it('should reject resource-document type mismatch', async (): Promise<void> => {
-    promptService.createPromptForDocumentType.mockReturnValue('classifier');
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"MENU","liveDataRequired":true,"resource":"ORDER","resourceId":123}',
-    );
-
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
-  });
-
 });

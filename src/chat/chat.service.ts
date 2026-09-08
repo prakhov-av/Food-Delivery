@@ -9,9 +9,15 @@ import { ConfigurationException } from '../exceptions/types/configuration.except
 import { ChatClassification } from './types/chat-classification';
 import { LiveDataService } from './live-data.service';
 import { LiveDataResource } from './enums/live-data-resource.enum';
+import { ChatMessage } from './types/chat-message';
 
 @Injectable()
 export class ChatService {
+  private readonly chatHistory: Map<number, ChatMessage[]> = new Map<
+    number,
+    ChatMessage[]
+  >();
+
   constructor(
     private readonly embeddingsService: EmbeddingsService,
     private readonly vectorStorageService: VectorStorageService,
@@ -25,8 +31,14 @@ export class ChatService {
     userId: number,
     userRole: Role,
   ): Promise<string> {
-    const classifierPrompt: string =
-      this.promptService.createPromptForDocumentType(request);
+    const chatHistory: ChatMessage[] = this.getChatHistoryByUserId(userId);
+
+    const classifierPrompt: string = this.promptService
+      .buildPromptForDocumentType()
+      .withUserRole(userRole)
+      .withChatHistory(chatHistory)
+      .withQuestion(request)
+      .build();
 
     const classificationResponse: string =
       await this.aiService.generateResponse(classifierPrompt);
@@ -35,7 +47,15 @@ export class ChatService {
       this.parseClassification(classificationResponse);
 
     if (classification.liveDataRequired) {
-      return this.liveDataService.getLiveData(classification, userId, userRole);
+      const aiResponse: string = await this.liveDataService.getLiveData(
+        classification,
+        userId,
+        userRole,
+      );
+
+      this.addChatHistoryByUserId(userId, request, aiResponse);
+
+      return aiResponse;
     }
 
     const documentType: DocumentType = classification.documentType;
@@ -52,13 +72,39 @@ export class ChatService {
       );
 
 
-    const prompt: string = this.promptService.createPromptForUserRequest(
-      relevantChunks,
-      request,
-    );
+    const prompt: string = this.promptService
+      .buildPromptForChat()
+      .withUserRole(userRole)
+      .withContext(relevantChunks)
+      .withChatHistory(chatHistory)
+      .withQuestion(request)
+      .build();
 
+    const aiResponse: string = await this.aiService.generateResponse(prompt);
 
-    return this.aiService.generateResponse(prompt);
+    this.addChatHistoryByUserId(userId, request, aiResponse);
+
+    return aiResponse;
+  }
+
+  private getChatHistoryByUserId(userId: number): ChatMessage[] {
+    return this.chatHistory.get(userId)?.slice(-10) ?? [];
+  }
+
+  private addChatHistoryByUserId(
+    userId: number,
+    userRequest: string,
+    aiResponse: string,
+  ): void {
+    const message: ChatMessage = new ChatMessage();
+    message.userRequest = userRequest;
+    message.aiAnswer = aiResponse;
+
+    if (this.chatHistory.has(userId)) {
+      this.chatHistory.get(userId)?.push(message);
+    } else {
+      this.chatHistory.set(userId, [message]);
+    }
   }
 
   private parseClassification(value: string): ChatClassification {
