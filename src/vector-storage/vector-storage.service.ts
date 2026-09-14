@@ -82,6 +82,7 @@ export class VectorStorageService {
     payload.language = chunk.language;
     payload.documentVersion = chunk.documentVersion;
     payload.documentId = chunk.documentId;
+    payload.index = chunk.index;
     return payload;
   }
 
@@ -89,7 +90,7 @@ export class VectorStorageService {
     embedding: number[],
     documentType: DocumentType,
     userRole: Role,
-  ): Promise<string[]> {
+  ): Promise<QdrantResult[]> {
     const relevantChunks: QdrantResult[] =
       await this.client.getRelevantChunksByAccess(
         embedding,
@@ -97,6 +98,6 @@ export class VectorStorageService {
         userRole,
       );
 
-    return relevantChunks.map((c: QdrantResult): string => c.payload.text);
+    return relevantChunks;
   }
 }

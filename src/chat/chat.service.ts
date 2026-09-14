@@ -10,6 +10,8 @@ import { ChatClassification } from './types/chat-classification';
 import { LiveDataService } from './live-data.service';
 import { LiveDataResource } from './enums/live-data-resource.enum';
 import { ChatMessage } from './types/chat-message';
+import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
+import { ContextService } from './context.service';
 
 @Injectable()
 export class ChatService {
@@ -24,6 +26,7 @@ export class ChatService {
     private readonly aiService: AiService,
     private readonly promptService: PromptService,
     private readonly liveDataService: LiveDataService,
+    private readonly contextService: ContextService,
   ) {}
 
   async generateResponse(
@@ -40,11 +43,15 @@ export class ChatService {
       .withQuestion(request)
       .build();
 
+    console.log('\nCreated classifierPrompt:\n');
+    console.log(classifierPrompt + '\n');
+
     const classificationResponse: string =
       await this.aiService.generateResponse(classifierPrompt);
 
-    const classification: ChatClassification =
-      this.parseClassification(classificationResponse);
+    const classification: ChatClassification = this.parseClassification(
+      classificationResponse,
+    );
 
     if (classification.liveDataRequired) {
       const aiResponse: string = await this.liveDataService.getLiveData(
@@ -64,21 +71,26 @@ export class ChatService {
       await this.embeddingsService.generateEmbeddings([request])
     )[0];
 
-    const relevantChunks: string[] =
+    const relevantChunks: QdrantResult[] =
       await this.vectorStorageService.getRelevantChunkByAccess(
         embedding,
         documentType,
         userRole,
       );
 
+    const context: string[] =
+      this.contextService.generateContext(relevantChunks);
 
     const prompt: string = this.promptService
       .buildPromptForChat()
       .withUserRole(userRole)
-      .withContext(relevantChunks)
+      .withContext(context)
       .withChatHistory(chatHistory)
       .withQuestion(request)
       .build();
+
+    console.log('\nCreated prompt for AI chat:\n');
+    console.log(prompt + '\n');
 
     const aiResponse: string = await this.aiService.generateResponse(prompt);
 
@@ -203,27 +215,25 @@ export class ChatService {
       normalizedResource === undefined
     ) {
       throw new ConfigurationException(
-        `resourceId requires a resource in chat classification`,
+        'resourceId requires a resource in chat classification',
       );
     }
 
     if (
       classification.liveDataRequired &&
-      (normalizedResource === undefined ||
-        normalizedResourceId === undefined)
+      (normalizedResource === undefined || normalizedResourceId === undefined)
     ) {
       throw new ConfigurationException(
-        `Live data classification requires resource and resourceId`,
+        'Live data classification requires resource and resourceId',
       );
     }
 
     if (
       !classification.liveDataRequired &&
-      (normalizedResource !== undefined ||
-        normalizedResourceId !== undefined)
+      (normalizedResource !== undefined || normalizedResourceId !== undefined)
     ) {
       throw new ConfigurationException(
-        `resource and resourceId require liveDataRequired=true`,
+        'resource and resourceId require liveDataRequired=true',
       );
     }
 
@@ -232,7 +242,7 @@ export class ChatService {
       classification.documentType !== DocumentType.ORDER
     ) {
       throw new ConfigurationException(
-        `ORDER live data resource requires ORDER document type`,
+        'ORDER live data resource requires ORDER document type',
       );
     }
 

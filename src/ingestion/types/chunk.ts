@@ -10,4 +10,5 @@ export class Chunk {
   language: string;
   documentVersion: number;
   documentId: string;
+  index: number;
 }

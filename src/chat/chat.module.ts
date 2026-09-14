@@ -7,10 +7,11 @@ import { AiModule } from '../ai/ai.module';
 import { PromptService } from './prompt.service';
 import { LiveDataService } from './live-data.service';
 import { OrdersModule } from '../orders/orders.module';
+import { ContextService } from './context.service';
 
 @Module({
   controllers: [ChatController],
-  providers: [ChatService, PromptService, LiveDataService],
+  providers: [ChatService, PromptService, LiveDataService, ContextService],
   imports: [EmbeddingsModule, VectorStorageModule, AiModule, OrdersModule],
 })
 export class ChatModule {}

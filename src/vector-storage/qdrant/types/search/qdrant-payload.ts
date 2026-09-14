@@ -10,4 +10,5 @@ export class QdrantPayload {
   language: string;
   documentVersion: number;
   documentId: string;
+  index: number;
 }
