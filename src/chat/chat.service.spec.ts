@@ -3,13 +3,13 @@ import { ChatService } from './chat.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { VectorStorageService } from '../vector-storage/vector-storage.service';
 import { AiService } from '../ai/ai.service';
-import { PromptService } from './prompt.service';
+import { PromptService } from '../prompts/prompt.service';
 import { LiveDataService } from './live-data.service';
 import { ContextService } from './context.service';
 import { Role } from '../users/enums/role.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { ConfigurationException } from '../exceptions/types/configuration.exception';
-import { PromptBuilder } from './prompt.builder';
+import { PromptBuilder } from '../prompts/prompt.builder';
 import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
 
 const createPromptBuilder = (prompt: string): PromptBuilder => {

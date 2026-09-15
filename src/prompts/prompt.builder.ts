@@ -1,5 +1,5 @@
 import { Role } from '../users/enums/role.enum';
-import { ChatMessage } from './types/chat-message';
+import { ChatMessage } from '../chat/types/chat-message';
 
 export class PromptBuilder {
   private prompt: string;
@@ -9,17 +9,32 @@ export class PromptBuilder {
   }
 
   withUserRole(role: Role): PromptBuilder {
-    this.prompt = `${this.prompt}\n\nРоль пользователя:\n${role}`;
+    this.prompt = `${this.prompt}
+    
+Роль пользователя:
+${role}`;
     return this;
   }
 
   withContext(chunks: string[]): PromptBuilder {
-    this.prompt = `${this.prompt}\n\nКонтекст:\n\n${chunks.join('\n\n')}\n\nКонец контекста.`;
+    this.prompt = `${this.prompt}
+    
+Контекст:
+
+${chunks.join('\n\n')}
+
+Конец контекста.`;
     return this;
   }
 
   withChatHistory(chatHistory: ChatMessage[]): PromptBuilder {
-    this.prompt = `${this.prompt}\n\nИстория диалога:\n\n${this.mapChatHistoryToMultistring(chatHistory)}\n\nКонец истории диалога.`;
+    this.prompt = `${this.prompt}
+    
+История диалога:
+
+${this.mapChatHistoryToMultistring(chatHistory)}
+
+Конец истории диалога.`;
     return this;
   }
 
@@ -33,7 +48,21 @@ export class PromptBuilder {
   }
 
   withQuestion(request: string): PromptBuilder {
-    this.prompt = `${this.prompt}\n\nВопрос пользователя:\n${request}`;
+    this.prompt = `${this.prompt}
+    
+Вопрос пользователя:
+${request}`;
+    return this;
+  }
+
+  withDocument(documentText: string): PromptBuilder {
+    this.prompt = `${this.prompt}
+    
+Анализируемый документ:
+
+${documentText}
+
+Конец анализируемого документа.`;
     return this;
   }
 

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { VectorStorageService } from '../vector-storage/vector-storage.service';
 import { AiService } from '../ai/ai.service';
-import { PromptService } from './prompt.service';
+import { PromptService } from '../prompts/prompt.service';
 import { Role } from '../users/enums/role.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { ConfigurationException } from '../exceptions/types/configuration.exception';
