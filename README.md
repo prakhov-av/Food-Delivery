@@ -1,98 +1,63 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Food Delivery API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+REST API для управления пользователями, ресторанами, меню и заказами, дополненный RAG-чатом и загрузкой внутренней базы знаний. Проект построен на NestJS, TypeORM, PostgreSQL и Qdrant.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+> Текущее состояние: учебно-прикладной backend. Документация отражает реальное поведение исходного кода на момент её подготовки. Перед публичным production-развёртыванием выполните [чек-лист готовности](docs/OPERATIONS.md#перед-production-запуском).
 
-## Description
+## Возможности
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Регистрация с email-подтверждением и cookie-based JWT-сессии.
+- Управление пользователями, ресторанами, меню, позициями меню, заказами и позициями заказов.
+- Роли `ADMIN`, `MANAGER`, `CUSTOMER`, `COURIER`.
+- Загрузка TXT, PDF и DOCX в базу знаний с модерацией контента, эмбеддингами и версионированием.
+- Чат с доступом к знаниям в Qdrant и, для заказов, к актуальным данным приложения.
+- Swagger UI, глобальная валидация, логирование и единый формат ошибок.
 
-## Project setup
+## Быстрый старт
+
+Требования: Node.js 20+ (рекомендуется 22 LTS), npm 10+, PostgreSQL 15+ и Qdrant, доступный по HTTP. Для функций AI и почты нужны учётные данные соответствующих провайдеров.
 
 ```bash
-$ npm install
+npm ci
+Copy-Item .env.example .env
+# заполните .env значениями для своей среды
+npm run start:dev
 ```
 
-## Compile and run the project
+После старта сервис слушает `http://localhost:3000` (переменная `PORT`). Интерактивная спецификация доступна по адресу [http://localhost:3000/swagger](http://localhost:3000/swagger).
 
-```bash
-# development
-$ npm run start
+Полная настройка — в [docs/CONFIGURATION.md](docs/CONFIGURATION.md), эксплуатационные команды — в [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
-# watch mode
-$ npm run start:dev
+## Документация
 
-# production mode
-$ npm run start:prod
+- [Справочник API](docs/API.md) — все 43 HTTP-эндпоинта, авторизация, роли, тела запросов и примеры.
+- [Архитектура](docs/ARCHITECTURE.md) — модули, зависимости и потоки данных.
+- [Конфигурация](docs/CONFIGURATION.md) — переменные среды и локальное окружение.
+- [Разработка и тестирование](docs/DEVELOPMENT.md) — стиль, команды и правила вклада.
+- [Эксплуатация](docs/OPERATIONS.md) — логи, диагностика, бэкапы и production checklist.
+- [Политика безопасности](SECURITY.md) и [история изменений](docs/rfcs/CHANGELOG.md).
+
+## Команды
+
+| Команда                    | Назначение                                   |
+| -------------------------- | -------------------------------------------- |
+| `npm run start:dev`        | Запуск с hot reload.                         |
+| `npm run build`            | Компиляция в `dist/`.                        |
+| `npm run start:prod`       | Запуск скомпилированного приложения.         |
+| `npm run lint`             | ESLint с автоисправлением.                   |
+| `npm run format`           | Форматирование исходников и тестов Prettier. |
+| `npm test`                 | Unit-тесты.                                  |
+| `npm run test:integration` | Интеграционные тесты.                        |
+| `npm run test:cov`         | Unit-тесты с покрытием.                      |
+
+## Данные для локальной демонстрации
+
+Файл [database-demo/demo.sql](database-demo/demo.sql) очищает и заполняет таблицы демонстрационными пользователями, ресторанами, меню и позициями. Он предназначен только для локальной тестовой БД: скрипт содержит `TRUNCATE` и необратимо удаляет данные из перечисленных таблиц.
+
+```powershell
+psql -h localhost -U postgres -d food_delivery -f database-demo/demo.sql
 ```
 
-## Run tests
+## Лицензия
 
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+В `package.json` проект помечен как `UNLICENSED`. Права на использование и распространение нужно определить владельцу репозитория до внешней публикации.
