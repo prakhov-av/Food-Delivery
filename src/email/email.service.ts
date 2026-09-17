@@ -27,8 +27,9 @@ export class EmailService {
 
   private buildConfirmationLink(codeValue: string): string {
     const host: string = this.configService.getOrThrow('SERVER_HOST');
-    const port: string = this.configService.getOrThrow('SERVER_PORT');
+    // const port: string = this.configService.getOrThrow('SERVER_PORT');
 
-    return `http://${host}:${port}/users/confirm/${codeValue}`;
+    // return `http://${host}:${port}/users/confirm/${codeValue}`;
+    return `http://${host}/users/confirm/${codeValue}`;
   }
 }
