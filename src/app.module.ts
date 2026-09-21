@@ -50,9 +50,10 @@ import { PromptsModule } from './prompts/prompts.module';
         database: configService.getOrThrow<string>('DB_DATABASE'),
         autoLoadEntities: true,
         synchronize: true,
-        ssl: {
-          rejectUnauthorized: false,
-        },
+        ssl:
+          configService.get<string>('DB_SSL') === 'true'
+            ? { rejectUnauthorized: false }
+            : false,
       }),
       inject: [ConfigService],
     }),
