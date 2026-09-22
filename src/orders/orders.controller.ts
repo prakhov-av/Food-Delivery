@@ -9,13 +9,17 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
+
 import { Status } from './enums/status.enum';
 import { OrderUpdateDto } from './dto/order.update-dto';
 import { OrdersService } from './orders.service';
 import { ApiOkResponse } from '@nestjs/swagger';
 import { OrderDto } from './dto/order.dto';
 import { OrderSaveDto } from './dto/order.save-dto';
+import { User } from '../users/user.entity';
 
 @Controller('orders')
 export class OrdersController {
@@ -26,7 +30,9 @@ export class OrdersController {
   @ApiOkResponse({
     type: OrderDto,
   })
-  async create(@Body() saveDto: OrderSaveDto): Promise<OrderDto> {
+  async create(
+      @Body() saveDto: OrderSaveDto,
+  ): Promise<OrderDto> {
     return this.service.create(saveDto);
   }
 
@@ -35,23 +41,28 @@ export class OrdersController {
     type: OrderDto,
     isArray: true,
   })
-  async getAll(): Promise<OrderDto[]> {
-    return this.service.getAllOrders();
+  async getAll(
+      @Req() req: Request & { user: User },
+  ): Promise<OrderDto[]> {
+    return this.service.getAllOrders(req.user);
   }
 
   @Get(':id')
   @ApiOkResponse({
     type: OrderDto,
   })
-  async getById(@Param('id', ParseIntPipe) id: number): Promise<OrderDto> {
-    return this.service.getOrderById(id);
+  async getById(
+      @Param('id', ParseIntPipe) id: number,
+      @Req() req: Request & { user: User },
+  ): Promise<OrderDto> {
+    return this.service.getOrderById(id, req.user);
   }
 
   @Patch(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateDto: OrderUpdateDto,
+      @Param('id', ParseIntPipe) id: number,
+      @Body() updateDto: OrderUpdateDto,
   ): Promise<void> {
     await this.service.update(id, updateDto);
   }
@@ -59,9 +70,10 @@ export class OrdersController {
   @Patch(':id/set-status/:status')
   @HttpCode(HttpStatus.NO_CONTENT)
   async setStatus(
-    @Param('id', ParseIntPipe) id: number,
-    @Param('status', new ParseEnumPipe(Status)) status: Status,
+      @Param('id', ParseIntPipe) id: number,
+      @Param('status', new ParseEnumPipe(Status)) status: Status,
+      @Req() req: Request & { user: User },
   ): Promise<void> {
-    await this.service.setStatus(id, status);
+    await this.service.setStatus(id, status, req.user);
   }
 }
