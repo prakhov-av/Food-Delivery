@@ -26,7 +26,8 @@ import { checkOrderAccess } from './validation/order-access';
 
 @Injectable()
 export class OrdersService {
-  private readonly logger: Logger = new Logger(OrdersService.name);
+  private readonly logger: Logger =
+      new Logger(OrdersService.name);
 
   constructor(
       private readonly repository: OrdersRepository,
@@ -35,14 +36,14 @@ export class OrdersService {
       private readonly restaurantsService: RestaurantsService,
   ) {}
 
-  async create(saveDto: OrderSaveDto): Promise<OrderDto> {
+  async create(
+      saveDto: OrderSaveDto,
+      user: User,
+  ): Promise<OrderDto> {
     const entity: Order =
         this.mapper.mapDtoToEntity(saveDto);
 
-    entity.customer =
-        await this.usersService.getActiveEntityById(
-            saveDto.customerId,
-        );
+    entity.customer = user;
 
     entity.restaurant =
         await this.restaurantsService.getActiveEntityById(
@@ -77,14 +78,6 @@ export class OrdersService {
     return this.mapper.mapEntityToDto(entity);
   }
 
-  /**
-   * Получение списка заказов.
-   *
-   * ADMIN    -> все
-   * MANAGER  -> все
-   * CUSTOMER -> только свои
-   * COURIER  -> только назначенные ему
-   */
   async getAllOrders(
       user: User,
   ): Promise<OrderDto[]> {
@@ -104,7 +97,8 @@ export class OrdersService {
       accessibleOrders = orders;
     } else if (user.role === Role.CUSTOMER) {
       accessibleOrders = orders.filter(
-          (order) => order.customer.id === user.id,
+          (order) =>
+              order.customer.id === user.id,
       );
     } else if (user.role === Role.COURIER) {
       accessibleOrders = orders.filter(
@@ -255,12 +249,10 @@ export class OrdersService {
       );
     }
 
-    // Может ли пользователь работать
-    // именно с этим заказом?
+
     checkOrderAccess(order, user);
 
-    // Может ли его роль сделать
-    // именно такой переход?
+
     checkOrderStatusChange(
         order.status,
         status,
