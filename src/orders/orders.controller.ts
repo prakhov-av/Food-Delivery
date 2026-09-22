@@ -22,13 +22,11 @@ import { OrderSaveDto } from './dto/order.save-dto';
 import { User } from '../users/user.entity';
 
 import { Role } from '../users/enums/role.enum';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { Roles } from '../auth/types/auth.decorators';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(
-      private readonly service: OrdersService,
-  ) {}
+  constructor(private readonly service: OrdersService) {}
 
   @Post()
   @Roles(Role.CUSTOMER)
@@ -37,13 +35,10 @@ export class OrdersController {
     type: OrderDto,
   })
   async create(
-      @Body() saveDto: OrderSaveDto,
-      @Req() req: Request & { user: User },
+    @Body() saveDto: OrderSaveDto,
+    @Req() req: Request & { user: User },
   ): Promise<OrderDto> {
-    return this.service.create(
-        saveDto,
-        req.user,
-    );
+    return this.service.create(saveDto, req.user);
   }
 
   @Get()
@@ -51,12 +46,8 @@ export class OrdersController {
     type: OrderDto,
     isArray: true,
   })
-  async getAll(
-      @Req() req: Request & { user: User },
-  ): Promise<OrderDto[]> {
-    return this.service.getAllOrders(
-        req.user,
-    );
+  async getAll(@Req() req: Request & { user: User }): Promise<OrderDto[]> {
+    return this.service.getAllOrders(req.user);
   }
 
   @Get(':id')
@@ -64,48 +55,31 @@ export class OrdersController {
     type: OrderDto,
   })
   async getById(
-      @Param('id', ParseIntPipe) id: number,
-      @Req() req: Request & { user: User },
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request & { user: User },
   ): Promise<OrderDto> {
-    return this.service.getOrderById(
-        id,
-        req.user,
-    );
+    return this.service.getOrderById(id, req.user);
   }
 
   @Patch(':id')
   @Roles(Role.ADMIN, Role.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async update(
-      @Param('id', ParseIntPipe) id: number,
-      @Body() updateDto: OrderUpdateDto,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDto: OrderUpdateDto,
   ): Promise<void> {
-    await this.service.update(
-        id,
-        updateDto,
-    );
+    await this.service.update(id, updateDto);
   }
 
   @Patch(':id/set-status/:status')
-  @Roles(
-      Role.ADMIN,
-      Role.MANAGER,
-      Role.COURIER,
-  )
+  @Roles(Role.ADMIN, Role.MANAGER, Role.COURIER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async setStatus(
-      @Param('id', ParseIntPipe) id: number,
-      @Param(
-          'status',
-          new ParseEnumPipe(Status),
-      )
-      status: Status,
-      @Req() req: Request & { user: User },
+    @Param('id', ParseIntPipe) id: number,
+    @Param('status', new ParseEnumPipe(Status))
+    status: Status,
+    @Req() req: Request & { user: User },
   ): Promise<void> {
-    await this.service.setStatus(
-        id,
-        status,
-        req.user,
-    );
+    await this.service.setStatus(id, status, req.user);
   }
 }
