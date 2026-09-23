@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { OrdersService } from '../orders/orders.service';
 import { Role } from '../users/enums/role.enum';
 import { OrderDto } from '../orders/dto/order.dto';
@@ -26,34 +26,24 @@ export class LiveDataService {
 
     const orderId: number = classification.resourceId;
 
-    const order: OrderDto =
-      await this.ordersService.getActiveOrderByIdWithRelations(orderId);
+    try {
+      const order: OrderDto =
+        await this.ordersService.getOrderByIdWithRelations(orderId, {
+          id: userId,
+          role: userRole,
+        });
 
-    if (!this.canAccessOrder(order, userId, userRole)) {
-      throw new EntityNotFoundException('Order', orderId);
+      return this.formatOrderData(order);
+    } catch (error: unknown) {
+      if (
+        error instanceof EntityNotFoundException ||
+        error instanceof ForbiddenException
+      ) {
+        return this.formatOrderAccessMessage(orderId, userRole);
+      }
+
+      throw error;
     }
-
-    return this.formatOrderData(order);
-  }
-
-  private canAccessOrder(
-    order: OrderDto,
-    userId: number,
-    userRole: Role,
-  ): boolean {
-    if (userRole === Role.ADMIN || userRole === Role.MANAGER) {
-      return true;
-    }
-
-    if (userRole === Role.CUSTOMER) {
-      return order.customer.id === userId;
-    }
-
-    if (userRole === Role.COURIER) {
-      return order.courier?.id === userId;
-    }
-
-    return false;
   }
 
   private formatOrderData(order: OrderDto): string {
@@ -62,9 +52,21 @@ export class LiveDataService {
       `Статус: ${order.status ?? 'не указан'}`,
       `Сумма: ${order.totalPrice}`,
       `Ресторан: ${order.restaurant.name}`,
-      `Клиент: ${order.customer.name}`,
+      `Пользователь: ${order.customer.name}`,
       `Курьер: ${order.courier?.name ?? 'не назначен'}`,
       `Создан: ${order.createdAt.toISOString()}`,
     ].join('\n');
+  }
+
+  private formatOrderAccessMessage(orderId: number, userRole: Role): string {
+    if (userRole === Role.COURIER) {
+      return `У вас нет заказа №${orderId} на выполнение.`;
+    }
+
+    if (userRole === Role.CUSTOMER) {
+      return `У вас нет заказа №${orderId} среди ваших заказов.`;
+    }
+
+    return `Заказ №${orderId} не найден.`;
   }
 }
