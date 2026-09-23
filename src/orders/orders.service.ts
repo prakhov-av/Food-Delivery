@@ -65,7 +65,7 @@ export class OrdersService {
     return this.mapper.mapEntityToDto(entity);
   }
 
-  async getAllOrders(user: User): Promise<OrderDto[]> {
+  async getAllOrders(user: Pick<User, 'id' | 'role'>): Promise<OrderDto[]> {
     const orders: Order[] = await this.repository.findAllActive();
 
     if (orders.length === 0) {
@@ -95,6 +95,23 @@ export class OrdersService {
     return this.mapper.mapEntityListToDtoList(accessibleOrders);
   }
 
+  async getCurrentOrders(user: Pick<User, 'id' | 'role'>): Promise<OrderDto[]> {
+    const orders: OrderDto[] = await this.getAllOrders(user);
+
+    const currentOrders: OrderDto[] = orders.filter(
+      (order: OrderDto): boolean =>
+        order.status !== Status.COMPLETED &&
+        order.status !== Status.CANCELLED_CUSTOMER &&
+        order.status !== Status.CANCELLED_COURIER,
+    );
+
+    if (currentOrders.length === 0) {
+      throw new EntityNotFoundException(Order.name);
+    }
+
+    return currentOrders;
+  }
+
   /**
    * Получение одного заказа.
    */
@@ -120,7 +137,11 @@ export class OrdersService {
     id: number,
     user: Pick<User, 'id' | 'role'>,
   ): Promise<OrderDto> {
-    const order: Order = await this.getActiveEntityByIdWithRelations(id);
+    const order: Order | null = await this.repository.findByIdWithRelations(id);
+
+    if (!order || !order.active) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
 
     checkOrderAccess(order, user);
 
@@ -128,19 +149,13 @@ export class OrdersService {
   }
 
   async getActiveOrderByIdWithRelations(id: number): Promise<OrderDto> {
-    const order: Order = await this.getActiveEntityByIdWithRelations(id);
-
-    return this.mapper.mapEntityToDto(order);
-  }
-
-  private async getActiveEntityByIdWithRelations(id: number): Promise<Order> {
     const order: Order | null = await this.repository.findByIdWithRelations(id);
 
     if (!order || !order.active) {
       throw new EntityNotFoundException(Order.name, id);
     }
 
-    return order;
+    return this.mapper.mapEntityToDto(order);
   }
 
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
