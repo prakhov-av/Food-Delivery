@@ -3,8 +3,11 @@ import { Order } from '../order.entity';
 import { User } from '../../users/user.entity';
 import { Role } from '../../users/enums/role.enum';
 
-export function checkOrderAccess(order: Order, user: User): void {
-  if (user.role === Role.ADMIN) {
+export function checkOrderAccess(
+  order: Order,
+  user: Pick<User, 'id' | 'role'>,
+): void {
+  if (user.role === Role.ADMIN || user.role === Role.MANAGER) {
     return;
   }
 

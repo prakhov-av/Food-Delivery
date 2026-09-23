@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { LiveDataService } from './live-data.service';
 import { OrdersService } from '../orders/orders.service';
 import { Role } from '../users/enums/role.enum';
@@ -6,6 +7,7 @@ import { OrderDto } from '../orders/dto/order.dto';
 import { ChatClassification } from './types/chat-classification';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
+import { LiveDataResource } from './enums/live-data-resource.enum';
 
 describe('LiveDataService', (): void => {
   const ORDER: OrderDto = {
@@ -30,20 +32,23 @@ describe('LiveDataService', (): void => {
   const classification: ChatClassification = {
     documentType: DocumentType.ORDER,
     liveDataRequired: true,
-    resource: 'ORDER',
+    resource: LiveDataResource.ORDER,
     resourceId: 123,
   };
 
   let service: LiveDataService;
   let ordersService: jest.Mocked<OrdersService>;
+  let getOrderByIdWithRelations: jest.Mock;
 
   beforeEach((): void => {
+    getOrderByIdWithRelations = jest.fn();
+
     ordersService = {
-      getActiveOrderByIdWithRelations: jest.fn(),
+      getOrderByIdWithRelations,
     } as unknown as jest.Mocked<OrdersService>;
 
     service = new LiveDataService(ordersService);
-    ordersService.getActiveOrderByIdWithRelations.mockResolvedValue(ORDER);
+    getOrderByIdWithRelations.mockResolvedValue(ORDER);
   });
 
   it('should return live order data for its customer', async (): Promise<void> => {
@@ -55,9 +60,13 @@ describe('LiveDataService', (): void => {
 
     expect(result).toContain('Заказ №123');
     expect(result).toContain('Статус: NEW');
-    expect(ordersService.getActiveOrderByIdWithRelations).toHaveBeenCalledWith(
-      123,
-    );
+    expect(result).toContain('Пользователь: Customer');
+    expect(result).toContain('Курьер: Courier');
+
+    expect(getOrderByIdWithRelations).toHaveBeenCalledWith(123, {
+      id: 10,
+      role: Role.CUSTOMER,
+    });
   });
 
   it('should return live order data for its courier', async (): Promise<void> => {
@@ -68,12 +77,39 @@ describe('LiveDataService', (): void => {
     );
 
     expect(result).toContain('Заказ №123');
+    expect(result).toContain('Курьер: Courier');
   });
 
-  it('should deny customer access to another customer order', async (): Promise<void> => {
-    await expect(
-      service.getLiveData(classification, 999, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(EntityNotFoundException);
+  it('should deny customer access without exposing order data', async (): Promise<void> => {
+    getOrderByIdWithRelations.mockRejectedValue(
+      new ForbiddenException('Customer can only access own orders'),
+    );
+
+    const result: string = await service.getLiveData(
+      classification,
+      999,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('У вас нет заказа №123 среди ваших заказов.');
+    expect(result).not.toContain('Customer');
+    expect(result).not.toContain('Courier');
+  });
+
+  it('should deny courier access without exposing order data', async (): Promise<void> => {
+    getOrderByIdWithRelations.mockRejectedValue(
+      new ForbiddenException('Courier can only access assigned orders'),
+    );
+
+    const result: string = await service.getLiveData(
+      classification,
+      999,
+      Role.COURIER,
+    );
+
+    expect(result).toBe('У вас нет заказа №123 на выполнение.');
+    expect(result).not.toContain('Customer');
+    expect(result).not.toContain('Courier');
   });
 
   it('should allow manager and admin access', async (): Promise<void> => {
@@ -84,6 +120,29 @@ describe('LiveDataService', (): void => {
     await expect(
       service.getLiveData(classification, 999, Role.ADMIN),
     ).resolves.toContain('Заказ №123');
+  });
+
+  it('should return a not-found message when order does not exist', async (): Promise<void> => {
+    getOrderByIdWithRelations.mockRejectedValue(
+      new EntityNotFoundException('Order', 123),
+    );
+
+    const result: string = await service.getLiveData(
+      classification,
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('У вас нет заказа №123 среди ваших заказов.');
+  });
+
+  it('should propagate unexpected backend errors', async (): Promise<void> => {
+    const error: Error = new Error('Database unavailable');
+    getOrderByIdWithRelations.mockRejectedValue(error);
+
+    await expect(
+      service.getLiveData(classification, 10, Role.CUSTOMER),
+    ).rejects.toBe(error);
   });
 
   it('should not query orders when classification is not an order resource', async (): Promise<void> => {
@@ -99,6 +158,6 @@ describe('LiveDataService', (): void => {
     );
 
     expect(result).toContain('актуальные данные');
-    expect(ordersService.getActiveOrderByIdWithRelations).not.toHaveBeenCalled();
+    expect(getOrderByIdWithRelations).not.toHaveBeenCalled();
   });
 });

@@ -116,14 +116,31 @@ export class OrdersService {
     return order;
   }
 
+  async getOrderByIdWithRelations(
+    id: number,
+    user: Pick<User, 'id' | 'role'>,
+  ): Promise<OrderDto> {
+    const order: Order = await this.getActiveEntityByIdWithRelations(id);
+
+    checkOrderAccess(order, user);
+
+    return this.mapper.mapEntityToDto(order);
+  }
+
   async getActiveOrderByIdWithRelations(id: number): Promise<OrderDto> {
+    const order: Order = await this.getActiveEntityByIdWithRelations(id);
+
+    return this.mapper.mapEntityToDto(order);
+  }
+
+  private async getActiveEntityByIdWithRelations(id: number): Promise<Order> {
     const order: Order | null = await this.repository.findByIdWithRelations(id);
 
     if (!order || !order.active) {
       throw new EntityNotFoundException(Order.name, id);
     }
 
-    return this.mapper.mapEntityToDto(order);
+    return order;
   }
 
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
