@@ -1,6 +1,8 @@
 export const BASE_PROMPT_FOR_AI_CHAT: string = `Сгенерируй ответ, основываясь только на предоставленном контексте.
 Дай только ответ, не упоминай в ответе контекст.
 
+Если контекст содержит актуальные данные системы, считай их источником текущего состояния системы и используй их для ответа на вопрос пользователя. Не придумывай значения, которых нет в контексте.
+
 При необходимости используй историю диалога для понимания текущего вопроса.
 Если текущий вопрос является самостоятельным, не позволяй нерелевантной истории влиять на ответ.`;
 
@@ -17,8 +19,12 @@ export const BASE_PROMPT_FOR_DOCUMENT_TYPE: string = `Определи тип з
 Верни только JSON-объект строго в формате:
 {"documentType":"TYPE","liveDataRequired":false}
 
-Если liveDataRequired=true, обязательно укажи resource и resourceId:
+Если liveDataRequired=true, обязательно укажи resource.
+Для запроса о конкретном ресурсе также укажи resourceId:
 {"documentType":"TYPE","liveDataRequired":true,"resource":"RESOURCE","resourceId":123}
+
+Для запроса о списке доступных пользователю данных resourceId не указывай:
+{"documentType":"TYPE","liveDataRequired":true,"resource":"RESOURCE"}
 
 Допустимые значения documentType:
 AUTH | USER | RESTAURANT | MENU | DELIVERY | ORDER | SYSTEM
@@ -27,7 +33,9 @@ AUTH | USER | RESTAURANT | MENU | DELIVERY | ORDER | SYSTEM
 ORDER
 
 Правила resource:
-- ORDER - конкретный заказ пользователя.
+- ORDER - актуальные данные о заказах.
+- Для запроса конкретного заказа используй ORDER вместе с resourceId.
+- Для запроса списка доступных пользователю заказов используй ORDER без resourceId.
 - resource можно указывать только при liveDataRequired=true.
 - Если liveDataRequired=false, resource и resourceId не добавляй.
 
