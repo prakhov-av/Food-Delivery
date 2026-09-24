@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+
 import { OrderItem } from './order-item.entity';
 
 @Injectable()
@@ -18,7 +19,10 @@ export class OrderItemsRepository {
     return this.repository.find({
       relations: {
         menuItem: true,
-        order: true,
+        order: {
+          customer: true,
+          courier: true,
+        },
       },
     });
   }
@@ -28,7 +32,10 @@ export class OrderItemsRepository {
       where: { id },
       relations: {
         menuItem: true,
-        order: true,
+        order: {
+          customer: true,
+          courier: true,
+        },
       },
     });
   }

@@ -4,6 +4,7 @@ import {
   IsArray,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsString,
   Min,
 } from 'class-validator';
@@ -30,5 +31,7 @@ export class IngestDocumentDto {
   @Min(1)
   documentVersion: number;
 
+  @IsString()
+  @IsNotEmpty()
   documentId: string;
 }

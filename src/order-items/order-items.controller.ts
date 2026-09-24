@@ -9,12 +9,16 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
 import { ApiOkResponse } from '@nestjs/swagger';
+import { Request } from 'express';
+
 import { OrderItemsService } from './order-items.service';
 import { OrderItemDto } from './dto/order-item.dto';
 import { OrderItemSaveDto } from './dto/order-item.save-dto';
 import { OrderItemUpdateDto } from './dto/order-item.update-dto';
+import { User } from '../users/user.entity';
 
 @Controller('order-items')
 export class OrderItemsController {
@@ -25,8 +29,11 @@ export class OrderItemsController {
   @ApiOkResponse({
     type: OrderItemDto,
   })
-  async create(@Body() saveDto: OrderItemSaveDto): Promise<OrderItemDto> {
-    return this.service.create(saveDto);
+  async create(
+    @Body() saveDto: OrderItemSaveDto,
+    @Req() req: Request & { user: User },
+  ): Promise<OrderItemDto> {
+    return this.service.create(saveDto, req.user);
   }
 
   @Get()
@@ -34,16 +41,19 @@ export class OrderItemsController {
     type: OrderItemDto,
     isArray: true,
   })
-  async getAll(): Promise<OrderItemDto[]> {
-    return this.service.getAllActiveOrderItems();
+  async getAll(@Req() req: Request & { user: User }): Promise<OrderItemDto[]> {
+    return this.service.getAllActiveOrderItems(req.user);
   }
 
   @Get(':id')
   @ApiOkResponse({
     type: OrderItemDto,
   })
-  async getById(@Param('id', ParseIntPipe) id: number): Promise<OrderItemDto> {
-    return this.service.getActiveOrderItemById(id);
+  async getById(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request & { user: User },
+  ): Promise<OrderItemDto> {
+    return this.service.getActiveOrderItemById(id, req.user);
   }
 
   @Patch(':id')
@@ -51,19 +61,26 @@ export class OrderItemsController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateDto: OrderItemUpdateDto,
+    @Req() req: Request & { user: User },
   ): Promise<void> {
-    await this.service.update(id, updateDto);
+    await this.service.update(id, updateDto, req.user);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteById(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    await this.service.deleteById(id);
+  async deleteById(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request & { user: User },
+  ): Promise<void> {
+    await this.service.deleteById(id, req.user);
   }
 
   @Patch(':id/restore')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async restoreById(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    await this.service.restoreById(id);
+  async restoreById(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request & { user: User },
+  ): Promise<void> {
+    await this.service.restoreById(id, req.user);
   }
 }
