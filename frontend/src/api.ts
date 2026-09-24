@@ -7,7 +7,7 @@ export class ApiError extends Error {
   }
 }
 
-const API_URL = import.meta.env.VITE_API_URL.replace(/\/$/, '');
+const API_URL = String(import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
 let onSessionExpired: (() => void) | null = null;
 
@@ -17,9 +17,11 @@ export function setSessionExpiredHandler(handler: () => void): void {
 
 async function rawRequest(
   path: string,
-  options: RequestInit,
+  options: RequestInit = {},
 ): Promise<Response> {
-  return fetch(`${API_URL}${path}`, {
+  const normalizedPath = `/${path.replace(/^\/+/, '')}`;
+
+  return fetch(`${API_URL}${normalizedPath}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -47,11 +49,7 @@ async function parseError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, message);
 }
 
-/**
- * Запрос к API.
- * При 401 один раз пробует обновить access-токен
- * через /auth/refresh и повторить запрос.
- */
+
 export async function api<T = void>(
   path: string,
   options: RequestInit = {},
@@ -94,8 +92,10 @@ export async function api<T = void>(
 }
 
 /**
- * GET списка: backend отвечает 404 на пустую таблицу —
- * трактуем 404 как пустой список.
+ * GET списка.
+ *
+ * Если backend отвечает 404 на пустую таблицу,
+ * возвращаем пустой массив.
  */
 export async function apiList<T>(path: string): Promise<T[]> {
   try {
