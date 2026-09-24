@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-const backend = 'https://fds-app-cke6h.ondigitalocean.app';
+const backend = 'localhost:3000';
 const apiPaths = [
   '/auth',
   '/users',
