@@ -14,6 +14,7 @@ import { OrdersService } from '../orders/orders.service';
 import { OrderItemsMapper } from './dto/order-items.mapper';
 import { OrderItemDto } from './dto/order-item.dto';
 import { Order } from '../orders/order.entity';
+import { Status } from '../orders/enums/status.enum';
 
 import { User } from '../users/user.entity';
 import { Role } from '../users/enums/role.enum';
@@ -77,7 +78,7 @@ describe('OrderItemsService', (): void => {
         {
           provide: OrdersService,
           useValue: {
-            getActiveEntityById: jest.fn(),
+            getActiveEntityByIdWithRelations: jest.fn(),
           },
         },
         {
@@ -105,7 +106,7 @@ describe('OrderItemsService', (): void => {
 
     menuItemsService = module.get<MenuItemsService>(MenuItemsService);
 
-    ordersService.getActiveEntityById.mockResolvedValue({
+    ordersService.getActiveEntityByIdWithRelations.mockResolvedValue({
       id: 1,
       customer: { id: 1 },
     } as Order);
@@ -224,6 +225,35 @@ describe('OrderItemsService', (): void => {
       );
     });
 
+    it('should reject create when order is completed', async (): Promise<void> => {
+      ordersService.getActiveEntityByIdWithRelations.mockResolvedValueOnce({
+        id: 1,
+        customer: { id: 1 },
+        status: Status.COMPLETED,
+      } as Order);
+
+      const resultPromise = service.create(VALID_SAVE_DTO, VALID_USER);
+
+      await expect(resultPromise).rejects.toThrow('cannot be modified');
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should reject update when order is completed', async (): Promise<void> => {
+      repository.findById.mockResolvedValueOnce({
+        ...VALID_ENTITY_TO_MOCK_RETURN_1,
+        order: {
+          id: 1,
+          customer: { id: 1 },
+          status: Status.COMPLETED,
+        } as Order,
+      });
+
+      const resultPromise = service.update(1, VALID_UPDATE_DTO, VALID_USER);
+
+      await expect(resultPromise).rejects.toThrow('cannot be modified');
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
     it('should throw exception when order item is not found', async (): Promise<void> => {
       const resultPromise: Promise<void> = service.update(
         1000,
@@ -236,6 +266,42 @@ describe('OrderItemsService', (): void => {
       await expect(resultPromise).rejects.toBeInstanceOf(
         EntityNotFoundException,
       );
+    });
+  });
+  describe('restoreById', (): void => {
+    it('should reject restore when order is completed', async (): Promise<void> => {
+      repository.findById.mockResolvedValueOnce({
+        ...VALID_ENTITY_TO_MOCK_RETURN_1,
+        active: false,
+        order: {
+          id: 1,
+          customer: { id: 1 },
+          status: Status.COMPLETED,
+        } as Order,
+      });
+
+      const resultPromise = service.restoreById(1, VALID_USER);
+
+      await expect(resultPromise).rejects.toThrow('cannot be modified');
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteById', (): void => {
+    it('should reject delete when order is completed', async (): Promise<void> => {
+      repository.findById.mockResolvedValueOnce({
+        ...VALID_ENTITY_TO_MOCK_RETURN_1,
+        order: {
+          id: 1,
+          customer: { id: 1 },
+          status: Status.COMPLETED,
+        } as Order,
+      });
+
+      const resultPromise = service.deleteById(1, VALID_USER);
+
+      await expect(resultPromise).rejects.toThrow('cannot be modified');
+      expect(repository.save).not.toHaveBeenCalled();
     });
   });
 });

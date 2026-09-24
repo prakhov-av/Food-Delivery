@@ -24,7 +24,7 @@ export class Order {
 
   @ManyToOne(() => User, (user) => user.courierOrders, { nullable: true })
   @JoinColumn({ name: 'courier_id' })
-  courier: User;
+  courier: User | null;
 
   @ManyToOne(() => Restaurant, { nullable: false })
   @JoinColumn({ name: 'restaurant_id' })

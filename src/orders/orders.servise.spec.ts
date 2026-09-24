@@ -19,7 +19,6 @@ import { RestaurantsMapper } from '../restaurants/dto/restaurants.mapper';
 describe('OrdersService', (): void => {
   const VALID_SAVE_DTO: OrderSaveDto = {
     customerId: 1,
-    courierId: 2,
     restaurantId: 1,
   };
 
@@ -28,10 +27,7 @@ describe('OrdersService', (): void => {
     customer: {
       id: 1,
     } as User,
-    courier: {
-      id: 1,
-      role: Role.CUSTOMER,
-    } as User,
+    courier: null,
     restaurant: {
       id: 1,
     } as Restaurant,
@@ -47,10 +43,7 @@ describe('OrdersService', (): void => {
     customer: {
       id: 2,
     } as User,
-    courier: {
-      id: 2,
-      role: Role.COURIER,
-    } as User,
+    courier: null,
     restaurant: {
       id: 2,
     } as Restaurant,
@@ -155,7 +148,12 @@ describe('OrdersService', (): void => {
 
   describe('create', (): void => {
     it('should create active order and return dto', async (): Promise<void> => {
-      const result: OrderDto = await service.create(VALID_SAVE_DTO);
+      const user: User = {
+        id: 1,
+        role: Role.CUSTOMER,
+      } as User;
+
+      const result: OrderDto = await service.create(VALID_SAVE_DTO, user);
 
       expect(repository.save).toHaveBeenCalledWith(
         expect.objectContaining({ active: true }),
@@ -163,14 +161,19 @@ describe('OrdersService', (): void => {
 
       expect(result).toBeDefined();
       expect(result.restaurant.id).toEqual(VALID_SAVE_DTO.restaurantId);
-      expect(result.customer.id).toEqual(VALID_SAVE_DTO.customerId);
-      expect(result.courier!.id).toEqual(VALID_SAVE_DTO.courierId);
+      expect(result.customer.id).toEqual(user.id);
+      expect(result.courier).toBeNull();
     });
   });
 
   describe('getAllOrders', (): void => {
     it('should return list of order DTOs', async (): Promise<void> => {
-      const result: OrderDto[] = await service.getAllOrders();
+      const user: Pick<User, 'id' | 'role'> = {
+        id: 1,
+        role: Role.ADMIN,
+      };
+
+      const result: OrderDto[] = await service.getAllOrders(user);
 
       expect(result).toBeDefined();
       expect(result.length).toEqual(2);
@@ -198,7 +201,13 @@ describe('OrdersService', (): void => {
 
     it('should throw error if list of orders is empty', async (): Promise<void> => {
       repository.findAllActive.mockResolvedValue([]);
-      const resultPromise: Promise<OrderDto[]> = service.getAllOrders();
+
+      const user: Pick<User, 'id' | 'role'> = {
+        id: 1,
+        role: Role.ADMIN,
+      };
+
+      const resultPromise: Promise<OrderDto[]> = service.getAllOrders(user);
 
       await expect(resultPromise).rejects.toThrow('not a single');
       await expect(resultPromise).rejects.toBeInstanceOf(

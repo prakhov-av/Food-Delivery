@@ -41,13 +41,9 @@ export class OrdersService {
       saveDto.restaurantId,
     );
 
-    entity.courier = await this.usersService.getActiveEntityById(
-      saveDto.courierId,
-    );
-
-    if (entity.courier.role !== Role.COURIER) {
-      throw new RoleMismatchException(saveDto.courierId, Role.COURIER);
-    }
+    // Courier assignment is an administrative/managerial operation
+    // and must not be controlled by the customer creating the order.
+    entity.courier = null;
 
     entity.status = Status.NEW;
     entity.active = true;
@@ -58,7 +54,7 @@ export class OrdersService {
     this.logger.log(
       `Order created: id ${entity.id}, ` +
         `customer id ${entity.customer.id}, ` +
-        `courier id ${entity.courier.id}, ` +
+        `courier id not assigned, ` +
         `restaurant id ${entity.restaurant.id}`,
     );
 
@@ -125,6 +121,16 @@ export class OrdersService {
 
   async getActiveEntityById(id: number): Promise<Order> {
     const order: Order | null = await this.repository.findById(id);
+
+    if (!order || !order.active) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
+
+    return order;
+  }
+
+  async getActiveEntityByIdWithRelations(id: number): Promise<Order> {
+    const order: Order | null = await this.repository.findByIdWithRelations(id);
 
     if (!order || !order.active) {
       throw new EntityNotFoundException(Order.name, id);
