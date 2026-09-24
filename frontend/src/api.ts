@@ -7,7 +7,7 @@ export class ApiError extends Error {
   }
 }
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL.replace(/\/$/, '');
 
 let onSessionExpired: (() => void) | null = null;
 
