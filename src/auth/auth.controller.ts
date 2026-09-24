@@ -52,14 +52,16 @@ export class AuthController {
   ): void {
     response.cookie('access-token', accessToken, {
       httpOnly: true,
-      sameSite: 'strict',
+      secure: true,
+      sameSite: 'none',
       maxAge: 15 * 60 * 1000,
     });
 
     if (refreshToken) {
       response.cookie('refresh-token', refreshToken, {
         httpOnly: true,
-        sameSite: 'strict',
+        secure: true,
+        sameSite: 'none',
         maxAge: 12 * 60 * 60 * 1000,
       });
     }
