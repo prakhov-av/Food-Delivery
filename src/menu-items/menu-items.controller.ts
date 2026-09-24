@@ -15,11 +15,14 @@ import { ApiOkResponse } from '@nestjs/swagger';
 import { MenuItemDto } from './dto/menu-item.dto';
 import { MenuItemSaveDto } from './dto/menu-item.save-dto';
 import { MenuItemUpdateDto } from './dto/menu-item.update-dto';
+import { Roles } from '../auth/types/auth.decorators';
+import { Role } from '../users/enums/role.enum';
 
 @Controller('menu-items')
 export class MenuItemsController {
   constructor(private readonly service: MenuItemsService) {}
 
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOkResponse({
@@ -46,6 +49,7 @@ export class MenuItemsController {
     return this.service.getActiveMenuItemById(id);
   }
 
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Patch(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async update(
@@ -55,12 +59,14 @@ export class MenuItemsController {
     await this.service.update(id, updateDto);
   }
 
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteById(@Param('id', ParseIntPipe) id: number): Promise<void> {
     await this.service.deleteById(id);
   }
 
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Patch(':id/restore')
   @HttpCode(HttpStatus.NO_CONTENT)
   async restoreById(@Param('id', ParseIntPipe) id: number): Promise<void> {

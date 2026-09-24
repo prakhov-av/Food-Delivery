@@ -8,6 +8,7 @@ import { LiveDataService } from './live-data.service';
 import { ContextService } from './context.service';
 import { Role } from '../users/enums/role.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
+import { LiveDataResource } from './enums/live-data-resource.enum';
 import { ConfigurationException } from '../exceptions/types/configuration.exception';
 import { PromptBuilder } from '../prompts/prompt.builder';
 import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
@@ -203,16 +204,24 @@ describe('ChatService', (): void => {
     expect(secondClassifierPrompt).not.toContain('user 10 answer');
   });
 
-  it('should use live data flow and save its response to history', async (): Promise<void> => {
+  it('should use live data as context and generate a final AI response', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":123}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    liveDataService.getLiveData.mockResolvedValue('Статус: NEW');
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":123}',
+      )
+      .mockResolvedValueOnce('Заказ №123 сейчас готовится.');
+
+    liveDataService.getLiveData.mockResolvedValue(
+      'Заказ №123\nСтатус: COOKING',
+    );
 
     const result: string = await service.generateResponse(
       'Какой статус заказа 123?',
@@ -220,25 +229,82 @@ describe('ChatService', (): void => {
       Role.CUSTOMER,
     );
 
-    expect(result).toBe('Статус: NEW');
+    expect(result).toBe('Заказ №123 сейчас готовится.');
 
     expect(liveDataService.getLiveData).toHaveBeenCalledWith(
       {
         documentType: DocumentType.ORDER,
         liveDataRequired: true,
-        resource: 'ORDER',
+        resource: LiveDataResource.ORDER,
         resourceId: 123,
       },
       10,
       Role.CUSTOMER,
     );
 
-    expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
+    expect(promptService.buildPromptForChat).toHaveBeenCalled();
+    expect(aiService.generateResponse).toHaveBeenCalledTimes(2);
 
+    const finalPrompt = aiService.generateResponse.mock.calls[1][0];
+
+    expect(finalPrompt).toContain('Заказ №123');
+    expect(finalPrompt).toContain('Статус: COOKING');
+    expect(finalPrompt).toContain('Какой статус заказа 123?');
+
+    expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
     expect(
       vectorStorageService.getRelevantChunkByAccess,
     ).not.toHaveBeenCalled();
+    expect(contextService.generateContext).not.toHaveBeenCalled();
+  });
 
+  it('should use live order list as context and generate a final AI response', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER"}',
+      )
+      .mockResolvedValueOnce('У вас два текущих заказа.');
+
+    liveDataService.getLiveData.mockResolvedValue(
+      'Заказ №1\nСтатус: ACCEPTED\n\nЗаказ №4\nСтатус: COOKING',
+    );
+
+    const result: string = await service.generateResponse(
+      'Какие у меня есть заказы?',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('У вас два текущих заказа.');
+
+    expect(liveDataService.getLiveData).toHaveBeenCalledWith(
+      {
+        documentType: DocumentType.ORDER,
+        liveDataRequired: true,
+        resource: LiveDataResource.ORDER,
+      },
+      10,
+      Role.CUSTOMER,
+    );
+
+    const finalPrompt = aiService.generateResponse.mock.calls[1][0];
+
+    expect(finalPrompt).toContain('Заказ №1');
+    expect(finalPrompt).toContain('Заказ №4');
+    expect(finalPrompt).toContain('Какие у меня есть заказы?');
+
+    expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
+    expect(
+      vectorStorageService.getRelevantChunkByAccess,
+    ).not.toHaveBeenCalled();
     expect(contextService.generateContext).not.toHaveBeenCalled();
   });
 

@@ -54,11 +54,24 @@ export class ChatService {
     );
 
     if (classification.liveDataRequired) {
-      const aiResponse: string = await this.liveDataService.getLiveData(
+      const liveDataContext: string = await this.liveDataService.getLiveData(
         classification,
         userId,
         userRole,
       );
+
+      const prompt: string = this.promptService
+        .buildPromptForChat()
+        .withUserRole(userRole)
+        .withContext([liveDataContext])
+        .withChatHistory(chatHistory)
+        .withQuestion(request)
+        .build();
+
+      console.log('\nCreated prompt for AI chat with live data:\n');
+      console.log(prompt + '\n');
+
+      const aiResponse: string = await this.aiService.generateResponse(prompt);
 
       this.addChatHistoryByUserId(userId, request, aiResponse);
 
@@ -219,12 +232,9 @@ export class ChatService {
       );
     }
 
-    if (
-      classification.liveDataRequired &&
-      (normalizedResource === undefined || normalizedResourceId === undefined)
-    ) {
+    if (classification.liveDataRequired && normalizedResource === undefined) {
       throw new ConfigurationException(
-        'Live data classification requires resource and resourceId',
+        'Live data classification requires a resource',
       );
     }
 
