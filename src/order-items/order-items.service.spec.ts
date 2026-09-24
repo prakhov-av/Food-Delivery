@@ -77,7 +77,7 @@ describe('OrderItemsService', (): void => {
         {
           provide: OrdersService,
           useValue: {
-            getActiveEntityById: jest.fn(),
+            getActiveEntityByIdWithRelations: jest.fn(),
           },
         },
         {
@@ -105,7 +105,7 @@ describe('OrderItemsService', (): void => {
 
     menuItemsService = module.get<MenuItemsService>(MenuItemsService);
 
-    ordersService.getActiveEntityById.mockResolvedValue({
+    ordersService.getActiveEntityByIdWithRelations.mockResolvedValue({
       id: 1,
       customer: { id: 1 },
     } as Order);
