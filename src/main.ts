@@ -40,7 +40,7 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionHandler());
 
   app.enableCors({
-    origin: 'https://fds-frontend-app-v4kgn.ondigitalocean.app/',
+    origin: 'https://fds-frontend-app-v4kgn.ondigitalocean.app',
     credentials: true,
   });
 
