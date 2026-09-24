@@ -27,15 +27,22 @@ async function bootstrap() {
     }),
   });
 
-  app.useGlobalPipes(new ValidationPipe({transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true, }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
 
   app.useGlobalInterceptors(new RequestLoggingInterceptor());
 
   app.useGlobalFilters(new GlobalExceptionHandler());
 
-  app.enableCors({ origin: 'https://fds-frontend-app-v4kgn.ondigitalocean.app', credentials: true, });
+  app.enableCors({
+    origin: 'https://fds-frontend-app-v4kgn.ondigitalocean.app',
+    credentials: true,
+  });
 
   const config = new DocumentBuilder()
     .setTitle('Food Delivery API')
