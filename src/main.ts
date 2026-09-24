@@ -35,6 +35,8 @@ async function bootstrap() {
 
   app.useGlobalFilters(new GlobalExceptionHandler());
 
+  app.enableCors({ origin: 'https://fds-frontend-app-v4kgn.ondigitalocean.app', credentials: true, });
+
   const config = new DocumentBuilder()
     .setTitle('Food Delivery API')
     .setDescription('REST API for Food Delivery Service')
