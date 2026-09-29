@@ -30,9 +30,10 @@ export class OrderItemsService {
   async create(saveDto: OrderItemSaveDto, user: User): Promise<OrderItemDto> {
     const entity: OrderItem = this.mapper.mapDtoToEntity(saveDto);
 
-    const order: Order = await this.ordersService.getActiveEntityById(
-      saveDto.orderId,
-    );
+    const order: Order =
+      await this.ordersService.getActiveEntityByIdWithRelations(
+        saveDto.orderId,
+      );
 
     checkOrderAccess(order, user);
 

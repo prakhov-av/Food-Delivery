@@ -230,4 +230,15 @@ export class OrdersService {
         `role ${user.role}`,
     );
   }
+
+  async getActiveEntityByIdWithRelations(id: number): Promise<Order> {
+    const order: Order | null =
+      await this.repository.findByIdWithRelations(id);
+
+    if (!order || !order.active) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
+
+    return order;
+  }
 }

@@ -20,11 +20,15 @@ import { OrderItemSaveDto } from './dto/order-item.save-dto';
 import { OrderItemUpdateDto } from './dto/order-item.update-dto';
 import { User } from '../users/user.entity';
 
+import { Roles } from '../auth/types/auth.decorators';
+import { Role } from '../users/enums/role.enum';
+
 @Controller('order-items')
 export class OrderItemsController {
   constructor(private readonly service: OrderItemsService) {}
 
   @Post()
+  @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.CREATED)
   @ApiOkResponse({
     type: OrderItemDto,
@@ -57,6 +61,7 @@ export class OrderItemsController {
   }
 
   @Patch(':id')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -67,6 +72,7 @@ export class OrderItemsController {
   }
 
   @Delete(':id')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteById(
     @Param('id', ParseIntPipe) id: number,
@@ -76,6 +82,7 @@ export class OrderItemsController {
   }
 
   @Patch(':id/restore')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async restoreById(
     @Param('id', ParseIntPipe) id: number,

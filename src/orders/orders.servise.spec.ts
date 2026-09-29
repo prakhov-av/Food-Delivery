@@ -155,7 +155,12 @@ describe('OrdersService', (): void => {
 
   describe('create', (): void => {
     it('should create active order and return dto', async (): Promise<void> => {
-      const result: OrderDto = await service.create(VALID_SAVE_DTO);
+      const user: User = {
+        id: 1,
+        role: Role.CUSTOMER,
+      } as User;
+
+      const result: OrderDto = await service.create(VALID_SAVE_DTO, user);
 
       expect(repository.save).toHaveBeenCalledWith(
         expect.objectContaining({ active: true }),
@@ -170,7 +175,12 @@ describe('OrdersService', (): void => {
 
   describe('getAllOrders', (): void => {
     it('should return list of order DTOs', async (): Promise<void> => {
-      const result: OrderDto[] = await service.getAllOrders();
+      const user: Pick<User, 'id' | 'role'> = {
+        id: 1,
+        role: Role.ADMIN,
+      };
+
+      const result: OrderDto[] = await service.getAllOrders(user);
 
       expect(result).toBeDefined();
       expect(result.length).toEqual(2);
@@ -198,7 +208,13 @@ describe('OrdersService', (): void => {
 
     it('should throw error if list of orders is empty', async (): Promise<void> => {
       repository.findAllActive.mockResolvedValue([]);
-      const resultPromise: Promise<OrderDto[]> = service.getAllOrders();
+
+      const user: Pick<User, 'id' | 'role'> = {
+        id: 1,
+        role: Role.ADMIN,
+      };
+
+      const resultPromise: Promise<OrderDto[]> = service.getAllOrders(user);
 
       await expect(resultPromise).rejects.toThrow('not a single');
       await expect(resultPromise).rejects.toBeInstanceOf(
