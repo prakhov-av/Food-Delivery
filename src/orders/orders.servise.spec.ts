@@ -19,7 +19,6 @@ import { RestaurantsMapper } from '../restaurants/dto/restaurants.mapper';
 describe('OrdersService', (): void => {
   const VALID_SAVE_DTO: OrderSaveDto = {
     customerId: 1,
-    courierId: 2,
     restaurantId: 1,
   };
 
@@ -28,10 +27,7 @@ describe('OrdersService', (): void => {
     customer: {
       id: 1,
     } as User,
-    courier: {
-      id: 1,
-      role: Role.CUSTOMER,
-    } as User,
+    courier: null,
     restaurant: {
       id: 1,
     } as Restaurant,
@@ -47,10 +43,7 @@ describe('OrdersService', (): void => {
     customer: {
       id: 2,
     } as User,
-    courier: {
-      id: 2,
-      role: Role.COURIER,
-    } as User,
+    courier: null,
     restaurant: {
       id: 2,
     } as Restaurant,
@@ -168,8 +161,8 @@ describe('OrdersService', (): void => {
 
       expect(result).toBeDefined();
       expect(result.restaurant.id).toEqual(VALID_SAVE_DTO.restaurantId);
-      expect(result.customer.id).toEqual(VALID_SAVE_DTO.customerId);
-      expect(result.courier!.id).toEqual(VALID_SAVE_DTO.courierId);
+      expect(result.customer.id).toEqual(user.id);
+      expect(result.courier).toBeNull();
     });
   });
 

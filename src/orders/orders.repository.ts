@@ -31,6 +31,7 @@ export class OrdersRepository {
 
   async findAllActive(): Promise<Order[]> {
     return this.repository.find({
+      where: { active: true },
       relations: {
         customer: true,
         courier: true,

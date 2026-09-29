@@ -15,6 +15,7 @@ import { MenuItemsService } from '../menu-items/menu-items.service';
 
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { checkOrderAccess } from '../orders/validation/order-access';
+import { checkOrderModificationAllowed } from '../orders/validation/order-modification';
 
 @Injectable()
 export class OrderItemsService {
@@ -36,6 +37,7 @@ export class OrderItemsService {
       );
 
     checkOrderAccess(order, user);
+    checkOrderModificationAllowed(order);
 
     entity.order = order;
     entity.active = true;
@@ -105,6 +107,7 @@ export class OrderItemsService {
     const foundOrderItem = await this.getActiveEntityById(id);
 
     checkOrderAccess(foundOrderItem.order, user);
+    checkOrderModificationAllowed(foundOrderItem.order);
 
     foundOrderItem.quantity = updateItemDto.newQuantity;
 
@@ -120,6 +123,7 @@ export class OrderItemsService {
     const orderItem = await this.getActiveEntityById(id);
 
     checkOrderAccess(orderItem.order, user);
+    checkOrderModificationAllowed(orderItem.order);
 
     orderItem.active = false;
 
@@ -136,6 +140,7 @@ export class OrderItemsService {
     }
 
     checkOrderAccess(orderItem.order, user);
+    checkOrderModificationAllowed(orderItem.order);
 
     if (!orderItem.active) {
       orderItem.active = true;
