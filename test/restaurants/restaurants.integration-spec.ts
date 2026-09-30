@@ -1,14 +1,12 @@
 import { HttpStatus, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
-import { UsersModule } from '../../src/users/users.module';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import * as bcrypt from 'bcrypt';
 import request from 'supertest';
-import { OrdersModule } from '../../src/orders/orders.module';
-import { RestaurantsModule } from '../../src/restaurants/restaurants.module';
-import { MenusModule } from '../../src/menus/menus.module';
-import { MenuItemsModule } from '../../src/menu-items/menu-items.module';
-import { OrderItemsModule } from '../../src/order-items/order-items.module';
+import { AppModule } from '../../src/app.module';
+import { User } from '../../src/users/user.entity';
+import { Role } from '../../src/users/enums/role.enum';
 import { RestaurantSaveDto } from '../../src/restaurants/dto/restaurant.save-dto';
 import { RestaurantUpdateDto } from '../../src/restaurants/dto/restaurant.update-dto';
 import { Restaurant } from '../../src/restaurants/restaurant.entity';
@@ -42,6 +40,11 @@ describe('RestaurantsController (IT)', (): void => {
 
   let app: INestApplication;
   let httpServer: any;
+  let usersRepository: Repository<User>;
+  const testUsers = new Map<
+    Role,
+    { user: User; password: string; cookies: string[] }
+  >();
   let repository: Repository<Restaurant>;
   let menusRepository: Repository<Menu>;
   let activeRestaurant: Restaurant;
@@ -50,24 +53,7 @@ describe('RestaurantsController (IT)', (): void => {
 
   beforeAll(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
-      imports: [
-        TypeOrmModule.forRoot({
-          type: 'postgres',
-          host: 'localhost',
-          port: 5432,
-          username: 'postgres',
-          password: 'qwerty123',
-          database: 'food_delivery',
-          autoLoadEntities: true,
-          synchronize: true,
-        }),
-        UsersModule,
-        OrdersModule,
-        RestaurantsModule,
-        MenusModule,
-        MenuItemsModule,
-        OrderItemsModule,
-      ],
+      imports: [AppModule],
     }).compile();
 
     app = module.createNestApplication();
@@ -75,10 +61,64 @@ describe('RestaurantsController (IT)', (): void => {
     await app.init();
 
     httpServer = app.getHttpServer();
+    usersRepository = module.get(getRepositoryToken(User));
+
+    const password = 'IntegrationTestPass123!';
+    for (const role of Object.values(Role)) {
+      const suffix = `${Date.now()}-${role.toLowerCase()}`;
+      const user = usersRepository.create({
+        name: `Integration ${role}`,
+        email: `integration-${suffix}@test.local`,
+        phone: `+49157${Math.floor(Math.random() * 9000000 + 1000000)}`,
+        password: await bcrypt.hash(password, 10),
+        role,
+        active: true,
+        deletedAt: null,
+      });
+      await usersRepository.save(user);
+      testUsers.set(role, { user, password, cookies: [] });
+    }
+
+    for (const role of Object.values(Role)) {
+      const testUser = testUsers.get(role);
+      if (!testUser)
+        throw new Error(`Test user for role ${role} was not created`);
+
+      const response = await request(httpServer)
+        .post('/auth/login')
+        .send({ email: testUser.user.email, password: testUser.password })
+        .expect(HttpStatus.OK);
+
+      testUser.cookies = response.headers['set-cookie'] as string[];
+      expect(testUser.cookies).toBeDefined();
+      expect(
+        testUser.cookies.some((cookie: string) =>
+          cookie.startsWith('access-token='),
+        ),
+      ).toBe(true);
+    }
     repository = module.get(getRepositoryToken(Restaurant));
     menusRepository = module.get(getRepositoryToken(Menu));
     menuItemsRepository = module.get(getRepositoryToken(MenuItem));
   });
+
+  function authenticatedRequest(role: Role) {
+    const testUser = testUsers.get(role);
+    if (!testUser || testUser.cookies.length === 0) {
+      throw new Error(`Test user with role ${role} is not authenticated`);
+    }
+
+    return {
+      get: (path: string) =>
+        request(httpServer).get(path).set('Cookie', testUser.cookies),
+      post: (path: string) =>
+        request(httpServer).post(path).set('Cookie', testUser.cookies),
+      patch: (path: string) =>
+        request(httpServer).patch(path).set('Cookie', testUser.cookies),
+      delete: (path: string) =>
+        request(httpServer).delete(path).set('Cookie', testUser.cookies),
+    };
+  }
 
   beforeEach(async (): Promise<void> => {
     activeRestaurant = new Restaurant();
@@ -105,12 +145,30 @@ describe('RestaurantsController (IT)', (): void => {
   });
 
   afterAll(async (): Promise<void> => {
+    for (const testUser of testUsers.values()) {
+      await usersRepository.delete(testUser.user.id);
+    }
     await app.close();
+  });
+
+  describe('authentication and authorization', (): void => {
+    it('should return 401 for unauthenticated request', async (): Promise<void> => {
+      await request(httpServer)
+        .get(`${RESOURCE_NAME}`)
+        .expect(HttpStatus.UNAUTHORIZED);
+    });
+
+    it('should return 403 for authenticated customer without required role', async (): Promise<void> => {
+      await authenticatedRequest(Role.CUSTOMER)
+        .post(RESOURCE_NAME)
+        .send({})
+        .expect(HttpStatus.FORBIDDEN);
+    });
   });
 
   describe('create', (): void => {
     it('should create restaurant', async (): Promise<void> => {
-      const response: Response = await request(httpServer)
+      const response: Response = await authenticatedRequest(Role.MANAGER)
         .post(RESOURCE_NAME)
         .send(VALID_SAVE_DTO)
         .expect(HttpStatus.CREATED);
@@ -143,7 +201,7 @@ describe('RestaurantsController (IT)', (): void => {
     });
 
     it('should return 400 if phone is incorrect', async (): Promise<void> => {
-      const response: Response = await request(httpServer)
+      const response: Response = await authenticatedRequest(Role.MANAGER)
         .post(RESOURCE_NAME)
         .send(VALID_SAVE_DTO_WITH_INCORRECT_PHONE)
         .expect(HttpStatus.BAD_REQUEST);
@@ -157,7 +215,7 @@ describe('RestaurantsController (IT)', (): void => {
   describe('getById', (): void => {
     it('should return restaurant', async (): Promise<void> => {
       // /restaurants/5
-      const response: Response = await request(httpServer)
+      const response: Response = await authenticatedRequest(Role.MANAGER)
         .get(`${RESOURCE_NAME}/${activeRestaurant.id}`)
         .expect(HttpStatus.OK);
 
@@ -174,7 +232,7 @@ describe('RestaurantsController (IT)', (): void => {
     });
 
     it('should return 404 if inactive restaurant is requested', async (): Promise<void> => {
-      const response: Response = await request(httpServer)
+      const response: Response = await authenticatedRequest(Role.MANAGER)
         .get(`${RESOURCE_NAME}/${inactiveRestaurant.id}`)
         .expect(HttpStatus.NOT_FOUND);
 
@@ -184,7 +242,7 @@ describe('RestaurantsController (IT)', (): void => {
 
   describe('update', (): void => {
     it('should update restaurant name', async (): Promise<void> => {
-      await request(httpServer)
+      await authenticatedRequest(Role.MANAGER)
         .patch(`${RESOURCE_NAME}/${activeRestaurant.id}`)
         .send(VALID_UPDATE_DTO)
         .expect(HttpStatus.NO_CONTENT);
@@ -206,7 +264,7 @@ describe('RestaurantsController (IT)', (): void => {
     });
 
     it('should return 400 if new restaurant name is incorrect', async (): Promise<void> => {
-      const response = await request(httpServer)
+      const response = await authenticatedRequest(Role.MANAGER)
         .patch(`${RESOURCE_NAME}/${activeRestaurant.id}`)
         .send(UPDATE_DTO_WITH_INCORRECT_NAME)
         .expect(HttpStatus.BAD_REQUEST);

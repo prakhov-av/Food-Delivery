@@ -2,7 +2,8 @@ import { HttpStatus, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
-import { UsersModule } from '../../src/users/users.module';
+import { AppModule } from '../../src/app.module';
+import * as bcrypt from 'bcrypt';
 import { RestaurantsModule } from '../../src/restaurants/restaurants.module';
 import { MenusModule } from '../../src/menus/menus.module';
 import { MenuItemsModule } from '../../src/menu-items/menu-items.module';
@@ -58,30 +59,14 @@ describe('OrderItemsController (IT)', (): void => {
   let menu: Menu;
   let menuItem: MenuItem;
   let order: Order;
+  let customerCookies: string[] = [];
 
   let activeOrderItem: OrderItem;
   let inactiveOrderItem: OrderItem;
 
   beforeAll(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
-      imports: [
-        TypeOrmModule.forRoot({
-          type: 'postgres',
-          host: 'localhost',
-          port: 5432,
-          username: 'postgres',
-          password: 'qwerty123',
-          database: 'food_delivery',
-          autoLoadEntities: true,
-          synchronize: true,
-        }),
-        UsersModule,
-        RestaurantsModule,
-        MenusModule,
-        MenuItemsModule,
-        OrdersModule,
-        OrderItemsModule,
-      ],
+      imports: [AppModule],
     }).compile();
 
     app = module.createNestApplication();
@@ -102,6 +87,13 @@ describe('OrderItemsController (IT)', (): void => {
     menusRepository = module.get(getRepositoryToken(Menu));
     menuItemsRepository = module.get(getRepositoryToken(MenuItem));
     ordersRepository = module.get(getRepositoryToken(Order));
+
+    await repository.deleteAll();
+    await ordersRepository.deleteAll();
+    await menuItemsRepository.deleteAll();
+    await menusRepository.deleteAll();
+    await restaurantsRepository.deleteAll();
+    await usersRepository.deleteAll();
   });
 
   beforeEach(async (): Promise<void> => {
@@ -109,7 +101,7 @@ describe('OrderItemsController (IT)', (): void => {
     customer.name = 'John';
     customer.phone = '+380501111111';
     customer.email = 'john@test.com';
-    customer.password = '123456';
+    customer.password = await bcrypt.hash('123456', 10);
     customer.role = Role.CUSTOMER;
     customer.active = true;
 
@@ -168,6 +160,16 @@ describe('OrderItemsController (IT)', (): void => {
     inactiveOrderItem.active = false;
 
     await repository.save(inactiveOrderItem);
+
+    const loginResponse = await request(httpServer)
+      .post('/auth/login')
+      .send({
+        email: customer.email,
+        password: '123456',
+      })
+      .expect(HttpStatus.OK);
+
+    customerCookies = loginResponse.headers['set-cookie'];
   });
 
   afterEach(async (): Promise<void> => {
@@ -187,6 +189,7 @@ describe('OrderItemsController (IT)', (): void => {
     it('should create order item', async (): Promise<void> => {
       const response: Response = await request(httpServer)
         .post(RESOURCE_NAME)
+        .set('Cookie', customerCookies)
         .send(VALID_SAVE_DTO)
         .expect(HttpStatus.CREATED);
 
@@ -226,19 +229,19 @@ describe('OrderItemsController (IT)', (): void => {
     it('should return 400 if quantity is invalid', async (): Promise<void> => {
       const response: Response = await request(httpServer)
         .post(RESOURCE_NAME)
+        .set('Cookie', customerCookies)
         .send(INVALID_SAVE_DTO)
         .expect(HttpStatus.BAD_REQUEST);
 
       expect(response.body.message).toEqual(
-        expect.arrayContaining([
-          expect.stringContaining('quantity'),
-        ]),
+        expect.arrayContaining([expect.stringContaining('quantity')]),
       );
     });
 
     it('should return 404 if order is not found', async (): Promise<void> => {
       const response: Response = await request(httpServer)
         .post(RESOURCE_NAME)
+        .set('Cookie', customerCookies)
         .send({
           ...VALID_SAVE_DTO,
           orderId: 100000000,
@@ -251,6 +254,7 @@ describe('OrderItemsController (IT)', (): void => {
     it('should return 404 if menu item is not found', async (): Promise<void> => {
       const response: Response = await request(httpServer)
         .post(RESOURCE_NAME)
+        .set('Cookie', customerCookies)
         .send({
           ...VALID_SAVE_DTO,
           menuItemId: 100000000,

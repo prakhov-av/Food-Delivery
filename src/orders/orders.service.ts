@@ -120,7 +120,8 @@ export class OrdersService {
   }
 
   async getActiveEntityById(id: number): Promise<Order> {
-    const order: Order | null = await this.repository.findById(id);
+    const order: Order | null =
+      await this.repository.findByIdWithRelations(id);
 
     if (!order || !order.active) {
       throw new EntityNotFoundException(Order.name, id);
