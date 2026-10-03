@@ -1,199 +1,341 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EntitySaveException } from '../exceptions/types/entity-save.exception';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
-import { RestaurantSaveDto } from './dto/restaurant.save-dto';
 import { RestaurantsService } from './restaurants.service';
-import { RestaurantsMapper } from './dto/restaurants.mapper';
 import { RestaurantsRepository } from './restaurants.repository';
-import { RestaurantDto } from './dto/restaurant.dto';
+import { RestaurantsMapper } from './dto/restaurants.mapper';
 import { Restaurant } from './restaurant.entity';
+import { RestaurantDto } from './dto/restaurant.dto';
+import { RestaurantSaveDto } from './dto/restaurant.save-dto';
 import { RestaurantUpdateDto } from './dto/restaurant.update-dto';
-import { Menu } from '../menus/menu.entity';
 
-describe('RestaurantsService', (): void => {
-  const VALID_SAVE_DTO: RestaurantSaveDto = {
+describe('RestaurantsService', () => {
+  let service: RestaurantsService;
+  let repository: {
+    save: jest.Mock;
+    findAllActive: jest.Mock;
+    findById: jest.Mock;
+    isPhoneExists: jest.Mock;
+  };
+  let mapper: {
+    mapDtoToEntity: jest.Mock;
+    mapEntityToDto: jest.Mock;
+    mapEntityListToDtoList: jest.Mock;
+  };
+
+  const SAVE_DTO: RestaurantSaveDto = {
     name: 'Restaurant1',
     address: 'Address1',
-    phone: '1234567891',
+    phone: '1234567890',
     email: 'rest1@test.com',
   };
 
-  const VALID_SAVE_DTO_WITH_EXISTING_PHONE: RestaurantSaveDto = {
-    name: 'Restaurant3',
-    address: 'Address3',
-    phone: '1234567893',
-    email: 'rest1@test.com',
-  };
-
-  const VALID_ENTITY_TO_MOCK_RETURN_1: Restaurant = {
-    id: 1,
-    name: 'Restaurant1',
-    address: 'Address1',
-    phone: '1234567891',
-    email: 'rest1@test.com',
-    menu: new Menu(),
-    orders: [],
-    active: true,
-  };
-
-  const VALID_ENTITY_TO_MOCK_RETURN_2: Restaurant = {
-    id: 2,
-    name: 'Restaurant2',
-    address: 'Address2',
-    phone: '1234567892',
-    email: 'rest2@test.com',
-    menu: new Menu(),
-    orders: [],
-    active: true,
-  };
-
-  const VALID_UPDATE_DTO: RestaurantUpdateDto = {
+  const UPDATE_DTO: RestaurantUpdateDto = {
     newName: 'New Restaurant Name',
   };
 
-  let service: RestaurantsService;
-  let repository: jest.Mocked<RestaurantsRepository>;
+  const RESTAURANT_ENTITY = {
+    id: 1,
+    name: 'Restaurant1',
+    address: 'Address1',
+    phone: '1234567890',
+    email: 'rest1@test.com',
+    active: true,
+    menus: [],
+  } as Restaurant;
 
-  beforeEach(async (): Promise<void> => {
+  const RESTAURANT_DTO = {
+    id: 1,
+    name: 'Restaurant1',
+    address: 'Address1',
+    phone: '1234567890',
+    email: 'rest1@test.com',
+  } as RestaurantDto;
+
+  beforeEach(async () => {
+    repository = {
+      save: jest.fn(),
+      findAllActive: jest.fn(),
+      findById: jest.fn(),
+      isPhoneExists: jest.fn(),
+    };
+
+    mapper = {
+      mapDtoToEntity: jest.fn(),
+      mapEntityToDto: jest.fn(),
+      mapEntityListToDtoList: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RestaurantsService,
-        RestaurantsMapper,
-        {
-          provide: RestaurantsRepository,
-          useValue: {
-            save: jest.fn(),
-            findAllActive: jest.fn(),
-            findById: jest.fn(),
-            isPhoneExists: jest.fn(),
-          },
-        },
+        { provide: RestaurantsRepository, useValue: repository },
+        { provide: RestaurantsMapper, useValue: mapper },
       ],
     }).compile();
 
-    service = module.get(RestaurantsService);
-    repository = module.get(RestaurantsRepository);
-
-    repository.isPhoneExists.mockImplementation(
-      async (phone: string): Promise<boolean> => {
-        return phone === '1234567893';
-      },
-    );
-
-    repository.findAllActive.mockResolvedValue([
-      VALID_ENTITY_TO_MOCK_RETURN_1,
-      VALID_ENTITY_TO_MOCK_RETURN_2,
-    ]);
-
-    repository.save.mockImplementation(
-      async (entity: Restaurant): Promise<Restaurant> => {
-        if (entity.phone === '1234567891') {
-          return VALID_ENTITY_TO_MOCK_RETURN_1;
-        }
-
-        throw Error('Restaurant save error');
-      },
-    );
-
-    repository.findById.mockImplementation(
-      async (id: number): Promise<Restaurant | null> => {
-        if (id === 1) {
-          return VALID_ENTITY_TO_MOCK_RETURN_1;
-        }
-
-        if (id === 2) {
-          return VALID_ENTITY_TO_MOCK_RETURN_2;
-        }
-
-        return null;
-      },
-    );
+    service = module.get<RestaurantsService>(RestaurantsService);
   });
 
-  describe('create', (): void => {
-    it('should create active restaurant and return dto', async (): Promise<void> => {
-      const result: RestaurantDto = await service.create(VALID_SAVE_DTO);
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
 
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ active: true }),
-      );
+  describe('create', () => {
+    it('should create an active restaurant and return DTO', async () => {
+      repository.isPhoneExists.mockResolvedValue(false);
 
-      expect(result).toBeDefined();
-      expect(result.name).toEqual(VALID_SAVE_DTO.name);
-      expect(result.address).toEqual(VALID_SAVE_DTO.address);
-      expect(result.phone).toEqual(VALID_SAVE_DTO.phone);
-      expect(result.email).toEqual(VALID_SAVE_DTO.email);
+      const entity = { ...RESTAURANT_ENTITY, active: true };
+
+      mapper.mapDtoToEntity.mockReturnValue(entity);
+      repository.save.mockResolvedValue(entity);
+      mapper.mapEntityToDto.mockReturnValue(RESTAURANT_DTO);
+
+      const result: RestaurantDto = await service.create(SAVE_DTO);
+
+      expect(repository.isPhoneExists).toHaveBeenCalledWith(SAVE_DTO.phone);
+      expect(mapper.mapDtoToEntity).toHaveBeenCalledWith(SAVE_DTO);
+      expect(entity.active).toBe(true);
+      expect(repository.save).toHaveBeenCalledWith(entity);
+      expect(mapper.mapEntityToDto).toHaveBeenCalledWith(entity);
+      expect(result).toEqual(RESTAURANT_DTO);
     });
 
-    it('should throw error if phone already exists', async (): Promise<void> => {
-      const resultPromise: Promise<RestaurantDto> = service.create(
-        VALID_SAVE_DTO_WITH_EXISTING_PHONE,
+    it('should throw EntitySaveException when phone already exists', async () => {
+      repository.isPhoneExists.mockResolvedValue(true);
+
+      await expect(service.create(SAVE_DTO)).rejects.toThrow(
+        EntitySaveException,
       );
 
-      await expect(resultPromise).rejects.toThrow('already exists');
-      await expect(resultPromise).rejects.toBeInstanceOf(EntitySaveException);
+      expect(repository.isPhoneExists).toHaveBeenCalledWith(SAVE_DTO.phone);
+      expect(mapper.mapDtoToEntity).not.toHaveBeenCalled();
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(mapper.mapEntityToDto).not.toHaveBeenCalled();
+    });
+
+    it('should propagate repository save error', async () => {
+      repository.isPhoneExists.mockResolvedValue(false);
+
+      const entity = { ...RESTAURANT_ENTITY, active: true };
+
+      mapper.mapDtoToEntity.mockReturnValue(entity);
+
+      const error = new Error('save error');
+      repository.save.mockRejectedValue(error);
+
+      await expect(service.create(SAVE_DTO)).rejects.toThrow(error);
+
+      expect(mapper.mapEntityToDto).not.toHaveBeenCalled();
     });
   });
 
-  describe('getAllActiveRestaurants', (): void => {
-    it('should return list of restaurant DTOs', async (): Promise<void> => {
-      const result: RestaurantDto[] = await service.getAllActiveRestaurants();
+  describe('getAllActiveRestaurants', () => {
+    it('should return all active restaurants', async () => {
+      const restaurants = [
+        RESTAURANT_ENTITY,
+        { ...RESTAURANT_ENTITY, id: 2, name: 'Restaurant2' },
+      ];
 
-      expect(result).toBeDefined();
-      expect(result.length).toEqual(2);
+      const dtoList = [
+        RESTAURANT_DTO,
+        { ...RESTAURANT_DTO, id: 2, name: 'Restaurant2' },
+      ];
 
-      const dto1: RestaurantDto = result[0];
-      expect(dto1).toBeDefined();
-      expect(dto1.id).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.id);
-      expect(dto1.name).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.name);
-      expect(dto1.address).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.address);
-      expect(dto1.phone).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.phone);
-      expect(dto1.email).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.email);
+      repository.findAllActive.mockResolvedValue(restaurants);
+      mapper.mapEntityListToDtoList.mockReturnValue(dtoList);
 
-      const dto2: RestaurantDto = result[1];
-      expect(dto2).toBeDefined();
-      expect(dto2.id).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.id);
-      expect(dto2.name).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.name);
-      expect(dto2.address).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.address);
-      expect(dto2.phone).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.phone);
-      expect(dto2.email).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.email);
+      const result = await service.getAllActiveRestaurants();
+
+      expect(repository.findAllActive).toHaveBeenCalled();
+      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith(restaurants);
+      expect(result).toEqual(dtoList);
     });
 
-    it('should throw error if list of restaurants is empty', async (): Promise<void> => {
+    it('should throw EntityNotFoundException when there are no active restaurants', async () => {
       repository.findAllActive.mockResolvedValue([]);
-      const resultPromise: Promise<RestaurantDto[]> =
-        service.getAllActiveRestaurants();
 
-      await expect(resultPromise).rejects.toThrow('not a single');
-      await expect(resultPromise).rejects.toBeInstanceOf(
+      await expect(service.getAllActiveRestaurants()).rejects.toThrow(
+        EntityNotFoundException,
+      );
+
+      expect(mapper.mapEntityListToDtoList).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getActiveRestaurantById', () => {
+    it('should return restaurant DTO', async () => {
+      repository.findById.mockResolvedValue(RESTAURANT_ENTITY);
+      mapper.mapEntityToDto.mockReturnValue(RESTAURANT_DTO);
+
+      const result = await service.getActiveRestaurantById(1);
+
+      expect(repository.findById).toHaveBeenCalledWith(1);
+      expect(mapper.mapEntityToDto).toHaveBeenCalledWith(RESTAURANT_ENTITY);
+      expect(result).toEqual(RESTAURANT_DTO);
+    });
+
+    it('should throw when restaurant does not exist', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.getActiveRestaurantById(1)).rejects.toThrow(
+        EntityNotFoundException,
+      );
+
+      expect(mapper.mapEntityToDto).not.toHaveBeenCalled();
+    });
+
+    it('should throw when restaurant is inactive', async () => {
+      repository.findById.mockResolvedValue({
+        ...RESTAURANT_ENTITY,
+        active: false,
+      });
+
+      await expect(service.getActiveRestaurantById(1)).rejects.toThrow(
+        EntityNotFoundException,
+      );
+
+      expect(mapper.mapEntityToDto).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getActiveEntityById', () => {
+    it('should return active restaurant entity', async () => {
+      repository.findById.mockResolvedValue(RESTAURANT_ENTITY);
+
+      const result = await service.getActiveEntityById(1);
+
+      expect(repository.findById).toHaveBeenCalledWith(1);
+      expect(result).toBe(RESTAURANT_ENTITY);
+    });
+
+    it('should throw when restaurant does not exist', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.getActiveEntityById(1)).rejects.toThrow(
+        EntityNotFoundException,
+      );
+    });
+
+    it('should throw when restaurant is inactive', async () => {
+      repository.findById.mockResolvedValue({
+        ...RESTAURANT_ENTITY,
+        active: false,
+      });
+
+      await expect(service.getActiveEntityById(1)).rejects.toThrow(
         EntityNotFoundException,
       );
     });
   });
 
-  describe('update', (): void => {
-    it('should update restaurant name', async (): Promise<void> => {
-      const idToUpdate: number = 1;
-      await service.update(idToUpdate, VALID_UPDATE_DTO);
+  describe('update', () => {
+    it('should update restaurant name and save', async () => {
+      const entity = { ...RESTAURANT_ENTITY, active: true };
 
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: idToUpdate,
-          name: VALID_UPDATE_DTO.newName,
-        }),
-      );
+      repository.findById.mockResolvedValue(entity);
+      repository.save.mockResolvedValue(entity);
+
+      await service.update(1, UPDATE_DTO);
+
+      expect(repository.findById).toHaveBeenCalledWith(1);
+      expect(entity.name).toBe(UPDATE_DTO.newName);
+      expect(repository.save).toHaveBeenCalledWith(entity);
     });
 
-    it('should throw exception when restaurant is not found', async (): Promise<void> => {
-      const resultPromise: Promise<void> = service.update(
-        1000,
-        VALID_UPDATE_DTO,
-      );
+    it('should throw when restaurant does not exist', async () => {
+      repository.findById.mockResolvedValue(null);
 
-      await expect(resultPromise).rejects.toThrow('not found');
-      await expect(resultPromise).rejects.toBeInstanceOf(
+      await expect(service.update(1, UPDATE_DTO)).rejects.toThrow(
         EntityNotFoundException,
       );
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw EntityNotFoundException when getActiveEntityById returns an empty value', async () => {
+      jest
+        .spyOn(service, 'getActiveEntityById')
+        .mockResolvedValue(undefined as unknown as Restaurant);
+
+      await expect(service.update(1, UPDATE_DTO)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should propagate repository save error', async () => {
+      const entity = { ...RESTAURANT_ENTITY, active: true };
+
+      repository.findById.mockResolvedValue(entity);
+
+      const error = new Error('save error');
+      repository.save.mockRejectedValue(error);
+
+      await expect(service.update(1, UPDATE_DTO)).rejects.toThrow(error);
+    });
+  });
+
+  describe('deleteById', () => {
+    it('should deactivate restaurant and save', async () => {
+      const entity = { ...RESTAURANT_ENTITY, active: true };
+
+      repository.findById.mockResolvedValue(entity);
+      repository.save.mockResolvedValue(entity);
+
+      await service.deleteById(1);
+
+      expect(repository.findById).toHaveBeenCalledWith(1);
+      expect(entity.active).toBe(false);
+      expect(repository.save).toHaveBeenCalledWith(entity);
+    });
+
+    it('should throw when restaurant does not exist', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.deleteById(1)).rejects.toThrow(
+        EntityNotFoundException,
+      );
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreById', () => {
+    it('should restore inactive restaurant', async () => {
+      const entity = { ...RESTAURANT_ENTITY, active: false };
+
+      repository.findById.mockResolvedValue(entity);
+      repository.save.mockResolvedValue(entity);
+
+      await service.restoreById(1);
+
+      expect(repository.findById).toHaveBeenCalledWith(1);
+      expect(entity.active).toBe(true);
+      expect(repository.save).toHaveBeenCalledWith(entity);
+    });
+
+    it('should do nothing when restaurant is already active', async () => {
+      const entity = { ...RESTAURANT_ENTITY, active: true };
+
+      repository.findById.mockResolvedValue(entity);
+
+      await service.restoreById(1);
+
+      expect(repository.findById).toHaveBeenCalledWith(1);
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(entity.active).toBe(true);
+    });
+
+    it('should throw when restaurant does not exist', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.restoreById(1)).rejects.toThrow(
+        EntityNotFoundException,
+      );
+
+      expect(repository.save).not.toHaveBeenCalled();
     });
   });
 });

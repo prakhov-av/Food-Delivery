@@ -120,8 +120,7 @@ export class OrdersService {
   }
 
   async getActiveEntityById(id: number): Promise<Order> {
-    const order: Order | null =
-      await this.repository.findByIdWithRelations(id);
+    const order: Order | null = await this.repository.findByIdWithRelations(id);
 
     if (!order || !order.active) {
       throw new EntityNotFoundException(Order.name, id);
@@ -179,10 +178,18 @@ export class OrdersService {
 
       order.courier = courier;
 
+      // A newly created order becomes CREATED
+      // after a courier has been assigned.
+      if (order.status === Status.NEW) {
+        order.status = Status.CREATED;
+      }
+
       await this.repository.save(order);
 
       this.logger.log(
-        `Order updated: id ${id}, ` + `new courier ${order.courier.id}`,
+        `Order updated: id ${id}, ` +
+          `new courier ${order.courier.id}, ` +
+          `status ${order.status}`,
       );
     }
   }

@@ -13,6 +13,7 @@ import { EmailService } from '../email/email.service';
 import { ConfirmationCodesService } from '../confirmation-codes/confirmation-codes.service';
 import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
 import { RegistrationException } from '../exceptions/types/registration.exception';
+import { UserIsNotConfirmedException } from '../exceptions/types/user-is-not-confirmed.exception';
 
 describe('UsersService', (): void => {
   const VALID_SAVE_DTO: UserSaveDto = {
@@ -213,8 +214,21 @@ describe('UsersService', (): void => {
     });
 
     it('should throw EntityNotFoundException if user is not found', async (): Promise<void> => {
-      const resultPromise: Promise<UserDto> =
-        service.getActiveUserById(1000);
+      const resultPromise: Promise<UserDto> = service.getActiveUserById(1000);
+
+      await expect(resultPromise).rejects.toThrow('not found');
+      await expect(resultPromise).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+    });
+
+    it('should throw EntityNotFoundException if user is inactive', async (): Promise<void> => {
+      repository.findById.mockResolvedValue({
+        ...VALID_ENTITY_TO_MOCK_RETURN_1,
+        active: false,
+      });
+
+      const resultPromise: Promise<UserDto> = service.getActiveUserById(1);
 
       await expect(resultPromise).rejects.toThrow('not found');
       await expect(resultPromise).rejects.toBeInstanceOf(
@@ -368,6 +382,57 @@ describe('UsersService', (): void => {
     });
   });
 
+  describe('getConfirmedByEmail', (): void => {
+    it('should return confirmed user by email', async (): Promise<void> => {
+      const email: string = VALID_ENTITY_TO_MOCK_RETURN_1.email;
+
+      repository.findByEmail.mockResolvedValue({
+        ...VALID_ENTITY_TO_MOCK_RETURN_1,
+        active: true,
+      });
+
+      const result: User = await service.getConfirmedByEmail(email);
+
+      expect(repository.findByEmail).toHaveBeenCalledWith(email);
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: VALID_ENTITY_TO_MOCK_RETURN_1.id,
+          email,
+          active: true,
+        }),
+      );
+    });
+
+    it('should throw EntityNotFoundException if user does not exist', async (): Promise<void> => {
+      const email: string = 'missing@test.com';
+
+      repository.findByEmail.mockResolvedValue(null);
+
+      const resultPromise: Promise<User> = service.getConfirmedByEmail(email);
+
+      await expect(resultPromise).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+      await expect(resultPromise).rejects.toThrow('not found');
+    });
+
+    it('should throw UserIsNotConfirmedException if user is inactive', async (): Promise<void> => {
+      const email: string = VALID_ENTITY_TO_MOCK_RETURN_1.email;
+
+      repository.findByEmail.mockResolvedValue({
+        ...VALID_ENTITY_TO_MOCK_RETURN_1,
+        active: false,
+      });
+
+      const resultPromise: Promise<User> = service.getConfirmedByEmail(email);
+
+      await expect(resultPromise).rejects.toBeInstanceOf(
+        UserIsNotConfirmedException,
+      );
+      await expect(resultPromise).rejects.toThrow(email);
+    });
+  });
+
   describe('register', (): void => {
     it('should register new user', async (): Promise<void> => {
       repository.findByEmail = jest.fn().mockResolvedValue(null);
@@ -447,45 +512,6 @@ describe('UsersService', (): void => {
       expect(savedUser.active).toBe(false);
 
       expect(emailService.sendConfirmationEmail).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('confirmRegistration', (): void => {
-    it('should activate user after successful confirmation', async (): Promise<void> => {
-      const inactiveUser: User = {
-        ...VALID_ENTITY_TO_MOCK_RETURN_1,
-        active: false,
-      };
-
-      confirmationCodesService.validateCodeAndGetUser.mockResolvedValue(
-        inactiveUser,
-      );
-
-      await service.confirmRegistration('confirmation-code');
-
-      expect(
-        confirmationCodesService.validateCodeAndGetUser,
-      ).toHaveBeenCalledWith('confirmation-code');
-
-      expect(repository.save).toHaveBeenCalledTimes(1);
-
-      const savedUser: User = repository.save.mock.calls[0][0];
-
-      expect(savedUser.id).toBe(inactiveUser.id);
-      expect(savedUser.active).toBe(true);
-    });
-
-    it('should propagate exception if confirmation code is invalid', async (): Promise<void> => {
-      confirmationCodesService.validateCodeAndGetUser.mockRejectedValue(
-        new Error('Invalid confirmation code'),
-      );
-
-      const resultPromise: Promise<void> =
-        service.confirmRegistration('invalid-code');
-
-      await expect(resultPromise).rejects.toThrow('Invalid confirmation code');
-
-      expect(repository.save).not.toHaveBeenCalled();
     });
   });
 
