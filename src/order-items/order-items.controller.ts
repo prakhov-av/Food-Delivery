@@ -23,10 +23,17 @@ import { User } from '../users/user.entity';
 import { Roles } from '../auth/types/auth.decorators';
 import { Role } from '../users/enums/role.enum';
 
+import { Audit } from '../audit/audit.decorator';
+import { AuditAction } from '../audit/audit.enums';
+
 @Controller('order-items')
 export class OrderItemsController {
   constructor(private readonly service: OrderItemsService) {}
 
+  @Audit({
+    action: AuditAction.ORDER_ITEM_CHANGED,
+    entityType: 'OrderItem',
+  })
   @Post()
   @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.CREATED)
@@ -40,6 +47,10 @@ export class OrderItemsController {
     return this.service.create(saveDto, req.user);
   }
 
+  @Audit({
+    action: AuditAction.ORDER_ITEM_CHANGED,
+    entityType: 'OrderItem',
+  })
   @Get()
   @ApiOkResponse({
     type: OrderItemDto,
@@ -60,6 +71,10 @@ export class OrderItemsController {
     return this.service.getActiveOrderItemById(id, req.user);
   }
 
+  @Audit({
+    action: AuditAction.ORDER_ITEM_CHANGED,
+    entityType: 'OrderItem',
+  })
   @Patch(':id')
   @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -71,6 +86,10 @@ export class OrderItemsController {
     await this.service.update(id, updateDto, req.user);
   }
 
+  @Audit({
+    action: AuditAction.ORDER_ITEM_CHANGED,
+    entityType: 'OrderItem',
+  })
   @Delete(':id')
   @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -81,6 +100,10 @@ export class OrderItemsController {
     await this.service.deleteById(id, req.user);
   }
 
+  @Audit({
+    action: AuditAction.ORDER_ITEM_CHANGED,
+    entityType: 'OrderItem',
+  })
   @Patch(':id/restore')
   @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)

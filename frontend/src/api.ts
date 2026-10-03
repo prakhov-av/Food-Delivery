@@ -9,6 +9,8 @@ export class ApiError extends Error {
 
 const API_URL = String(import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
+const NO_REFRESH = ['/auth/login', '/auth/refresh'];
+
 let onSessionExpired: (() => void) | null = null;
 
 export function setSessionExpiredHandler(handler: () => void): void {
@@ -43,12 +45,11 @@ async function parseError(response: Response): Promise<ApiError> {
         : body.message;
     }
   } catch {
-    // тело не JSON — оставляем сообщение по умолчанию
+
   }
 
   return new ApiError(response.status, message);
 }
-
 
 export async function api<T = void>(
   path: string,
@@ -56,7 +57,7 @@ export async function api<T = void>(
 ): Promise<T> {
   let response = await rawRequest(path, options);
 
-  if (response.status === 401 && !path.startsWith('/auth')) {
+  if (response.status === 401 && !NO_REFRESH.includes(path)) {
     const refreshed = await rawRequest('/auth/refresh', {
       method: 'POST',
     });
@@ -91,12 +92,7 @@ export async function api<T = void>(
   }
 }
 
-/**
- * GET списка.
- *
- * Если backend отвечает 404 на пустую таблицу,
- * возвращаем пустой массив.
- */
+
 export async function apiList<T>(path: string): Promise<T[]> {
   try {
     return await api<T[]>(path);

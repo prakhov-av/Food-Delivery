@@ -13,6 +13,7 @@ import { EmailService } from '../email/email.service';
 import { ConfirmationCodesService } from '../confirmation-codes/confirmation-codes.service';
 import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
 import { RegistrationException } from '../exceptions/types/registration.exception';
+import { AuditService } from '../audit/audit.service';
 
 describe('UsersService', (): void => {
   const VALID_SAVE_DTO: UserSaveDto = {
@@ -90,6 +91,12 @@ describe('UsersService', (): void => {
           provide: ConfirmationCodesService,
           useValue: {
             validateCodeAndGetUser: jest.fn(),
+          },
+        },
+        {
+          provide: AuditService,
+          useValue: {
+            log: jest.fn(),
           },
         },
       ],
@@ -193,6 +200,7 @@ describe('UsersService', (): void => {
 
     it('should throw error if list of users is empty', async (): Promise<void> => {
       repository.findAllActive.mockResolvedValue([]);
+
       const resultPromise: Promise<UserDto[]> = service.getAllActiveUsers();
 
       await expect(resultPromise).rejects.toThrow('not a single');
@@ -213,8 +221,7 @@ describe('UsersService', (): void => {
     });
 
     it('should throw EntityNotFoundException if user is not found', async (): Promise<void> => {
-      const resultPromise: Promise<UserDto> =
-        service.getActiveUserById(1000);
+      const resultPromise: Promise<UserDto> = service.getActiveUserById(1000);
 
       await expect(resultPromise).rejects.toThrow('not found');
       await expect(resultPromise).rejects.toBeInstanceOf(
@@ -226,6 +233,7 @@ describe('UsersService', (): void => {
   describe('update', (): void => {
     it('should update user name', async (): Promise<void> => {
       const idToUpdate: number = 1;
+
       await service.update(idToUpdate, VALID_UPDATE_DTO);
 
       expect(repository.save).toHaveBeenCalledWith(
@@ -254,8 +262,8 @@ describe('UsersService', (): void => {
       await service.deleteById(1);
 
       expect(repository.findById).toHaveBeenCalledWith(1);
-
       expect(repository.save).toHaveBeenCalledTimes(1);
+
       expect(repository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 1,
@@ -340,7 +348,6 @@ describe('UsersService', (): void => {
       await service.setRole(1, Role.ADMIN);
 
       expect(repository.findById).toHaveBeenCalledWith(1);
-
       expect(repository.save).toHaveBeenCalledTimes(1);
 
       const savedUser: User = repository.save.mock.calls[0][0];
@@ -436,7 +443,6 @@ describe('UsersService', (): void => {
 
       expect(savedUser.id).toBe(inactiveUser.id);
       expect(savedUser.email).toBe(inactiveUser.email);
-
       expect(savedUser.name).toBe(VALID_SAVE_DTO.name);
       expect(savedUser.phone).toBe(VALID_SAVE_DTO.phone);
 
@@ -447,45 +453,6 @@ describe('UsersService', (): void => {
       expect(savedUser.active).toBe(false);
 
       expect(emailService.sendConfirmationEmail).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('confirmRegistration', (): void => {
-    it('should activate user after successful confirmation', async (): Promise<void> => {
-      const inactiveUser: User = {
-        ...VALID_ENTITY_TO_MOCK_RETURN_1,
-        active: false,
-      };
-
-      confirmationCodesService.validateCodeAndGetUser.mockResolvedValue(
-        inactiveUser,
-      );
-
-      await service.confirmRegistration('confirmation-code');
-
-      expect(
-        confirmationCodesService.validateCodeAndGetUser,
-      ).toHaveBeenCalledWith('confirmation-code');
-
-      expect(repository.save).toHaveBeenCalledTimes(1);
-
-      const savedUser: User = repository.save.mock.calls[0][0];
-
-      expect(savedUser.id).toBe(inactiveUser.id);
-      expect(savedUser.active).toBe(true);
-    });
-
-    it('should propagate exception if confirmation code is invalid', async (): Promise<void> => {
-      confirmationCodesService.validateCodeAndGetUser.mockRejectedValue(
-        new Error('Invalid confirmation code'),
-      );
-
-      const resultPromise: Promise<void> =
-        service.confirmRegistration('invalid-code');
-
-      await expect(resultPromise).rejects.toThrow('Invalid confirmation code');
-
-      expect(repository.save).not.toHaveBeenCalled();
     });
   });
 

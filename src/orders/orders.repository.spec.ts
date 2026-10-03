@@ -29,6 +29,7 @@ describe('OrdersRepository', (): void => {
     typeOrmRepository = module.get(getRepositoryToken(Order));
   });
 
+
   it('should return only active orders from findAllActive', async (): Promise<void> => {
     typeOrmRepository.find.mockResolvedValue([]);
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 import { OrderItem } from './order-item.entity';
 
@@ -17,6 +17,9 @@ export class OrderItemsRepository {
 
   async findAllActive(): Promise<OrderItem[]> {
     return this.repository.find({
+      where: {
+        active: true,
+      },
       relations: {
         menuItem: true,
         order: {
@@ -29,7 +32,9 @@ export class OrderItemsRepository {
 
   async findById(id: number): Promise<OrderItem | null> {
     return this.repository.findOne({
-      where: { id },
+      where: {
+        id,
+      },
       relations: {
         menuItem: true,
         order: {
@@ -40,7 +45,17 @@ export class OrderItemsRepository {
     });
   }
 
-  async deleteById(id: number): Promise<void> {
-    await this.repository.delete(id);
+  async findAllActiveByOrderId(orderId: number): Promise<OrderItem[]> {
+    return this.repository.find({
+      where: {
+        active: true,
+        order: {
+          id: orderId,
+        },
+      },
+      relations: {
+        menuItem: true,
+      },
+    });
   }
 }

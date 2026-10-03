@@ -7,6 +7,20 @@ import { EntityNotFoundException } from '../exceptions/types/entity-not-found.ex
 import { ChatClassification } from './types/chat-classification';
 import { LiveDataResource } from './enums/live-data-resource.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
+import { Status } from '../orders/enums/status.enum';
+
+const STATUS_DESCRIPTIONS: Record<Status, string> = {
+  [Status.NEW]: 'NEW — черновик, заказ ещё не отправлен, в работе не считается',
+  [Status.CREATED]:
+    'CREATED — отправлен клиентом, ждёт подтверждения менеджера',
+  [Status.ACCEPTED]: 'ACCEPTED — оформлен менеджером, принят в работу',
+  [Status.COOKING]: 'COOKING — готовится',
+  [Status.READY]: 'READY — готов, ждёт курьера',
+  [Status.DELIVERING]: 'DELIVERING — доставляется курьером',
+  [Status.COMPLETED]: 'COMPLETED — завершён',
+  [Status.CANCELLED_CUSTOMER]: 'CANCELLED_CUSTOMER — отменён клиентом',
+  [Status.CANCELLED_COURIER]: 'CANCELLED_COURIER — отменён курьером',
+};
 
 @Injectable()
 export class LiveDataService {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { VectorStorageService } from '../vector-storage/vector-storage.service';
 import { AiService } from '../ai/ai.service';
@@ -13,8 +13,12 @@ import { ChatMessage } from './types/chat-message';
 import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
 import { ContextService } from './context.service';
 
+const MAX_HISTORY_MESSAGES = 10;
+
 @Injectable()
 export class ChatService {
+  private readonly logger: Logger = new Logger(ChatService.name);
+
   private readonly chatHistory: Map<number, ChatMessage[]> = new Map<
     number,
     ChatMessage[]
@@ -43,13 +47,12 @@ export class ChatService {
       .withQuestion(request)
       .build();
 
-    console.log('\nCreated classifierPrompt:\n');
-    console.log(classifierPrompt + '\n');
+    this.logPrompt('Classifier prompt', classifierPrompt);
 
     const classificationResponse: string =
       await this.aiService.generateResponse(classifierPrompt);
 
-    const classification: ChatClassification = this.parseClassification(
+    const classification: ChatClassification = this.classify(
       classificationResponse,
     );
 
@@ -68,8 +71,7 @@ export class ChatService {
         .withQuestion(request)
         .build();
 
-      console.log('\nCreated prompt for AI chat with live data:\n');
-      console.log(prompt + '\n');
+      this.logPrompt('Chat prompt with live data', prompt);
 
       const aiResponse: string = await this.aiService.generateResponse(prompt);
 
@@ -102,8 +104,7 @@ export class ChatService {
       .withQuestion(request)
       .build();
 
-    console.log('\nCreated prompt for AI chat:\n');
-    console.log(prompt + '\n');
+    this.logPrompt('Chat prompt', prompt);
 
     const aiResponse: string = await this.aiService.generateResponse(prompt);
 
@@ -112,8 +113,25 @@ export class ChatService {
     return aiResponse;
   }
 
+  clearHistory(userId: number): void {
+    this.chatHistory.delete(userId);
+  }
+
+  /**
+   * Промпты содержат персональные данные (имена, заказы, историю диалога),
+   * поэтому по умолчанию логируется только размер.
+   * Полный текст: CHAT_DEBUG_PROMPTS=true в .env (только для локальной отладки).
+   */
+  private logPrompt(title: string, prompt: string): void {
+    if (process.env.CHAT_DEBUG_PROMPTS === 'true') {
+      this.logger.debug(`${title}:\n${prompt}`);
+    } else {
+      this.logger.debug(`${title}: ${prompt.length} chars`);
+    }
+  }
+
   private getChatHistoryByUserId(userId: number): ChatMessage[] {
-    return this.chatHistory.get(userId)?.slice(-10) ?? [];
+    return this.chatHistory.get(userId)?.slice(-MAX_HISTORY_MESSAGES) ?? [];
   }
 
   private addChatHistoryByUserId(
@@ -125,18 +143,48 @@ export class ChatService {
     message.userRequest = userRequest;
     message.aiAnswer = aiResponse;
 
-    if (this.chatHistory.has(userId)) {
-      this.chatHistory.get(userId)?.push(message);
-    } else {
-      this.chatHistory.set(userId, [message]);
+    const history: ChatMessage[] = this.chatHistory.get(userId) ?? [];
+    history.push(message);
+
+    this.chatHistory.set(userId, history.slice(-MAX_HISTORY_MESSAGES));
+  }
+
+  /**
+   * Если модель вернула что-то неразбираемое, не роняем запрос:
+   * отвечаем как на общий вопрос по системе, без live-данных.
+   */
+  private classify(value: string): ChatClassification {
+    try {
+      return this.parseClassification(value);
+    } catch (error) {
+      this.logger.warn(
+        `Classification failed, falling back to SYSTEM: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return {
+        documentType: DocumentType.SYSTEM,
+        liveDataRequired: false,
+        resource: undefined,
+        resourceId: undefined,
+      };
     }
+  }
+
+  /** Вырезает JSON-объект из ответа модели (блоки ```json и текст вокруг). */
+  private extractJson(value: string): string {
+    const start: number = value.indexOf('{');
+    const end: number = value.lastIndexOf('}');
+
+    return start !== -1 && end > start ? value.slice(start, end + 1) : value;
   }
 
   private parseClassification(value: string): ChatClassification {
     let parsed: unknown;
 
     try {
-      parsed = JSON.parse(value);
+      parsed = JSON.parse(this.extractJson(value));
     } catch {
       throw new ConfigurationException(
         `Invalid chat classification returned by AI: ${value}`,
@@ -249,7 +297,7 @@ export class ChatService {
 
     if (
       normalizedResource === LiveDataResource.ORDER &&
-      classification.documentType !== DocumentType.ORDER
+      normalizedDocumentType !== DocumentType.ORDER
     ) {
       throw new ConfigurationException(
         'ORDER live data resource requires ORDER document type',

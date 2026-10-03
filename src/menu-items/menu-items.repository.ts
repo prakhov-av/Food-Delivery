@@ -25,4 +25,17 @@ export class MenuItemsRepository {
   async deleteById(id: number): Promise<void> {
     await this.repository.delete(id);
   }
+
+  async findAllActiveByMenuId(menuId: number): Promise<MenuItem[]> {
+    return this.repository.findBy({
+      active: true,
+      menu: { id: menuId },
+    });
+  }
+  async findByIdWithRestaurant(id: number): Promise<MenuItem | null> {
+    return this.repository.findOne({
+      where: { id },
+      relations: { menu: { restaurant: true } },
+    });
+  }
 }

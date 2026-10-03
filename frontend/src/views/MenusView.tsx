@@ -1,18 +1,26 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, apiList } from '../api';
+import { api } from '../api';
 import type { MenuDto, RestaurantDto } from '../types';
 import { CollapsibleForm, ErrorBanner, SuccessBanner } from '../ui';
 
-export default function MenusView() {
+export default function MenusView({
+  restaurant,
+  canManage,
+  onSelect,
+  onBack,
+}: {
+  restaurant: RestaurantDto;
+  canManage: boolean;
+  onSelect: (menu: MenuDto) => void;
+  onBack: () => void;
+}) {
   const [menus, setMenus] = useState<MenuDto[]>([]);
-  const [restaurants, setRestaurants] = useState<RestaurantDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
 
   const [name, setName] = useState('');
-  const [restaurantId, setRestaurantId] = useState('');
   const [renameId, setRenameId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
@@ -20,18 +28,15 @@ export default function MenusView() {
     setLoading(true);
     setError('');
     try {
-      const [menusData, restaurantsData] = await Promise.all([
-        apiList<MenuDto>('/menus'),
-        apiList<RestaurantDto>('/restaurants'),
-      ]);
-      setMenus(menusData);
-      setRestaurants(restaurantsData);
+      setMenus(await api<MenuDto[]>(`/menus?restaurantId=${restaurant.id}`));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить меню');
+      setError(
+        err instanceof Error ? err.message : 'Не удалось загрузить меню',
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [restaurant.id]);
 
   useEffect(() => {
     void load();
@@ -56,10 +61,9 @@ export default function MenusView() {
     run(async () => {
       await api('/menus', {
         method: 'POST',
-        body: JSON.stringify({ name, restaurantId: Number(restaurantId) }),
+        body: JSON.stringify({ name, restaurantId: restaurant.id }),
       });
       setName('');
-      setRestaurantId('');
     }, 'Меню создано');
 
   const rename = (id: number) =>
@@ -77,37 +81,40 @@ export default function MenusView() {
   return (
     <div className="view">
       <header className="view-header">
-        <h1>Меню</h1>
+        <div>
+          <button className="btn btn-ghost btn-sm" onClick={onBack}>
+            ← К ресторанам
+          </button>
+          <h1>Меню · {restaurant.name}</h1>
+        </div>
         <button className="btn btn-ghost" onClick={() => void load()}>
           Обновить
         </button>
       </header>
 
       {error && <ErrorBanner message={error} onClose={() => setError('')} />}
-      {success && <SuccessBanner message={success} onClose={() => setSuccess('')} />}
+      {success && (
+        <SuccessBanner message={success} onClose={() => setSuccess('')} />
+      )}
 
-      <CollapsibleForm title="Добавить меню" onSubmit={create} busy={busy}>
-        <label>
-          Название (латиницей)
-          <input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
-        </label>
-        <label>
-          Ресторан
-          <select value={restaurantId} onChange={(e) => setRestaurantId(e.target.value)} required>
-            <option value="">— выберите —</option>
-            {restaurants.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} (#{r.id})
-              </option>
-            ))}
-          </select>
-        </label>
-      </CollapsibleForm>
+      {canManage && (
+        <CollapsibleForm title="Добавить меню" onSubmit={create} busy={busy}>
+          <label>
+            Название (латиницей)
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              minLength={2}
+            />
+          </label>
+        </CollapsibleForm>
+      )}
 
       {loading ? (
         <div className="empty">Загрузка…</div>
       ) : menus.length === 0 ? (
-        <div className="empty">Меню пока нет</div>
+        <div className="empty">У этого ресторана пока нет меню</div>
       ) : (
         <div className="card table-card">
           <table>
@@ -123,7 +130,7 @@ export default function MenusView() {
                 <tr key={m.id}>
                   <td className="muted">#{m.id}</td>
                   <td>
-                    {renameId === m.id ? (
+                    {canManage && renameId === m.id ? (
                       <div className="inline-form">
                         <input
                           value={renameValue}
@@ -135,7 +142,10 @@ export default function MenusView() {
                         >
                           ОК
                         </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setRenameId(null)}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setRenameId(null)}
+                        >
                           Отмена
                         </button>
                       </div>
@@ -145,21 +155,31 @@ export default function MenusView() {
                   </td>
                   <td className="actions-col">
                     <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => {
-                        setRenameId(m.id);
-                        setRenameValue(m.name);
-                      }}
+                      className="btn btn-primary btn-sm"
+                      onClick={() => onSelect(m)}
                     >
-                      Переименовать
+                      Блюда →
                     </button>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() => void remove(m.id)}
-                      disabled={busy}
-                    >
-                      Удалить
-                    </button>
+                    {canManage && (
+                      <>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => {
+                            setRenameId(m.id);
+                            setRenameValue(m.name);
+                          }}
+                        >
+                          Переименовать
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => void remove(m.id)}
+                          disabled={busy}
+                        >
+                          Удалить
+                        </button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

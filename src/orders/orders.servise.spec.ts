@@ -1,5 +1,8 @@
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
+import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
+import { RoleMismatchException } from '../exceptions/types/role-mismatch.exception';
 import { Restaurant } from '../restaurants/restaurant.entity';
 import { RestaurantsService } from '../restaurants/restaurants.service';
 import { OrderSaveDto } from './dto/order.save-dto';
@@ -15,6 +18,9 @@ import { Role } from '../users/enums/role.enum';
 import { User } from '../users/user.entity';
 import { UsersMapper } from '../users/dto/users.mapper';
 import { RestaurantsMapper } from '../restaurants/dto/restaurants.mapper';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '../audit/audit.enums';
+import { MAX_SUBMITTED_ORDERS_PER_CUSTOMER } from './validation/order-limits';
 
 describe('OrdersService', (): void => {
   const VALID_SAVE_DTO: OrderSaveDto = {
@@ -58,10 +64,25 @@ describe('OrdersService', (): void => {
     courierId: 2,
   };
 
+  // Свежий заказ для тестов, которые меняют объект.
+  const makeOrder = (overrides: Partial<Order> = {}): Order => ({
+    id: 1,
+    customer: { id: 1 } as User,
+    courier: null,
+    restaurant: { id: 1 } as Restaurant,
+    status: Status.NEW,
+    totalPrice: 0,
+    createdAt: new Date(2026, 7, 21),
+    items: [],
+    active: true,
+    ...overrides,
+  });
+
   let service: OrdersService;
   let repository: jest.Mocked<OrdersRepository>;
   let usersService: jest.Mocked<UsersService>;
   let restaurantsService: jest.Mocked<RestaurantsService>;
+  let audit: jest.Mocked<AuditService>;
 
   beforeEach(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
@@ -76,18 +97,29 @@ describe('OrdersService', (): void => {
             save: jest.fn(),
             findAllActive: jest.fn(),
             findById: jest.fn(),
+            findByIdWithRelations: jest.fn(),
+            findActiveDraft: jest.fn(),
+            countActiveItems: jest.fn(),
+            countSubmittedByCustomerId: jest.fn(),
           },
         },
         {
           provide: UsersService,
           useValue: {
             getActiveEntityById: jest.fn(),
+            findAvailableCourier: jest.fn(),
           },
         },
         {
           provide: RestaurantsService,
           useValue: {
             getActiveEntityById: jest.fn(),
+          },
+        },
+        {
+          provide: AuditService,
+          useValue: {
+            record: jest.fn(),
           },
         },
       ],
@@ -97,6 +129,7 @@ describe('OrdersService', (): void => {
     repository = module.get(OrdersRepository);
     usersService = module.get(UsersService);
     restaurantsService = module.get(RestaurantsService);
+    audit = module.get(AuditService);
 
     repository.findAllActive.mockResolvedValue([
       VALID_ENTITY_TO_MOCK_RETURN_1,
@@ -107,19 +140,24 @@ describe('OrdersService', (): void => {
       async (entity: Order): Promise<Order> => entity,
     );
 
-    repository.findById.mockImplementation(
-      async (id: number): Promise<Order | null> => {
-        if (id === 1) {
-          return VALID_ENTITY_TO_MOCK_RETURN_1;
-        }
+    const findOrderById = async (id: number): Promise<Order | null> => {
+      if (id === 1) {
+        return VALID_ENTITY_TO_MOCK_RETURN_1;
+      }
 
-        if (id === 2) {
-          return VALID_ENTITY_TO_MOCK_RETURN_2;
-        }
+      if (id === 2) {
+        return VALID_ENTITY_TO_MOCK_RETURN_2;
+      }
 
-        return null;
-      },
-    );
+      return null;
+    };
+
+    repository.findById.mockImplementation(findOrderById);
+    repository.findByIdWithRelations.mockImplementation(findOrderById);
+
+    repository.findActiveDraft.mockResolvedValue(null);
+    repository.countActiveItems.mockResolvedValue(1);
+    repository.countSubmittedByCustomerId.mockResolvedValue(0);
 
     usersService.getActiveEntityById.mockImplementation(
       async (id: number): Promise<User> => {
@@ -141,18 +179,20 @@ describe('OrdersService', (): void => {
       },
     );
 
+    usersService.findAvailableCourier.mockResolvedValue(null);
+
     restaurantsService.getActiveEntityById.mockResolvedValue({
       id: 1,
     } as Restaurant);
   });
 
   describe('create', (): void => {
-    it('should create active order and return dto', async (): Promise<void> => {
-      const user: User = {
-        id: 1,
-        role: Role.CUSTOMER,
-      } as User;
+    const user: User = {
+      id: 1,
+      role: Role.CUSTOMER,
+    } as User;
 
+    it('should create active order and return dto', async (): Promise<void> => {
       const result: OrderDto = await service.create(VALID_SAVE_DTO, user);
 
       expect(repository.save).toHaveBeenCalledWith(
@@ -163,6 +203,29 @@ describe('OrdersService', (): void => {
       expect(result.restaurant.id).toEqual(VALID_SAVE_DTO.restaurantId);
       expect(result.customer.id).toEqual(user.id);
       expect(result.courier).toBeNull();
+    });
+
+    it('should write an audit record when an order is created', async (): Promise<void> => {
+      await service.create(VALID_SAVE_DTO, user);
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ORDER_CREATED,
+          actorId: user.id,
+        }),
+      );
+    });
+
+    it('should return the existing draft instead of creating a new order', async (): Promise<void> => {
+      repository.findActiveDraft.mockResolvedValue(
+        VALID_ENTITY_TO_MOCK_RETURN_1,
+      );
+
+      const result: OrderDto = await service.create(VALID_SAVE_DTO, user);
+
+      expect(result.id).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.id);
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
@@ -214,6 +277,29 @@ describe('OrdersService', (): void => {
         EntityNotFoundException,
       );
     });
+
+    it('should return only own orders for a customer', async (): Promise<void> => {
+      const user: Pick<User, 'id' | 'role'> = {
+        id: 1,
+        role: Role.CUSTOMER,
+      };
+
+      const result: OrderDto[] = await service.getAllOrders(user);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toEqual(1);
+    });
+
+    it('should throw when a courier has no assigned orders', async (): Promise<void> => {
+      const user: Pick<User, 'id' | 'role'> = {
+        id: 99,
+        role: Role.COURIER,
+      };
+
+      await expect(service.getAllOrders(user)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+    });
   });
 
   describe('update', (): void => {
@@ -241,6 +327,160 @@ describe('OrdersService', (): void => {
       await expect(resultPromise).rejects.toBeInstanceOf(
         EntityNotFoundException,
       );
+    });
+
+    it('should reject a courier id that belongs to a non-courier user', async (): Promise<void> => {
+      const resultPromise: Promise<void> = service.update(1, {
+        courierId: 1,
+      });
+
+      await expect(resultPromise).rejects.toBeInstanceOf(RoleMismatchException);
+    });
+
+    it('should reject an update without courier id', async (): Promise<void> => {
+      const resultPromise: Promise<void> = service.update(
+        1,
+        {} as OrderUpdateDto,
+      );
+
+      await expect(resultPromise).rejects.toBeInstanceOf(EntityUpdateException);
+    });
+  });
+
+  describe('updateTotalPrice', (): void => {
+    it('should save the new total price', async (): Promise<void> => {
+      await service.updateTotalPrice(1, 42.5);
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, totalPrice: 42.5 }),
+      );
+    });
+  });
+
+  describe('setStatus', (): void => {
+    const customer: User = { id: 1, role: Role.CUSTOMER } as User;
+    const manager: User = { id: 5, role: Role.MANAGER } as User;
+
+    it('should reject setting the same status', async (): Promise<void> => {
+      repository.findByIdWithRelations.mockResolvedValue(makeOrder());
+
+      await expect(
+        service.setStatus(1, Status.NEW, customer),
+      ).rejects.toBeInstanceOf(EntityUpdateException);
+    });
+
+    it('should deny a customer access to another customer order', async (): Promise<void> => {
+      repository.findByIdWithRelations.mockResolvedValue(
+        makeOrder({ customer: { id: 2 } as User }),
+      );
+
+      await expect(
+        service.setStatus(1, Status.CREATED, customer),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should not let a customer move an order forward', async (): Promise<void> => {
+      repository.findByIdWithRelations.mockResolvedValue(
+        makeOrder({ status: Status.CREATED }),
+      );
+
+      await expect(
+        service.setStatus(1, Status.ACCEPTED, customer),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should not submit an empty order', async (): Promise<void> => {
+      repository.findByIdWithRelations.mockResolvedValue(makeOrder());
+      repository.countActiveItems.mockResolvedValue(0);
+
+      await expect(
+        service.setStatus(1, Status.CREATED, customer),
+      ).rejects.toBeInstanceOf(EntityUpdateException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should not submit when the limit of active orders is reached', async (): Promise<void> => {
+      repository.findByIdWithRelations.mockResolvedValue(makeOrder());
+      repository.countSubmittedByCustomerId.mockResolvedValue(
+        MAX_SUBMITTED_ORDERS_PER_CUSTOMER,
+      );
+
+      await expect(
+        service.setStatus(1, Status.CREATED, customer),
+      ).rejects.toBeInstanceOf(EntityUpdateException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should submit an order, assign a courier automatically and write audit records', async (): Promise<void> => {
+      repository.findByIdWithRelations.mockResolvedValue(makeOrder());
+      usersService.findAvailableCourier.mockResolvedValue({
+        id: 7,
+        role: Role.COURIER,
+      } as User);
+
+      await service.setStatus(1, Status.CREATED, customer);
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: Status.CREATED,
+          courier: expect.objectContaining({ id: 7 }),
+        }),
+      );
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ORDER_STATUS_CHANGED,
+          actorId: customer.id,
+          entityId: 1,
+          details: { from: Status.NEW, to: Status.CREATED },
+        }),
+      );
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ORDER_COURIER_ASSIGNED,
+          entityId: 1,
+          details: { courierId: 7, mode: 'AUTO' },
+        }),
+      );
+    });
+
+    it('should submit an order without a courier when none is available', async (): Promise<void> => {
+      repository.findByIdWithRelations.mockResolvedValue(makeOrder());
+
+      await service.setStatus(1, Status.CREATED, customer);
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: Status.CREATED, courier: null }),
+      );
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: AuditAction.ORDER_STATUS_CHANGED }),
+      );
+
+      expect(audit.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: AuditAction.ORDER_COURIER_ASSIGNED }),
+      );
+    });
+
+    it('should let a manager accept a submitted order without assigning a courier', async (): Promise<void> => {
+      repository.findByIdWithRelations.mockResolvedValue(
+        makeOrder({ status: Status.CREATED }),
+      );
+
+      await service.setStatus(1, Status.ACCEPTED, manager);
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: Status.ACCEPTED }),
+      );
+
+      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
     });
   });
 });

@@ -7,6 +7,31 @@ import {
 } from '@nestjs/common';
 import { catchError, Observable, tap } from 'rxjs';
 
+const SENSITIVE_KEYS = [
+  'password',
+  'newPassword',
+  'oldPassword',
+  'accessToken',
+  'refreshToken',
+];
+
+export function maskSensitive(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(maskSensitive);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, v]) => [
+        key,
+        SENSITIVE_KEYS.includes(key) ? '***' : maskSensitive(v),
+      ]),
+    );
+  }
+
+  return value;
+}
+
 @Injectable()
 export class RequestLoggingInterceptor implements NestInterceptor {
   private readonly logger: Logger = new Logger(RequestLoggingInterceptor.name);
@@ -20,14 +45,12 @@ export class RequestLoggingInterceptor implements NestInterceptor {
     const request: any = context.switchToHttp().getRequest();
 
     const params: string = JSON.stringify(request.params);
-    const body: string = request.body ? JSON.stringify(request.body) : 'none';
+    const body: string = request.body
+      ? JSON.stringify(maskSensitive(request.body))
+      : 'none';
 
-    // Логировать тело запроса - небезопасно!
-    // Потому что тело запроса может содержать секреты
-    // либо может быть просто очень большим.
-    // В нашем конкретном примере следовало бы отказаться от логирования тела,
-    // потому что сюда будут попадать пароли пользователей.
-    // Но в качестве учебного примера - оставим.
+    // Секретные поля (пароли, токены) маскируются через maskSensitive.
+    // Остальное тело по-прежнему логируется целиком.
     this.logger.debug(
       `${className}.${methodName} called with params: ${params} and body: ${body}`,
     );

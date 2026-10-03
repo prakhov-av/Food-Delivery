@@ -31,13 +31,26 @@ describe('OrderItemsService', (): void => {
     quantity: 1,
   };
 
+  const VALID_MENU_ITEM: MenuItem = {
+    id: 1,
+    price: 10,
+    menu: {
+      restaurant: {
+        id: 1,
+      },
+    },
+  } as MenuItem;
+
   const VALID_ENTITY_TO_MOCK_RETURN_1: OrderItem = {
     id: 1,
     order: {
       id: 1,
       customer: { id: 1 },
     } as Order,
-    menuItem: { id: 1 } as MenuItem,
+    menuItem: {
+      id: 1,
+      price: 10,
+    } as MenuItem,
     quantity: 1,
     active: true,
   };
@@ -48,7 +61,10 @@ describe('OrderItemsService', (): void => {
       id: 1,
       customer: { id: 1 },
     } as Order,
-    menuItem: { id: 2 } as MenuItem,
+    menuItem: {
+      id: 2,
+      price: 10,
+    } as MenuItem,
     quantity: 1,
     active: true,
   };
@@ -73,18 +89,20 @@ describe('OrderItemsService', (): void => {
             save: jest.fn(),
             findAllActive: jest.fn(),
             findById: jest.fn(),
+            findAllActiveByOrderId: jest.fn(),
           },
         },
         {
           provide: OrdersService,
           useValue: {
             getActiveEntityByIdWithRelations: jest.fn(),
+            updateTotalPrice: jest.fn(),
           },
         },
         {
           provide: MenuItemsService,
           useValue: {
-            getActiveEntityById: jest.fn(),
+            getActiveEntityWithRestaurantById: jest.fn(),
           },
         },
         {
@@ -99,35 +117,33 @@ describe('OrderItemsService', (): void => {
     }).compile();
 
     service = module.get<OrderItemsService>(OrderItemsService);
-
     repository = module.get<OrderItemsRepository>(OrderItemsRepository);
-
     ordersService = module.get<OrdersService>(OrdersService);
-
     menuItemsService = module.get<MenuItemsService>(MenuItemsService);
 
     ordersService.getActiveEntityByIdWithRelations.mockResolvedValue({
       id: 1,
       customer: { id: 1 },
+      restaurant: { id: 1 },
+      status: Status.NEW,
     } as Order);
 
-    menuItemsService.getActiveEntityById.mockResolvedValue({
-      id: 1,
-    } as MenuItem);
+    menuItemsService.getActiveEntityWithRestaurantById.mockResolvedValue(
+      VALID_MENU_ITEM,
+    );
 
     repository.findAllActive.mockResolvedValue([
       VALID_ENTITY_TO_MOCK_RETURN_1,
       VALID_ENTITY_TO_MOCK_RETURN_2,
     ]);
 
-    repository.save.mockImplementation(
-      async (entity: OrderItem): Promise<OrderItem> => {
-        if (entity.active) {
-          return VALID_ENTITY_TO_MOCK_RETURN_1;
-        }
+    repository.findAllActiveByOrderId.mockResolvedValue([
+      VALID_ENTITY_TO_MOCK_RETURN_1,
+      VALID_ENTITY_TO_MOCK_RETURN_2,
+    ]);
 
-        throw Error('Order item save error');
-      },
+    repository.save.mockImplementation(
+      async (entity: OrderItem): Promise<OrderItem> => entity,
     );
 
     repository.findById.mockImplementation(
@@ -159,7 +175,6 @@ describe('OrderItemsService', (): void => {
       );
 
       expect(result).toBeDefined();
-
       expect(result.menuItem.id).toEqual(VALID_SAVE_DTO.menuItemId);
     });
   });
@@ -175,25 +190,19 @@ describe('OrderItemsService', (): void => {
       const dto1: OrderItemDto = result[0];
 
       expect(dto1).toBeDefined();
-
       expect(dto1.id).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.id);
-
       expect(dto1.menuItem.id).toEqual(
         VALID_ENTITY_TO_MOCK_RETURN_1.menuItem.id,
       );
-
       expect(dto1.quantity).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.quantity);
 
       const dto2: OrderItemDto = result[1];
 
       expect(dto2).toBeDefined();
-
       expect(dto2.id).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.id);
-
       expect(dto2.menuItem.id).toEqual(
         VALID_ENTITY_TO_MOCK_RETURN_2.menuItem.id,
       );
-
       expect(dto2.quantity).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.quantity);
     });
 
@@ -204,7 +213,6 @@ describe('OrderItemsService', (): void => {
         service.getAllActiveOrderItems(VALID_USER);
 
       await expect(resultPromise).rejects.toThrow('not a single');
-
       await expect(resultPromise).rejects.toBeInstanceOf(
         EntityNotFoundException,
       );
@@ -229,6 +237,7 @@ describe('OrderItemsService', (): void => {
       ordersService.getActiveEntityByIdWithRelations.mockResolvedValueOnce({
         id: 1,
         customer: { id: 1 },
+        restaurant: { id: 1 },
         status: Status.COMPLETED,
       } as Order);
 
@@ -262,12 +271,12 @@ describe('OrderItemsService', (): void => {
       );
 
       await expect(resultPromise).rejects.toThrow('not found');
-
       await expect(resultPromise).rejects.toBeInstanceOf(
         EntityNotFoundException,
       );
     });
   });
+
   describe('restoreById', (): void => {
     it('should reject restore when order is completed', async (): Promise<void> => {
       repository.findById.mockResolvedValueOnce({

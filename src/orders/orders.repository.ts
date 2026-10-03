@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order } from './order.entity';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { Status } from './enums/status.enum';
+import { OrderItem } from '../order-items/order-item.entity';
 
 @Injectable()
 export class OrdersRepository {
@@ -29,6 +31,25 @@ export class OrdersRepository {
     });
   }
 
+  async findActiveDraft(
+    customerId: number,
+    restaurantId: number,
+  ): Promise<Order | null> {
+    return this.repository.findOne({
+      where: {
+        active: true,
+        status: Status.NEW,
+        customer: { id: customerId },
+        restaurant: { id: restaurantId },
+      },
+      relations: {
+        customer: true,
+        courier: true,
+        restaurant: true,
+      },
+    });
+  }
+
   async findAllActive(): Promise<Order[]> {
     return this.repository.find({
       where: { active: true },
@@ -36,6 +57,28 @@ export class OrdersRepository {
         customer: true,
         courier: true,
         restaurant: true,
+      },
+    });
+  }
+
+  async countActiveItems(orderId: number): Promise<number> {
+    return this.repository.manager.count(OrderItem, {
+      where: { order: { id: orderId }, active: true },
+    });
+  }
+
+  async countSubmittedByCustomerId(customerId: number): Promise<number> {
+    return this.repository.count({
+      where: {
+        active: true,
+        customer: { id: customerId },
+        status: In([
+          Status.CREATED,
+          Status.ACCEPTED,
+          Status.COOKING,
+          Status.READY,
+          Status.DELIVERING,
+        ]),
       },
     });
   }

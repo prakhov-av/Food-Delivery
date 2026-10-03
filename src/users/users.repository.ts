@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { User } from './user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
+
+import { User } from './user.entity';
+import { Role } from './enums/role.enum';
 
 @Injectable()
 export class UsersRepository {
@@ -15,7 +17,9 @@ export class UsersRepository {
   }
 
   async findAllActive(): Promise<User[]> {
-    return this.repository.findBy({ active: true });
+    return this.repository.findBy({
+      active: true,
+    });
   }
 
   async findById(id: number): Promise<User | null> {
@@ -32,5 +36,14 @@ export class UsersRepository {
 
   async findByEmail(email: string): Promise<User | null> {
     return this.repository.findOneBy({ email });
+  }
+
+  async findAvailableCourier(): Promise<User | null> {
+    return this.repository.findOne({
+      where: {
+        role: Role.COURIER,
+        active: true,
+      },
+    });
   }
 }

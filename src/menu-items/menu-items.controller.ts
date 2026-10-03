@@ -9,19 +9,26 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { MenuItemsService } from './menu-items.service';
-import { ApiOkResponse } from '@nestjs/swagger';
+import { ApiOkResponse, ApiQuery } from '@nestjs/swagger';
 import { MenuItemDto } from './dto/menu-item.dto';
 import { MenuItemSaveDto } from './dto/menu-item.save-dto';
 import { MenuItemUpdateDto } from './dto/menu-item.update-dto';
 import { Roles } from '../auth/types/auth.decorators';
 import { Role } from '../users/enums/role.enum';
 
+import { Audit } from '../audit/audit.decorator';
+import { AuditAction } from '../audit/audit.enums';
+
 @Controller('menu-items')
 export class MenuItemsController {
   constructor(private readonly service: MenuItemsService) {}
-
+  @Audit({
+    action: AuditAction.CATALOG_CREATED,
+    entityType: 'MenuItem',
+  })
   @Roles(Role.ADMIN, Role.MANAGER)
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -33,12 +40,16 @@ export class MenuItemsController {
   }
 
   @Get()
+  @ApiQuery({ name: 'menuId', required: false, type: Number })
   @ApiOkResponse({
     type: MenuItemDto,
     isArray: true,
   })
-  async getAll(): Promise<MenuItemDto[]> {
-    return this.service.getAllActiveMenuItems();
+  async getAll(
+    @Query('menuId', new ParseIntPipe({ optional: true }))
+    menuId?: number,
+  ): Promise<MenuItemDto[]> {
+    return this.service.getAllActiveMenuItems(menuId);
   }
 
   @Get(':id')
@@ -49,6 +60,10 @@ export class MenuItemsController {
     return this.service.getActiveMenuItemById(id);
   }
 
+  @Audit({
+    action: AuditAction.CATALOG_UPDATED,
+    entityType: 'MenuItem',
+  })
   @Roles(Role.ADMIN, Role.MANAGER)
   @Patch(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -59,6 +74,10 @@ export class MenuItemsController {
     await this.service.update(id, updateDto);
   }
 
+  @Audit({
+    action: AuditAction.CATALOG_DELETED,
+    entityType: 'MenuItem',
+  })
   @Roles(Role.ADMIN, Role.MANAGER)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -66,6 +85,10 @@ export class MenuItemsController {
     await this.service.deleteById(id);
   }
 
+  @Audit({
+    action: AuditAction.CATALOG_RESTORED,
+    entityType: 'MenuItem',
+  })
   @Roles(Role.ADMIN, Role.MANAGER)
   @Patch(':id/restore')
   @HttpCode(HttpStatus.NO_CONTENT)

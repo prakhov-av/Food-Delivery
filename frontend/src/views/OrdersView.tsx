@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, apiList } from '../api';
-import type { MenuItemDto, OrderDto, OrderStatus, RestaurantDto, UserDto } from '../types';
-import { ORDER_STATUSES } from '../types';
+import { canAssignCourier, canEditItems, nextStatuses } from '../types';
+import { ORDER_LIMITS } from '../config';
+import type {
+  OrderDto,
+  OrderItemDto,
+  OrderStatus,
+  Role,
+  UserDto,
+} from '../types';
 import {
-  CollapsibleForm,
   ErrorBanner,
   StatusBadge,
   SuccessBanner,
@@ -12,53 +18,97 @@ import {
   statusLabel,
 } from '../ui';
 
-export default function OrdersView({ staff }: { staff: boolean }) {
+const isCancel = (s: OrderStatus): boolean =>
+  s === 'CANCELLED_CUSTOMER' || s === 'CANCELLED_COURIER';
+
+const isClosed = (s?: OrderStatus): boolean =>
+  s === 'COMPLETED' || s === 'CANCELLED_CUSTOMER' || s === 'CANCELLED_COURIER';
+
+function actionLabel(target: OrderStatus): string {
+  if (target === 'CREATED') return 'Отправить';
+  if (target === 'ACCEPTED') return 'Оформить';
+  if (isCancel(target)) return 'Отменить';
+
+  return statusLabel(target);
+}
+
+const itemsTotal = (list: OrderItemDto[]): number =>
+  list.reduce((sum, it) => sum + Number(it.menuItem.price) * it.quantity, 0);
+
+export default function OrdersView({ role }: { role: Role }) {
   const [orders, setOrders] = useState<OrderDto[]>([]);
-  const [users, setUsers] = useState<UserDto[]>([]);
-  const [restaurants, setRestaurants] = useState<RestaurantDto[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItemDto[]>([]);
+  const [items, setItems] = useState<OrderItemDto[]>([]);
+  const [couriers, setCouriers] = useState<UserDto[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const [form, setForm] = useState({ customerId: '', courierId: '', restaurantId: '' });
-  const [itemOrderId, setItemOrderId] = useState<number | null>(null);
-  const [itemForm, setItemForm] = useState({ menuItemId: '', quantity: '1' });
-
-  const customers = users.filter((u) => u.role === 'CUSTOMER');
-  const couriers = users.filter((u) => u.role === 'COURIER');
-
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+
     try {
-      const [ordersData, restaurantsData, menuItemsData] = await Promise.all([
+      const [ordersData, itemsData] = await Promise.all([
         apiList<OrderDto>('/orders'),
-        apiList<RestaurantDto>('/restaurants'),
-        apiList<MenuItemDto>('/menu-items'),
+        apiList<OrderItemDto>('/order-items'),
       ]);
-      setOrders(ordersData);
-      setRestaurants(restaurantsData);
-      setMenuItems(menuItemsData);
-      if (staff) {
-        setUsers(await apiList<UserDto>('/users'));
+
+      setOrders([...ordersData].sort((a, b) => b.id - a.id));
+
+      setItems(itemsData);
+
+      if (canAssignCourier(role)) {
+        const users = await apiList<UserDto>('/users');
+
+        setCouriers(users.filter((u) => u.role === 'COURIER'));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить заказы');
+      setError(
+        err instanceof Error ? err.message : 'Не удалось загрузить заказы',
+      );
     } finally {
       setLoading(false);
     }
-  }, [staff]);
+  }, [role]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const itemsByOrder = useMemo(() => {
+    const map = new Map<number, OrderItemDto[]>();
+
+    for (const it of items) {
+      const list = map.get(it.orderId) ?? [];
+
+      list.push(it);
+      map.set(it.orderId, list);
+    }
+
+    return map;
+  }, [items]);
+
+  // Пустой черновик NEW без позиций
+  // = пустая корзина, не показываем.
+  const { active, history } = useMemo(() => {
+    const visible = orders.filter(
+      (o) =>
+        !(o.status === 'NEW' && (itemsByOrder.get(o.id)?.length ?? 0) === 0),
+    );
+
+    return {
+      active: visible.filter((o) => !isClosed(o.status)),
+      history: visible.filter((o) => isClosed(o.status)),
+    };
+  }, [orders, itemsByOrder]);
+
   const run = async (action: () => Promise<void>, successMessage: string) => {
     setBusy(true);
     setError('');
     setSuccess('');
+
     try {
       await action();
       setSuccess(successMessage);
@@ -70,242 +120,282 @@ export default function OrdersView({ staff }: { staff: boolean }) {
     }
   };
 
-  const create = () =>
-    run(async () => {
-      await api('/orders', {
-        method: 'POST',
-        body: JSON.stringify({
-          customerId: Number(form.customerId),
-          courierId: Number(form.courierId),
-          restaurantId: Number(form.restaurantId),
-        }),
-      });
-      setForm({ customerId: '', courierId: '', restaurantId: '' });
-    }, 'Заказ создан. Теперь добавьте позиции.');
+  const setStatus = (id: number, status: OrderStatus) => {
+    if (isCancel(status) && !window.confirm(`Отменить заказ #${id}?`)) {
+      return Promise.resolve();
+    }
 
-  const setStatus = (id: number, status: OrderStatus) =>
-    run(
-      () => api(`/orders/${id}/set-status/${status}`, { method: 'PATCH' }),
-      `Статус заказа #${id}: ${statusLabel(status)}`,
+    return run(
+      () =>
+        api(`/orders/${id}/set-status/${status}`, {
+          method: 'PATCH',
+        }),
+      `Заказ #${id}: ${statusLabel(status)}`,
     );
+  };
 
   const changeCourier = (id: number, courierId: number) =>
     run(
       () =>
         api(`/orders/${id}`, {
           method: 'PATCH',
-          body: JSON.stringify({ courierId }),
+          body: JSON.stringify({
+            courierId,
+          }),
         }),
       `Курьер заказа #${id} обновлён`,
     );
 
-  const addItem = (orderId: number) =>
-    run(async () => {
-      await api('/order-items', {
-        method: 'POST',
-        body: JSON.stringify({
-          orderId,
-          menuItemId: Number(itemForm.menuItemId),
-          quantity: Number(itemForm.quantity),
+  const changeQty = (item: OrderItemDto, newQuantity: number) =>
+    run(
+      () =>
+        api(`/order-items/${item.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            newQuantity,
+          }),
         }),
-      });
-      setItemForm({ menuItemId: '', quantity: '1' });
-      setItemOrderId(null);
-    }, `Позиция добавлена в заказ #${orderId}`);
+      'Количество обновлено',
+    );
+
+  const removeItem = (id: number) =>
+    run(
+      () =>
+        api(`/order-items/${id}`, {
+          method: 'DELETE',
+        }),
+      'Позиция удалена',
+    );
+
+  const renderOrder = (o: OrderDto) => {
+    const list = itemsByOrder.get(o.id) ?? [];
+
+    const editable = canEditItems(role, o.status);
+
+    const next = nextStatuses(role, o.status);
+
+    return (
+      <div className="card" key={o.id} style={{ padding: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <h3>
+            #{o.id} · {o.restaurant?.name ?? '—'}
+          </h3>
+
+          <StatusBadge status={o.status} />
+        </div>
+
+        <div className="muted" style={{ marginTop: 4 }}>
+          Клиент: {o.customer?.name ?? '—'} · {formatDate(o.createdAt)}
+        </div>
+
+        <div style={{ marginTop: 4 }}>
+          Курьер:{' '}
+          {canAssignCourier(role) &&
+          couriers.length > 0 &&
+          !isClosed(o.status) ? (
+            <select
+              value={o.courier?.id ?? ''}
+              onChange={(e) => {
+                const id = Number(e.target.value);
+
+                if (id) {
+                  void changeCourier(o.id, id);
+                }
+              }}
+              disabled={busy}
+            >
+              {!o.courier && <option value="">—</option>}
+
+              {couriers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            (o.courier?.name ?? '—')
+          )}
+        </div>
+
+        {list.length === 0 ? (
+          <div className="muted" style={{ marginTop: 8 }}>
+            В заказе пока нет позиций
+          </div>
+        ) : (
+          <ul
+            style={{
+              listStyle: 'none',
+              padding: 0,
+              margin: '8px 0 0',
+            }}
+          >
+            {list.map((it) => (
+              <li
+                key={it.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 4,
+                }}
+              >
+                <span style={{ flex: 1 }}>{it.menuItem.name}</span>
+
+                {editable ? (
+                  <>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      disabled={busy || it.quantity <= 1}
+                      onClick={() => void changeQty(it, it.quantity - 1)}
+                    >
+                      −
+                    </button>
+
+                    <span>{it.quantity}</span>
+
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      disabled={
+                        busy || it.quantity >= ORDER_LIMITS.maxQuantityPerItem
+                      }
+                      onClick={() => void changeQty(it, it.quantity + 1)}
+                    >
+                      +
+                    </button>
+                  </>
+                ) : (
+                  <span>× {it.quantity}</span>
+                )}
+
+                <span className="muted">
+                  {formatPrice(Number(it.menuItem.price) * it.quantity)}
+                </span>
+
+                {editable && (
+                  <button
+                    className="btn btn-danger btn-sm"
+                    disabled={busy}
+                    onClick={() => void removeItem(it.id)}
+                  >
+                    ✕
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div style={{ marginTop: 8 }}>
+          <b>Итого: {formatPrice(itemsTotal(list))}</b>
+        </div>
+
+        {next.length > 0 && (
+          <div className="card-actions" style={{ marginTop: 8 }}>
+            {role === 'ADMIN' ? (
+              <select
+                className="status-select"
+                value=""
+                disabled={busy}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    void setStatus(o.id, e.target.value as OrderStatus);
+                  }
+                }}
+              >
+                <option value="">Сменить статус…</option>
+
+                {next.map((s) => (
+                  <option key={s} value={s}>
+                    {statusLabel(s)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              next.map((s) => (
+                <button
+                  key={s}
+                  className={`btn btn-sm ${
+                    isCancel(s) ? 'btn-danger' : 'btn-primary'
+                  }`}
+                  disabled={busy || (s === 'CREATED' && list.length === 0)}
+                  onClick={() => void setStatus(o.id, s)}
+                >
+                  {actionLabel(s)}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="view">
       <header className="view-header">
         <h1>Заказы</h1>
+
         <button className="btn btn-ghost" onClick={() => void load()}>
           Обновить
         </button>
       </header>
 
       {error && <ErrorBanner message={error} onClose={() => setError('')} />}
-      {success && <SuccessBanner message={success} onClose={() => setSuccess('')} />}
 
-      <CollapsibleForm title="Оформить заказ" onSubmit={create} busy={busy}>
-        <label>
-          Клиент
-          {staff ? (
-            <select
-              value={form.customerId}
-              onChange={(e) => setForm({ ...form, customerId: e.target.value })}
-              required
-            >
-              <option value="">— выберите —</option>
-              {customers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} (#{u.id})
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="number"
-              min="1"
-              placeholder="ID клиента"
-              value={form.customerId}
-              onChange={(e) => setForm({ ...form, customerId: e.target.value })}
-              required
-            />
-          )}
-        </label>
-        <label>
-          Курьер
-          {staff ? (
-            <select
-              value={form.courierId}
-              onChange={(e) => setForm({ ...form, courierId: e.target.value })}
-              required
-            >
-              <option value="">— выберите —</option>
-              {couriers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} (#{u.id})
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="number"
-              min="1"
-              placeholder="ID курьера"
-              value={form.courierId}
-              onChange={(e) => setForm({ ...form, courierId: e.target.value })}
-              required
-            />
-          )}
-        </label>
-        <label>
-          Ресторан
-          <select
-            value={form.restaurantId}
-            onChange={(e) => setForm({ ...form, restaurantId: e.target.value })}
-            required
-          >
-            <option value="">— выберите —</option>
-            {restaurants.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} (#{r.id})
-              </option>
-            ))}
-          </select>
-        </label>
-      </CollapsibleForm>
+      {success && (
+        <SuccessBanner message={success} onClose={() => setSuccess('')} />
+      )}
 
       {loading ? (
         <div className="empty">Загрузка…</div>
-      ) : orders.length === 0 ? (
-        <div className="empty">Заказов пока нет</div>
+      ) : active.length === 0 && history.length === 0 ? (
+        <div className="empty">
+          {role === 'CUSTOMER'
+            ? 'Заказов пока нет. Добавьте блюда из меню ресторана.'
+            : 'Заказов пока нет'}
+        </div>
       ) : (
-        <div className="card table-card">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Клиент</th>
-                <th>Ресторан</th>
-                <th>Курьер</th>
-                <th>Сумма</th>
-                <th>Создан</th>
-                <th>Статус</th>
-                <th className="actions-col">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((o) => (
-                <tr key={o.id}>
-                  <td className="muted">#{o.id}</td>
-                  <td>{o.customer?.name ?? '—'}</td>
-                  <td>{o.restaurant?.name ?? '—'}</td>
-                  <td>
-                    {staff && couriers.length > 0 ? (
-                      <select
-                        value={o.courier?.id ?? ''}
-                        onChange={(e) => void changeCourier(o.id, Number(e.target.value))}
-                        disabled={busy}
-                      >
-                        {!o.courier && <option value="">—</option>}
-                        {couriers.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      (o.courier?.name ?? '—')
-                    )}
-                  </td>
-                  <td>{formatPrice(o.totalPrice)}</td>
-                  <td className="muted">{formatDate(o.createdAt)}</td>
-                  <td>
-                    <StatusBadge status={o.status} />
-                  </td>
-                  <td className="actions-col">
-                    <select
-                      className="status-select"
-                      value=""
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          void setStatus(o.id, e.target.value as OrderStatus);
-                        }
-                      }}
-                      disabled={busy}
-                    >
-                      <option value="">Сменить статус…</option>
-                      {ORDER_STATUSES.filter((s) => s !== o.status).map((s) => (
-                        <option key={s} value={s}>
-                          {statusLabel(s)}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => {
-                        setItemOrderId(itemOrderId === o.id ? null : o.id);
-                        setItemForm({ menuItemId: '', quantity: '1' });
-                      }}
-                    >
-                      + Позиция
-                    </button>
-                    {itemOrderId === o.id && (
-                      <div className="inline-form item-form">
-                        <select
-                          value={itemForm.menuItemId}
-                          onChange={(e) =>
-                            setItemForm({ ...itemForm, menuItemId: e.target.value })
-                          }
-                        >
-                          <option value="">— блюдо —</option>
-                          {menuItems.map((mi) => (
-                            <option key={mi.id} value={mi.id}>
-                              {mi.name} · {formatPrice(mi.price)}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          min="1"
-                          className="qty-input"
-                          value={itemForm.quantity}
-                          onChange={(e) => setItemForm({ ...itemForm, quantity: e.target.value })}
-                        />
-                        <button
-                          className="btn btn-primary btn-sm"
-                          disabled={busy || !itemForm.menuItemId}
-                          onClick={() => void addItem(o.id)}
-                        >
-                          ОК
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div
+          style={{
+            display: 'grid',
+            gap: 16,
+          }}
+        >
+          {active.length === 0 && (
+            <div className="empty">Активных заказов нет</div>
+          )}
+
+          {active.map(renderOrder)}
+
+          {history.length > 0 && (
+            <details>
+              <summary
+                style={{
+                  cursor: 'pointer',
+                  margin: '8px 0',
+                }}
+              >
+                История ({history.length})
+              </summary>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gap: 16,
+                  marginTop: 8,
+                }}
+              >
+                {history.map(renderOrder)}
+              </div>
+            </details>
+          )}
         </div>
       )}
     </div>

@@ -11,8 +11,10 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
+
 import { Request } from 'express';
 import { ApiOkResponse } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 import { Status } from './enums/status.enum';
 import { OrderUpdateDto } from './dto/order.update-dto';
@@ -23,13 +25,17 @@ import { User } from '../users/user.entity';
 
 import { Role } from '../users/enums/role.enum';
 import { Roles } from '../auth/types/auth.decorators';
+import { Audit } from '../audit/audit.decorator';
+import { AuditAction } from '../audit/audit.enums';
 
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly service: OrdersService) {}
 
+  // Запись в журнал пишет сам сервис: только при реальном создании.
   @Post()
   @Roles(Role.CUSTOMER)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOkResponse({
     type: OrderDto,
@@ -61,6 +67,8 @@ export class OrdersController {
     return this.service.getOrderById(id, req.user);
   }
 
+  // Ручная смена курьера. В журнале: исполнитель, id заказа и courierId из тела запроса.
+  @Audit({ action: AuditAction.ORDER_COURIER_ASSIGNED, entityType: 'Order' })
   @Patch(':id')
   @Roles(Role.ADMIN, Role.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -71,8 +79,9 @@ export class OrdersController {
     await this.service.update(id, updateDto);
   }
 
+  // Журнал пишется внутри сервиса (нужен прежний статус), декоратор не нужен.
   @Patch(':id/set-status/:status')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.COURIER)
+  @Roles(Role.ADMIN, Role.MANAGER, Role.COURIER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async setStatus(
     @Param('id', ParseIntPipe) id: number,

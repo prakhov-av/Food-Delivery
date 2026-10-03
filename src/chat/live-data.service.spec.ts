@@ -1,223 +1,382 @@
-import { ForbiddenException } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { ChatService } from './chat.service';
+import { EmbeddingsService } from '../embeddings/embeddings.service';
+import { VectorStorageService } from '../vector-storage/vector-storage.service';
+import { AiService } from '../ai/ai.service';
+import { PromptService } from '../prompts/prompt.service';
 import { LiveDataService } from './live-data.service';
-import { OrdersService } from '../orders/orders.service';
+import { ContextService } from './context.service';
 import { Role } from '../users/enums/role.enum';
-import { Status } from '../orders/enums/status.enum';
-import { OrderDto } from '../orders/dto/order.dto';
-import { ChatClassification } from './types/chat-classification';
-import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { LiveDataResource } from './enums/live-data-resource.enum';
+import { PromptBuilder } from '../prompts/prompt.builder';
+import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
 
-describe('LiveDataService', (): void => {
-  const ORDER: OrderDto = {
-    id: 123,
-    customer: {
-      id: 10,
-      name: 'Customer',
-    } as OrderDto['customer'],
-    courier: {
-      id: 20,
-      name: 'Courier',
-    } as NonNullable<OrderDto['courier']>,
-    restaurant: {
-      id: 30,
-      name: 'Restaurant',
-    } as OrderDto['restaurant'],
-    status: Status.NEW,
-    totalPrice: 25,
-    createdAt: new Date('2026-09-06T10:00:00.000Z'),
-  };
+const createPromptBuilder = (prompt: string): PromptBuilder => {
+  return new PromptBuilder(prompt);
+};
 
-  const classification: ChatClassification = {
+const createQdrantResult = (text: string, index: number = 0): QdrantResult => {
+  const result: QdrantResult = new QdrantResult();
+
+  result.id = `chunk-${index}`;
+  result.version = 1;
+  result.score = 0.95;
+  result.payload = {
+    text,
+    docTitle: 'orders.md',
+    page: 1,
     documentType: DocumentType.ORDER,
-    liveDataRequired: true,
-    resource: LiveDataResource.ORDER,
-    resourceId: 123,
+    allowedRoles: [Role.CUSTOMER],
+    language: 'en',
+    documentVersion: 1,
+    documentId: 'document-1',
+    index,
   };
 
-  const ordersClassification: ChatClassification = {
-    documentType: DocumentType.ORDER,
-    liveDataRequired: true,
-    resource: LiveDataResource.ORDER,
-  };
+  return result;
+};
 
-  let service: LiveDataService;
-  let ordersService: jest.Mocked<OrdersService>;
-  let getOrderByIdWithRelations: jest.Mock;
-  let getCurrentOrders: jest.Mock;
+describe('ChatService', (): void => {
+  let service: ChatService;
+  let embeddingsService: jest.Mocked<EmbeddingsService>;
+  let vectorStorageService: jest.Mocked<VectorStorageService>;
+  let aiService: jest.Mocked<AiService>;
+  let promptService: jest.Mocked<PromptService>;
+  let liveDataService: jest.Mocked<LiveDataService>;
+  let contextService: jest.Mocked<ContextService>;
 
-  beforeEach((): void => {
-    getOrderByIdWithRelations = jest.fn();
-    getCurrentOrders = jest.fn();
+  beforeEach(async (): Promise<void> => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ChatService,
+        {
+          provide: EmbeddingsService,
+          useValue: {
+            generateEmbeddings: jest.fn(),
+          },
+        },
+        {
+          provide: VectorStorageService,
+          useValue: {
+            getRelevantChunkByAccess: jest.fn(),
+          },
+        },
+        {
+          provide: AiService,
+          useValue: {
+            generateResponse: jest.fn(),
+          },
+        },
+        {
+          provide: PromptService,
+          useValue: {
+            buildPromptForDocumentType: jest.fn(),
+            buildPromptForChat: jest.fn(),
+          },
+        },
+        {
+          provide: LiveDataService,
+          useValue: {
+            getLiveData: jest.fn(),
+          },
+        },
+        {
+          provide: ContextService,
+          useValue: {
+            generateContext: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
 
-    ordersService = {
-      getOrderByIdWithRelations,
-      getCurrentOrders,
-    } as unknown as jest.Mocked<OrdersService>;
+    service = module.get(ChatService);
+    embeddingsService = module.get(EmbeddingsService);
+    vectorStorageService = module.get(VectorStorageService);
+    aiService = module.get(AiService);
+    promptService = module.get(PromptService);
+    liveDataService = module.get(LiveDataService);
+    contextService = module.get(ContextService);
 
-    service = new LiveDataService(ordersService);
-
-    getOrderByIdWithRelations.mockResolvedValue(ORDER);
-    getCurrentOrders.mockResolvedValue([ORDER]);
+    contextService.generateContext.mockReturnValue([]);
   });
 
-  it('should return live order data for its customer', async (): Promise<void> => {
-    const result: string = await service.getLiveData(
-      classification,
+  it('should use RAG flow for informational request and keep history', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('final answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    const relevantChunks: QdrantResult[] = [createQdrantResult('order rules')];
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue(
+      relevantChunks,
+    );
+
+    contextService.generateContext.mockReturnValue(['order rules']);
+
+    const result: string = await service.generateResponse(
+      'Какие статусы бывают у заказа?',
       10,
       Role.CUSTOMER,
     );
 
-    expect(result).toContain('Заказ №123');
-    expect(result).toContain('Статус: NEW');
+    expect(result).toBe('final answer');
 
-    expect(getOrderByIdWithRelations).toHaveBeenCalledWith(123, {
-      id: 10,
-      role: Role.CUSTOMER,
-    });
+    expect(embeddingsService.generateEmbeddings).toHaveBeenCalledWith([
+      'Какие статусы бывают у заказа?',
+    ]);
 
-    expect(getCurrentOrders).not.toHaveBeenCalled();
-  });
-
-  it('should return live order data for its courier', async (): Promise<void> => {
-    const result: string = await service.getLiveData(
-      classification,
-      20,
-      Role.COURIER,
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.ORDER,
+      Role.CUSTOMER,
     );
 
-    expect(result).toContain('Заказ №123');
-    expect(result).toContain('Курьер: Courier');
-  });
+    expect(contextService.generateContext).toHaveBeenCalledWith(relevantChunks);
 
-  it('should return accessible orders for a customer', async (): Promise<void> => {
-    const result: string = await service.getLiveData(
-      ordersClassification,
+    expect(promptService.buildPromptForChat).toHaveBeenCalled();
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('second answer');
+
+    await service.generateResponse(
+      'А какие из них финальные?',
       10,
       Role.CUSTOMER,
     );
 
-    expect(result).toContain('Заказ №123');
-    expect(getCurrentOrders).toHaveBeenCalledWith({
-      id: 10,
-      role: Role.CUSTOMER,
-    });
-    expect(getOrderByIdWithRelations).not.toHaveBeenCalled();
+    const classifierPrompt = aiService.generateResponse.mock.calls[2][0];
+
+    expect(classifierPrompt).toContain('Какие статусы бывают у заказа?');
+    expect(classifierPrompt).toContain('final answer');
+    expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
-  it('should return accessible orders for a courier', async (): Promise<void> => {
-    const result: string = await service.getLiveData(
-      ordersClassification,
-      20,
-      Role.COURIER,
+  it('should keep history isolated by user', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockImplementation(() =>
+      createPromptBuilder('classifier'),
     );
 
-    expect(result).toContain('Заказ №123');
-    expect(getCurrentOrders).toHaveBeenCalledWith({
-      id: 20,
-      role: Role.COURIER,
-    });
+    promptService.buildPromptForChat.mockImplementation(() =>
+      createPromptBuilder('answer'),
+    );
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('user 10 answer')
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('user 20 answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    await service.generateResponse('Вопрос пользователя 10', 10, Role.CUSTOMER);
+
+    await service.generateResponse('Вопрос пользователя 20', 20, Role.CUSTOMER);
+
+    const secondClassifierPrompt = aiService.generateResponse.mock.calls[2][0];
+
+    expect(secondClassifierPrompt).not.toContain('Вопрос пользователя 10');
+    expect(secondClassifierPrompt).not.toContain('user 10 answer');
   });
 
-  it('should return all orders for manager and admin', async (): Promise<void> => {
-    await expect(
-      service.getLiveData(ordersClassification, 999, Role.MANAGER),
-    ).resolves.toContain('Заказ №123');
+  it('should use live data as context and generate a final AI response', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
 
-    await expect(
-      service.getLiveData(ordersClassification, 999, Role.ADMIN),
-    ).resolves.toContain('Заказ №123');
-  });
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
 
-  it('should return only current orders provided by OrdersService', async (): Promise<void> => {
-    const currentOrder: OrderDto = {
-      ...ORDER,
-      status: Status.DELIVERING,
-    };
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":123}',
+      )
+      .mockResolvedValueOnce('Заказ №123 сейчас готовится.');
 
-    getCurrentOrders.mockResolvedValue([currentOrder]);
+    liveDataService.getLiveData.mockResolvedValue(
+      'Заказ №123\nСтатус: COOKING',
+    );
 
-    const result: string = await service.getLiveData(
-      ordersClassification,
+    const result: string = await service.generateResponse(
+      'Какой статус заказа 123?',
       10,
       Role.CUSTOMER,
     );
 
-    expect(result).toContain('Статус: DELIVERING');
-    expect(result).not.toContain('COMPLETED');
-    expect(result).not.toContain('CANCELLED_CUSTOMER');
-    expect(result).not.toContain('CANCELLED_COURIER');
-    expect(getCurrentOrders).toHaveBeenCalledWith({
-      id: 10,
-      role: Role.CUSTOMER,
-    });
-  });
+    expect(result).toBe('Заказ №123 сейчас готовится.');
 
-  it('should return customer no-orders message', async (): Promise<void> => {
-    getCurrentOrders.mockRejectedValue(new EntityNotFoundException('Order'));
-
-    await expect(
-      service.getLiveData(ordersClassification, 10, Role.CUSTOMER),
-    ).resolves.toBe('У вас нет заказов.');
-  });
-
-  it('should return courier no-orders message', async (): Promise<void> => {
-    getCurrentOrders.mockRejectedValue(new EntityNotFoundException('Order'));
-
-    await expect(
-      service.getLiveData(ordersClassification, 20, Role.COURIER),
-    ).resolves.toBe('У вас нет заказов на выполнение.');
-  });
-
-  it('should deny customer access to another customer order without exposing data', async (): Promise<void> => {
-    getOrderByIdWithRelations.mockRejectedValue(
-      new ForbiddenException('Customer can only access own orders'),
-    );
-
-    await expect(
-      service.getLiveData(classification, 999, Role.CUSTOMER),
-    ).resolves.toBe('У вас нет заказа №123 среди ваших заказов.');
-
-    expect(getOrderByIdWithRelations).toHaveBeenCalledWith(123, {
-      id: 999,
-      role: Role.CUSTOMER,
-    });
-  });
-
-  it('should return no-order message when a requested order is not available', async (): Promise<void> => {
-    getOrderByIdWithRelations.mockRejectedValue(
-      new EntityNotFoundException('Order', 123),
-    );
-
-    await expect(
-      service.getLiveData(classification, 10, Role.CUSTOMER),
-    ).resolves.toBe('У вас нет заказа №123 среди ваших заказов.');
-  });
-
-  it('should propagate unexpected backend errors', async (): Promise<void> => {
-    const error: Error = new Error('Database unavailable');
-    getOrderByIdWithRelations.mockRejectedValue(error);
-
-    await expect(
-      service.getLiveData(classification, 10, Role.CUSTOMER),
-    ).rejects.toBe(error);
-  });
-
-  it('should not query orders when classification is not an order resource', async (): Promise<void> => {
-    const nonOrderClassification: ChatClassification = {
-      documentType: DocumentType.RESTAURANT,
-      liveDataRequired: true,
-    };
-
-    const result: string = await service.getLiveData(
-      nonOrderClassification,
+    expect(liveDataService.getLiveData).toHaveBeenCalledWith(
+      {
+        documentType: DocumentType.ORDER,
+        liveDataRequired: true,
+        resource: LiveDataResource.ORDER,
+        resourceId: 123,
+      },
       10,
       Role.CUSTOMER,
     );
 
-    expect(result).toContain('актуальные данные');
-    expect(getOrderByIdWithRelations).not.toHaveBeenCalled();
-    expect(getCurrentOrders).not.toHaveBeenCalled();
+    expect(promptService.buildPromptForChat).toHaveBeenCalled();
+    expect(aiService.generateResponse).toHaveBeenCalledTimes(2);
+
+    const finalPrompt = aiService.generateResponse.mock.calls[1][0];
+
+    expect(finalPrompt).toContain('Заказ №123');
+    expect(finalPrompt).toContain('Статус: COOKING');
+    expect(finalPrompt).toContain('Какой статус заказа 123?');
+
+    expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
+    expect(
+      vectorStorageService.getRelevantChunkByAccess,
+    ).not.toHaveBeenCalled();
+    expect(contextService.generateContext).not.toHaveBeenCalled();
+  });
+
+  it('should use live order list as context and generate a final AI response', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER"}',
+      )
+      .mockResolvedValueOnce('У вас два текущих заказа.');
+
+    liveDataService.getLiveData.mockResolvedValue(
+      'Заказ №1\nСтатус: ACCEPTED\n\nЗаказ №4\nСтатус: COOKING',
+    );
+
+    const result: string = await service.generateResponse(
+      'Какие у меня есть заказы?',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('У вас два текущих заказа.');
+
+    expect(liveDataService.getLiveData).toHaveBeenCalledWith(
+      {
+        documentType: DocumentType.ORDER,
+        liveDataRequired: true,
+        resource: LiveDataResource.ORDER,
+      },
+      10,
+      Role.CUSTOMER,
+    );
+
+    const finalPrompt = aiService.generateResponse.mock.calls[1][0];
+
+    expect(finalPrompt).toContain('Заказ №1');
+    expect(finalPrompt).toContain('Заказ №4');
+    expect(finalPrompt).toContain('Какие у меня есть заказы?');
+
+    expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
+    expect(
+      vectorStorageService.getRelevantChunkByAccess,
+    ).not.toHaveBeenCalled();
+    expect(contextService.generateContext).not.toHaveBeenCalled();
+  });
+
+  it('should fallback to SYSTEM for invalid document type', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"UNKNOWN","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
+  });
+
+  it('should fallback to SYSTEM for non-boolean liveDataRequired', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":"true"}',
+      )
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
+
+    expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+
 import { UsersRepository } from './users.repository';
 import { User } from './user.entity';
 import { Role } from './enums/role.enum';
@@ -6,14 +7,20 @@ import { UserDto } from './dto/user.dto';
 import { UsersMapper } from './dto/users.mapper';
 import { UserSaveDto } from './dto/user.save-dto';
 import { UserUpdateDto } from './dto/user.update-dto';
+
 import { EntitySaveException } from '../exceptions/types/entity-save.exception';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
 import { UserIsNotConfirmedException } from '../exceptions/types/user-is-not-confirmed.exception';
+
 import * as bcrypt from 'bcrypt';
+
 import { RegistrationException } from '../exceptions/types/registration.exception';
 import { EmailService } from '../email/email.service';
 import { ConfirmationCodesService } from '../confirmation-codes/confirmation-codes.service';
+
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '../audit/audit.enums';
 
 @Injectable()
 export class UsersService {
@@ -24,6 +31,7 @@ export class UsersService {
     private readonly mapper: UsersMapper,
     private readonly emailService: EmailService,
     private readonly confirmationCodeService: ConfirmationCodesService,
+    private readonly audit: AuditService,
   ) {}
 
   async create(saveDto: UserSaveDto): Promise<UserDto> {
@@ -31,11 +39,12 @@ export class UsersService {
       throw new EntitySaveException(User.name, 'email');
     }
 
-    // this.validator.validateSaveDto(saveDto);
     const entity: User = this.mapper.mapDtoToEntity(saveDto);
+
     entity.password = await bcrypt.hash(entity.password, 10);
     entity.role = Role.CUSTOMER;
     entity.active = true;
+
     await this.repository.save(entity);
 
     this.logger.log(`User created: id ${entity.id}, email ${entity.email}`);
@@ -43,8 +52,10 @@ export class UsersService {
     return this.mapper.mapEntityToDto(entity);
   }
 
-  async getAllActiveUsers(): Promise<UserDto[]> {
-    const users: User[] = await this.repository.findAllActive();
+  async getAllActiveUsers(role?: Role): Promise<UserDto[]> {
+    const users: User[] = (await this.repository.findAllActive()).filter(
+      (user: User): boolean => role === undefined || user.role === role,
+    );
 
     if (users.length === 0) {
       throw new EntityNotFoundException(User.name);
@@ -55,6 +66,7 @@ export class UsersService {
 
   async getActiveUserById(id: number): Promise<UserDto> {
     const user: User = await this.getActiveEntityById(id);
+
     return this.mapper.mapEntityToDto(user);
   }
 
@@ -69,11 +81,11 @@ export class UsersService {
   }
 
   async update(id: number, updateDto: UserUpdateDto): Promise<void> {
-    // this.validator.validateUpdateDto(updateDto);
     const foundUser: User = await this.getActiveEntityById(id);
 
     if (foundUser) {
       foundUser.name = updateDto.newName;
+
       await this.repository.save(foundUser);
 
       this.logger.log(`User updated: id ${id}, new name ${foundUser.name}`);
@@ -82,10 +94,16 @@ export class UsersService {
     }
   }
 
-  async deleteById(id: number): Promise<void> {
+  async deleteById(id: number, actorId: number): Promise<void> {
+    if (id === actorId) {
+      throw new EntityUpdateException('You cannot deactivate your own account');
+    }
+
     const user: User = await this.getActiveEntityById(id);
+
     user.active = false;
     user.deletedAt = new Date();
+
     await this.repository.save(user);
 
     this.logger.log(`User marked as inactive: id ${id}`);
@@ -110,7 +128,11 @@ export class UsersService {
     this.logger.log(`User marked as active: id ${id}`);
   }
 
-  async setRole(id: number, role: Role): Promise<void> {
+  async setRole(id: number, role: Role, actorId: number): Promise<void> {
+    if (id === actorId) {
+      throw new EntityUpdateException('You cannot change your own role');
+    }
+
     const user: User = await this.getActiveEntityById(id);
 
     if (user.role === role) {
@@ -118,6 +140,7 @@ export class UsersService {
     }
 
     user.role = role;
+
     await this.repository.save(user);
 
     this.logger.log(`User updated: ${id}, new role ${role}`);
@@ -139,22 +162,37 @@ export class UsersService {
 
   async register(registrationDto: UserSaveDto): Promise<void> {
     const email: string = registrationDto.email;
+
     let user: User | null = await this.repository.findByEmail(email);
 
     if (!user) {
       user = new User();
+
       user.email = email;
-      user.role = Role.CUSTOMER;
       user.active = false;
     } else if (user.active) {
       throw new RegistrationException(`Email ${email} already in use`);
+    } else if (user.deletedAt) {
+
+      throw new RegistrationException(`Email ${email} cannot be registered`);
     }
 
+    // Незавершённая регистрация всегда оформляется как клиент.
+    user.role = Role.CUSTOMER;
     user.password = await bcrypt.hash(registrationDto.password, 10);
     user.name = registrationDto.name;
     user.phone = registrationDto.phone;
 
     await this.repository.save(user);
+
+    await this.audit.record({
+      action: AuditAction.USER_REGISTERED,
+      actorId: user.id,
+      actorRole: user.role,
+      entityType: 'User',
+      entityId: user.id,
+      details: { email },
+    });
 
     await this.emailService.sendConfirmationEmail(user);
   }
@@ -163,7 +201,25 @@ export class UsersService {
     const user: User =
       await this.confirmationCodeService.validateCodeAndGetUser(codeValue);
 
+    if (user.deletedAt) {
+      throw new RegistrationException('Account is deactivated');
+    }
+
     user.active = true;
+
     await this.repository.save(user);
+
+    await this.audit.record({
+      action: AuditAction.USER_CONFIRMED,
+      actorId: user.id,
+      actorRole: user.role,
+      entityType: 'User',
+      entityId: user.id,
+    });
   }
+
+  async findAvailableCourier(): Promise<User | null> {
+    return this.repository.findAvailableCourier();
+  }
+
 }
