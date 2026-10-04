@@ -116,3 +116,47 @@ export function nextStatuses(role: Role, current?: OrderStatus): OrderStatus[] {
   if (role === 'ADMIN') return ORDER_STATUSES.filter((s) => s !== current);
   return TRANSITIONS[role][current] ?? [];
 }
+
+export const AUDIT_ACTIONS = [
+  'AUTH_LOGIN',
+  'USER_REGISTERED',
+  'USER_CONFIRMED',
+  'USER_CREATED',
+  'USER_UPDATED',
+  'USER_DELETED',
+  'USER_RESTORED',
+  'USER_ROLE_CHANGED',
+  'CATALOG_CREATED',
+  'CATALOG_UPDATED',
+  'CATALOG_DELETED',
+  'CATALOG_RESTORED',
+  'ORDER_CREATED',
+  'ORDER_STATUS_CHANGED',
+  'ORDER_COURIER_ASSIGNED',
+  'ORDER_ITEM_CHANGED',
+  'KNOWLEDGE_UPLOADED',
+  'CHAT_QUERY',
+  'ACCESS_DENIED',
+  'RATE_LIMITED',
+] as const;
+
+export interface AuditLogDto {
+  id: number;
+  createdAt: string;
+  actorId: number | null;
+  actorRole: string | null;
+  action: string;
+  entityType: string | null;
+  entityId: number | null;
+  result: string;
+  ip: string | null;
+  userAgent: string | null;
+  details: Record<string, unknown> | null;
+}
+
+export interface AuditPageDto {
+  items: AuditLogDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

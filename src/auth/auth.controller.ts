@@ -54,7 +54,10 @@ export class AuthController {
 
       await this.audit.record({
         action: AuditAction.AUTH_LOGIN,
+        actorId: tokens.userId,
+        actorRole: tokens.role,
         entityType: 'User',
+        entityId: tokens.userId,
         details: { email: loginDto.email },
         request,
       });

@@ -75,6 +75,8 @@ export class AuthService {
 
     tokenDto.accessToken = accessToken;
     tokenDto.refreshToken = refreshToken;
+    tokenDto.userId = user.id;
+    tokenDto.role = user.role;
 
     return tokenDto;
   }

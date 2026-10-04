@@ -8,9 +8,10 @@ import MenusView from './views/MenusView';
 import DishesView from './views/DishesView';
 import OrdersView from './views/OrdersView';
 import UsersView from './views/UsersView';
+import AuditView from './views/AuditView';
 import ChatWidget from './ChatWidget';
 
-type ViewKey = 'restaurants' | 'orders' | 'users';
+type ViewKey = 'restaurants' | 'orders' | 'users' | 'audit';
 
 const NAV: {
   key: ViewKey;
@@ -21,6 +22,7 @@ const NAV: {
   { key: 'restaurants', label: 'Рестораны', icon: '🍽' },
   { key: 'orders', label: 'Заказы', icon: '🛵' },
   { key: 'users', label: 'Пользователи', icon: '👥', adminOnly: true },
+  { key: 'audit', label: 'Журнал', icon: '📜', adminOnly: true },
 ];
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -67,11 +69,12 @@ export default function App() {
     try {
       await api('/chat', { method: 'DELETE' });
     } catch {
-
+      /* история чата не критична для выхода */
     }
     try {
       await api('/auth/logout', { method: 'POST' });
     } catch {
+      /* даже если backend недоступен — выходим локально */
     }
     setUser(null);
     resetCatalog();
@@ -81,6 +84,7 @@ export default function App() {
   if (!user) return <AuthPage onLogin={handleLogin} />;
 
   const canManage = canManageCatalog(user.role);
+  const isAdmin = user.role === 'ADMIN';
 
   return (
     <div className="layout">
@@ -92,7 +96,7 @@ export default function App() {
           </span>
         </div>
         <nav className="nav">
-          {NAV.filter((n) => !n.adminOnly || user.role === 'ADMIN').map((n) => (
+          {NAV.filter((n) => !n.adminOnly || isAdmin).map((n) => (
             <button
               key={n.key}
               className={`nav-item ${view === n.key ? 'active' : ''}`}
@@ -144,7 +148,8 @@ export default function App() {
           />
         )}
         {view === 'orders' && <OrdersView role={user.role} />}
-        {view === 'users' && user.role === 'ADMIN' && <UsersView />}
+        {view === 'users' && isAdmin && <UsersView />}
+        {view === 'audit' && isAdmin && <AuditView />}
       </main>
       <ChatWidget role={user.role} />
     </div>
