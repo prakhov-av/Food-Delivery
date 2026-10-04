@@ -1,51 +1,29 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { EntitySaveException } from '../exceptions/types/entity-save.exception';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
-import { Restaurant } from '../restaurants/restaurant.entity';
-import { Menu } from './menu.entity';
 import { MenuSaveDto } from './dto/menu.save-dto';
+import { MenuDto } from './dto/menu.dto';
 import { MenuUpdateDto } from './dto/menu.update-dto';
 import { MenusService } from './menus.service';
-import { MenusRepository } from './menus.repository';
 import { MenusMapper } from './dto/menus.mapper';
-import { MenuDto } from './dto/menu.dto';
+import { MenusRepository } from './menus.repository';
+import { Menu } from './menu.entity';
 import { RestaurantsService } from '../restaurants/restaurants.service';
-
+import { Restaurant } from '../restaurants/restaurant.entity';
 describe('MenusService', (): void => {
-  const VALID_SAVE_DTO: MenuSaveDto = {
-    name: 'Menu1',
-    restaurantId: 1,
-  };
-
-  const VALID_SAVE_DTO_WITH_EXISTING_NAME: MenuSaveDto = {
-    name: 'Menu1',
-    restaurantId: 1,
-  };
-
-  const VALID_ENTITY_TO_MOCK_RETURN_1: Menu = {
-    id: 1,
-    name: 'Menu1',
-    restaurant: {} as Restaurant,
-    items: [],
-    active: true,
-  };
-
-  const VALID_ENTITY_TO_MOCK_RETURN_2: Menu = {
-    id: 2,
-    name: 'Menu2',
-    restaurant: {} as Restaurant,
-    items: [],
-    active: true,
-  };
-
-  const VALID_UPDATE_DTO: MenuUpdateDto = {
-    newName: 'New Menu Name',
-  };
-
+  const SAVE_DTO: MenuSaveDto = { name: 'Main Menu', restaurantId: 1 };
+  const UPDATE_DTO: MenuUpdateDto = { newName: 'Updated Menu' };
+  const makeMenu = (overrides: Partial<Menu> = {}): Menu =>
+    ({
+      id: 1,
+      name: 'Main Menu',
+      active: true,
+      restaurant: { id: 1, name: 'Restaurant1' } as Restaurant,
+      menuItems: [],
+      ...overrides,
+    }) as Menu;
   let service: MenusService;
   let repository: jest.Mocked<MenusRepository>;
   let restaurantsService: jest.Mocked<RestaurantsService>;
-
   beforeEach(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -61,123 +39,158 @@ describe('MenusService', (): void => {
         },
         {
           provide: RestaurantsService,
-          useValue: {
-            getActiveEntityById: jest.fn(),
-          },
+          useValue: { getActiveEntityById: jest.fn() },
         },
       ],
     }).compile();
-
     service = module.get(MenusService);
     repository = module.get(MenusRepository);
     restaurantsService = module.get(RestaurantsService);
-
-    repository.findAllActive.mockResolvedValue([
-      VALID_ENTITY_TO_MOCK_RETURN_1,
-      VALID_ENTITY_TO_MOCK_RETURN_2,
-    ]);
-
-    repository.save.mockImplementation(async (entity: Menu): Promise<Menu> => {
-      if (entity.active) {
-        return VALID_ENTITY_TO_MOCK_RETURN_1;
-      }
-
-      throw Error('Menu save error');
-    });
-
-    repository.findById.mockImplementation(
-      async (id: number): Promise<Menu | null> => {
-        if (id === 1) {
-          return VALID_ENTITY_TO_MOCK_RETURN_1;
-        }
-
-        if (id === 2) {
-          return VALID_ENTITY_TO_MOCK_RETURN_2;
-        }
-
-        return null;
-      },
-    );
-
     restaurantsService.getActiveEntityById.mockResolvedValue({
       id: 1,
+      name: 'Restaurant1',
     } as Restaurant);
+    repository.findAllActive.mockResolvedValue([makeMenu()]);
+    repository.findById.mockResolvedValue(makeMenu());
+    repository.save.mockImplementation(
+      async (entity: Menu): Promise<Menu> => entity,
+    );
   });
-
   describe('create', (): void => {
-    it('should create active menu and return dto', async (): Promise<void> => {
-      const result: MenuDto = await service.create(VALID_SAVE_DTO);
-
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ active: true }),
-      );
-
-      expect(result).toBeDefined();
-      expect(result.name).toEqual(VALID_SAVE_DTO.name);
-    });
-
-    // it('should throw error if name already exists', async (): Promise<void> => {
-    //   const resultPromise: Promise<MenuDto> = service.create(
-    //     VALID_SAVE_DTO_WITH_EXISTING_NAME,
-    //   );
-    //
-    //   await expect(resultPromise).rejects.toThrow('already exists');
-    //   await expect(resultPromise).rejects.toBeInstanceOf(EntitySaveException);
-    // });
-  });
-
-  describe('getAllActiveMenus', (): void => {
-    it('should return list of menu DTOs', async (): Promise<void> => {
-      const result: MenuDto[] = await service.getAllActiveMenus();
-
-      expect(result).toBeDefined();
-      expect(result.length).toEqual(2);
-
-      const dto1: MenuDto = result[0];
-      expect(dto1).toBeDefined();
-      expect(dto1.id).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.id);
-      expect(dto1.name).toEqual(VALID_ENTITY_TO_MOCK_RETURN_1.name);
-
-      const dto2: MenuDto = result[1];
-      expect(dto2).toBeDefined();
-      expect(dto2.id).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.id);
-      expect(dto2.name).toEqual(VALID_ENTITY_TO_MOCK_RETURN_2.name);
-    });
-
-    it('should throw error if list of menus is empty', async (): Promise<void> => {
-      repository.findAllActive.mockResolvedValue([]);
-      const resultPromise: Promise<MenuDto[]> = service.getAllActiveMenus();
-
-      await expect(resultPromise).rejects.toThrow('not a single');
-      await expect(resultPromise).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
-    });
-  });
-
-  describe('update', (): void => {
-    it('should update menu name', async (): Promise<void> => {
-      const idToUpdate: number = 1;
-      await service.update(idToUpdate, VALID_UPDATE_DTO);
-
+    it('should create an active menu for the restaurant', async (): Promise<void> => {
+      const result = await service.create(SAVE_DTO);
+      expect(restaurantsService.getActiveEntityById).toHaveBeenCalledWith(1);
       expect(repository.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: idToUpdate,
-          name: VALID_UPDATE_DTO.newName,
+          active: true,
+          restaurant: expect.objectContaining({ id: 1 }),
         }),
       );
+      expect(result.name).toBe(SAVE_DTO.name);
     });
-
-    it('should throw exception when menu is not found', async (): Promise<void> => {
-      const resultPromise: Promise<void> = service.update(
-        1000,
-        VALID_UPDATE_DTO,
+    it('should propagate restaurant lookup errors and not save', async (): Promise<void> => {
+      restaurantsService.getActiveEntityById.mockRejectedValue(
+        new EntityNotFoundException(Restaurant.name, 1),
       );
-
-      await expect(resultPromise).rejects.toThrow('not found');
-      await expect(resultPromise).rejects.toBeInstanceOf(
+      await expect(service.create(SAVE_DTO)).rejects.toBeInstanceOf(
         EntityNotFoundException,
       );
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+  describe('getAllActiveMenus', (): void => {
+    it('should return menu DTOs', async (): Promise<void> => {
+      const result: MenuDto[] = await service.getAllActiveMenus();
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe(1);
+      expect(result[0].name).toBe('Main Menu');
+    });
+    it('should throw when there are no active menus', async (): Promise<void> => {
+      repository.findAllActive.mockResolvedValue([]);
+      await expect(service.getAllActiveMenus()).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+    });
+  });
+  describe('getActiveMenuById', (): void => {
+    it('should return the menu DTO', async (): Promise<void> => {
+      const result = await service.getActiveMenuById(1);
+      expect(repository.findById).toHaveBeenCalledWith(1);
+      expect(result.id).toBe(1);
+    });
+    it('should throw when menu does not exist', async (): Promise<void> => {
+      repository.findById.mockResolvedValue(null);
+      await expect(service.getActiveMenuById(99)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+    });
+    it('should throw when menu is inactive', async (): Promise<void> => {
+      repository.findById.mockResolvedValue(makeMenu({ active: false }));
+      await expect(service.getActiveMenuById(1)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+    });
+  });
+  describe('getActiveEntityById', (): void => {
+    it('should return an active menu entity', async (): Promise<void> => {
+      const result = await service.getActiveEntityById(1);
+      expect(result.id).toBe(1);
+      expect(result.active).toBe(true);
+    });
+    it('should throw when menu is missing', async (): Promise<void> => {
+      repository.findById.mockResolvedValue(null);
+      await expect(service.getActiveEntityById(99)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+    });
+    it('should throw when menu is inactive', async (): Promise<void> => {
+      repository.findById.mockResolvedValue(makeMenu({ active: false }));
+      await expect(service.getActiveEntityById(1)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+    });
+  });
+  describe('update', (): void => {
+    it('should update menu name and save', async (): Promise<void> => {
+      const entity = makeMenu();
+      repository.findById.mockResolvedValue(entity);
+      await service.update(1, UPDATE_DTO);
+      expect(entity.name).toBe(UPDATE_DTO.newName);
+      expect(repository.save).toHaveBeenCalledWith(entity);
+    });
+    it('should throw when menu does not exist', async (): Promise<void> => {
+      repository.findById.mockResolvedValue(null);
+      await expect(service.update(99, UPDATE_DTO)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+    it('should throw when getActiveEntityById returns an empty value', async (): Promise<void> => {
+      jest
+        .spyOn(service, 'getActiveEntityById')
+        .mockResolvedValue(undefined as unknown as Menu);
+      await expect(service.update(1, UPDATE_DTO)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+  describe('deleteById', (): void => {
+    it('should mark menu inactive and save', async (): Promise<void> => {
+      const entity = makeMenu();
+      repository.findById.mockResolvedValue(entity);
+      await service.deleteById(1);
+      expect(entity.active).toBe(false);
+      expect(repository.save).toHaveBeenCalledWith(entity);
+    });
+    it('should throw when menu does not exist', async (): Promise<void> => {
+      repository.findById.mockResolvedValue(null);
+      await expect(service.deleteById(99)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+  describe('restoreById', (): void => {
+    it('should restore an inactive menu', async (): Promise<void> => {
+      const entity = makeMenu({ active: false });
+      repository.findById.mockResolvedValue(entity);
+      await service.restoreById(1);
+      expect(entity.active).toBe(true);
+      expect(repository.save).toHaveBeenCalledWith(entity);
+    });
+    it('should do nothing when menu is already active', async (): Promise<void> => {
+      const entity = makeMenu({ active: true });
+      repository.findById.mockResolvedValue(entity);
+      await service.restoreById(1);
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+    it('should throw when menu does not exist', async (): Promise<void> => {
+      repository.findById.mockResolvedValue(null);
+      await expect(service.restoreById(99)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+      expect(repository.save).not.toHaveBeenCalled();
     });
   });
 });

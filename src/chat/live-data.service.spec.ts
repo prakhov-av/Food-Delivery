@@ -204,6 +204,63 @@ describe('LiveDataService', (): void => {
     ).rejects.toBe(error);
   });
 
+
+  it('should return courier-specific no-order message for an inaccessible order', async (): Promise<void> => {
+    getOrderByIdWithRelations.mockRejectedValue(
+      new EntityNotFoundException('Order', 123),
+    );
+
+    await expect(
+      service.getLiveData(classification, 20, Role.COURIER),
+    ).resolves.toBe('У вас нет заказа №123 на выполнение.');
+  });
+
+  it('should return generic no-order message for manager when a requested order is unavailable', async (): Promise<void> => {
+    getOrderByIdWithRelations.mockRejectedValue(
+      new EntityNotFoundException('Order', 123),
+    );
+
+    await expect(
+      service.getLiveData(classification, 999, Role.MANAGER),
+    ).resolves.toBe('Заказ №123 не найден.');
+  });
+
+  it('should propagate unexpected errors when loading current orders', async (): Promise<void> => {
+    const error: Error = new Error('Database unavailable');
+    getCurrentOrders.mockRejectedValue(error);
+
+    await expect(
+      service.getLiveData(ordersClassification, 10, Role.CUSTOMER),
+    ).rejects.toBe(error);
+  });
+
+  it('should return generic no-orders message for manager', async (): Promise<void> => {
+    getCurrentOrders.mockRejectedValue(new EntityNotFoundException('Order'));
+
+    await expect(
+      service.getLiveData(ordersClassification, 999, Role.MANAGER),
+    ).resolves.toBe('В системе нет доступных заказов.');
+  });
+
+  it('should format missing status and unassigned courier correctly', async (): Promise<void> => {
+    const orderWithoutStatusOrCourier: OrderDto = {
+      ...ORDER,
+      status: undefined as unknown as Status,
+      courier: null,
+    };
+
+    getCurrentOrders.mockResolvedValue([orderWithoutStatusOrCourier]);
+
+    const result: string = await service.getLiveData(
+      ordersClassification,
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toContain('Статус: не указан');
+    expect(result).toContain('Курьер: не назначен');
+  });
+
   it('should not query orders when classification is not an order resource', async (): Promise<void> => {
     const nonOrderClassification: ChatClassification = {
       documentType: DocumentType.RESTAURANT,

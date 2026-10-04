@@ -17,6 +17,7 @@ export class OrderItemsRepository {
 
   async findAllActive(): Promise<OrderItem[]> {
     return this.repository.find({
+      where: { active: true },
       relations: {
         menuItem: true,
         order: {

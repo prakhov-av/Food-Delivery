@@ -52,16 +52,16 @@ export class AuthController {
   ): void {
     response.cookie('access-token', accessToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      secure: process.env.NODE_ENV !== 'test',
+      sameSite: process.env.NODE_ENV === 'test' ? 'lax' : 'none',
       maxAge: 15 * 60 * 1000,
     });
 
     if (refreshToken) {
       response.cookie('refresh-token', refreshToken, {
         httpOnly: true,
-        secure: true,
-        sameSite: 'none',
+        secure: process.env.NODE_ENV !== 'test',
+        sameSite: process.env.NODE_ENV === 'test' ? 'lax' : 'none',
         maxAge: 12 * 60 * 60 * 1000,
       });
     }

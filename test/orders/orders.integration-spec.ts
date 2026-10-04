@@ -62,6 +62,7 @@ describe('OrdersController (IT)', (): void => {
     await app.init();
 
     httpServer = app.getHttpServer();
+
     repository = module.get(getRepositoryToken(Order));
     usersRepository = module.get(getRepositoryToken(User));
     restaurantsRepository = module.get(getRepositoryToken(Restaurant));
@@ -231,12 +232,18 @@ describe('OrdersController (IT)', (): void => {
       });
 
       expect(savedOrder).not.toBeNull();
+
       expect(savedOrder).toEqual(
         expect.objectContaining({
           active: true,
-          customer: expect.objectContaining({ id: activeCustomer.id }),
+          customer: expect.objectContaining({
+            id: activeCustomer.id,
+          }),
           courier: null,
-          restaurant: expect.objectContaining({ id: activeRestaurant.id }),
+          restaurant: expect.objectContaining({
+            id: activeRestaurant.id,
+          }),
+          status: Status.NEW,
         }),
       );
     });
@@ -286,6 +293,7 @@ describe('OrdersController (IT)', (): void => {
         .expect(HttpStatus.CREATED);
 
       expect(response.body.courier).toBeNull();
+      expect(response.body.status).toBe(Status.NEW);
     });
   });
 
@@ -297,6 +305,7 @@ describe('OrdersController (IT)', (): void => {
         .expect(HttpStatus.OK);
 
       expect(response.body).toBeDefined();
+
       expect(response.body).toEqual(
         expect.objectContaining({
           id: activeOrder.id,
@@ -317,7 +326,7 @@ describe('OrdersController (IT)', (): void => {
   });
 
   describe('update', (): void => {
-    it('should update order', async (): Promise<void> => {
+    it('should assign courier and change NEW status to CREATED', async (): Promise<void> => {
       VALID_UPDATE_DTO.courierId = secondActiveCourier.id;
 
       await request(httpServer)
@@ -336,20 +345,33 @@ describe('OrdersController (IT)', (): void => {
       });
 
       expect(updatedOrder).toBeDefined();
+
       expect(updatedOrder).toEqual(
         expect.objectContaining({
-          customer: expect.objectContaining({ id: activeCustomer.id }),
-          courier: expect.objectContaining({ id: secondActiveCourier.id }),
-          restaurant: expect.objectContaining({ id: activeRestaurant.id }),
+          customer: expect.objectContaining({
+            id: activeCustomer.id,
+          }),
+          courier: expect.objectContaining({
+            id: secondActiveCourier.id,
+          }),
+          restaurant: expect.objectContaining({
+            id: activeRestaurant.id,
+          }),
+          status: Status.CREATED,
         }),
       );
     });
 
     it('should return 404 if inactive order is updated', async (): Promise<void> => {
+      const updateDto: OrderUpdateDto = {
+        status: Status.CREATED,
+        courierId: secondActiveCourier.id,
+      };
+
       const response: Response = await request(httpServer)
         .patch(`${RESOURCE_NAME}/${inactiveOrder.id}`)
         .set('Cookie', activeManagerCookies)
-        .send(VALID_UPDATE_DTO)
+        .send(updateDto)
         .expect(HttpStatus.NOT_FOUND);
 
       expect(response.body.message).toContain('not found');
