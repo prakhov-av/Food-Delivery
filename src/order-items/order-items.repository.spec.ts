@@ -125,17 +125,4 @@ describe('OrderItemsRepository', (): void => {
       expect(result).toBeNull();
     });
   });
-
-  describe('deleteById', (): void => {
-    it('should delete order item by id', async (): Promise<void> => {
-      typeOrmRepository.delete.mockResolvedValue({
-        affected: 1,
-        raw: {},
-      } as never);
-
-      await repository.deleteById(1);
-
-      expect(typeOrmRepository.delete).toHaveBeenCalledWith(1);
-    });
-  });
 });

@@ -1,11 +1,15 @@
 import { OrdersController } from './orders.controller';
-import { OrdersService } from './orders.service';
 import { Status } from './enums/status.enum';
+import { OrdersService } from './orders.service';
 
 describe('OrdersController', () => {
   let controller: OrdersController;
   const service = {
-    create: jest.fn(), getAllOrders: jest.fn(), getOrderById: jest.fn(), update: jest.fn(), setStatus: jest.fn(),
+    create: jest.fn(),
+    getAllOrders: jest.fn(),
+    getOrderById: jest.fn(),
+    update: jest.fn(),
+    setStatus: jest.fn(),
   };
   const user = { id: 10, role: 'CUSTOMER' } as any;
   const request = { user } as any;
@@ -38,7 +42,7 @@ describe('OrdersController', () => {
   });
 
   it('should update an order', async () => {
-    const dto = { status: Status.ACCEPTED } as any;
+    const dto = { courierId: 2 };
     await controller.update(1, dto);
     expect(service.update).toHaveBeenCalledWith(1, dto);
   });

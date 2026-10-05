@@ -19,12 +19,10 @@ describe('OrdersController (IT)', (): void => {
   const RESOURCE_NAME = '/orders';
 
   const VALID_UPDATE_DTO: OrderUpdateDto = {
-    status: Status.CREATED,
     courierId: 0,
   };
 
   const VALID_UPDATE_DTO_WITH_NOT_EXISTING_COURIER: OrderUpdateDto = {
-    status: Status.CREATED,
     courierId: 100000000,
   };
 
@@ -357,14 +355,13 @@ describe('OrdersController (IT)', (): void => {
           restaurant: expect.objectContaining({
             id: activeRestaurant.id,
           }),
-          status: Status.CREATED,
+          status: Status.NEW,
         }),
       );
     });
 
     it('should return 404 if inactive order is updated', async (): Promise<void> => {
       const updateDto: OrderUpdateDto = {
-        status: Status.CREATED,
         courierId: secondActiveCourier.id,
       };
 

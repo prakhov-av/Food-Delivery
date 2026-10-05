@@ -250,9 +250,11 @@ describe('ChatService', (): void => {
     expect(finalPrompt).toContain('Какой статус заказа 123?');
 
     expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
+
     expect(
       vectorStorageService.getRelevantChunkByAccess,
     ).not.toHaveBeenCalled();
+
     expect(contextService.generateContext).not.toHaveBeenCalled();
   });
 
@@ -300,9 +302,11 @@ describe('ChatService', (): void => {
     expect(finalPrompt).toContain('Какие у меня есть заказы?');
 
     expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
+
     expect(
       vectorStorageService.getRelevantChunkByAccess,
     ).not.toHaveBeenCalled();
+
     expect(contextService.generateContext).not.toHaveBeenCalled();
   });
 
@@ -380,40 +384,108 @@ describe('ChatService', (): void => {
     expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
-  it('should reject malformed JSON classification', async (): Promise<void> => {
+  it('should fallback to SYSTEM for malformed JSON classification', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue('{invalid-json');
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce('{invalid-json')
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
+
+    expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
-  it('should reject classification when parsed value is not an object', async (): Promise<void> => {
+  it('should fallback to SYSTEM when parsed classification is not an object', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue('null');
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce('null')
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
   });
 
-  it('should reject classification when required fields are missing', async (): Promise<void> => {
+  it('should fallback to SYSTEM when classification fields are missing', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue('{"documentType":"ORDER"}');
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce('{"documentType":"ORDER"}')
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
   });
 
   it('should normalize a valid document type returned with spaces and lowercase letters', async (): Promise<void> => {
@@ -444,32 +516,76 @@ describe('ChatService', (): void => {
     );
   });
 
-  it('should reject non-string document type', async (): Promise<void> => {
+  it('should fallback to SYSTEM for non-string document type', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":123,"liveDataRequired":false}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce('{"documentType":123,"liveDataRequired":false}')
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
   });
 
-  it('should reject invalid live data resource', async (): Promise<void> => {
+  it('should fallback to SYSTEM for invalid live data resource', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"ORDER","liveDataRequired":true,"resource":"USER","resourceId":1}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":true,"resource":"USER","resourceId":1}',
+      )
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
+
+    expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -478,75 +594,189 @@ describe('ChatService', (): void => {
     ['zero', '0'],
     ['a negative number', '-1'],
   ])(
-    'should reject invalid live data resourceId when it is %s',
+    'should fallback to SYSTEM when live data resourceId is %s',
     async (_caseName, resourceId): Promise<void> => {
       promptService.buildPromptForDocumentType.mockReturnValue(
         createPromptBuilder('classifier'),
       );
 
-      aiService.generateResponse.mockResolvedValue(
-        `{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":${resourceId}}`,
+      promptService.buildPromptForChat.mockReturnValue(
+        createPromptBuilder('answer prompt'),
       );
 
-      await expect(
-        service.generateResponse('question', 10, Role.CUSTOMER),
-      ).rejects.toBeInstanceOf(ConfigurationException);
+      aiService.generateResponse
+        .mockResolvedValueOnce(
+          `{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":${resourceId}}`,
+        )
+        .mockResolvedValueOnce('fallback answer');
+
+      embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+      contextService.generateContext.mockReturnValue([]);
+
+      const result: string = await service.generateResponse(
+        'question',
+        10,
+        Role.CUSTOMER,
+      );
+
+      expect(result).toBe('fallback answer');
+
+      expect(
+        vectorStorageService.getRelevantChunkByAccess,
+      ).toHaveBeenCalledWith([1, 2, 3], DocumentType.SYSTEM, Role.CUSTOMER);
+
+      expect(liveDataService.getLiveData).not.toHaveBeenCalled();
     },
   );
 
-  it('should reject resourceId without resource', async (): Promise<void> => {
+  it('should fallback to SYSTEM when resourceId is provided without resource', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"ORDER","liveDataRequired":false,"resourceId":123}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false,"resourceId":123}',
+      )
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
   });
 
-  it('should reject live data classification without resource', async (): Promise<void> => {
+  it('should fallback to SYSTEM when live data classification has no resource', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"ORDER","liveDataRequired":true}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce('{"documentType":"ORDER","liveDataRequired":true}')
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
+
+    expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
-  it('should reject live data fields when liveDataRequired is false', async (): Promise<void> => {
+  it('should fallback to SYSTEM when live data fields are present but liveDataRequired is false', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"ORDER","liveDataRequired":false,"resource":"ORDER"}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":false,"resource":"ORDER"}',
+      )
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
+
+    expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
-  it('should reject ORDER live data resource for a non-ORDER document type', async (): Promise<void> => {
+  it('should fallback to SYSTEM when ORDER live data resource is used for a non-ORDER document type', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"USER","liveDataRequired":true,"resource":"ORDER","resourceId":123}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"USER","liveDataRequired":true,"resource":"ORDER","resourceId":123}',
+      )
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
+
+    expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 });

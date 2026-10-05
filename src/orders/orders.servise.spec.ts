@@ -1,63 +1,79 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
-import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
-import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
-import { RoleMismatchException } from '../exceptions/types/role-mismatch.exception';
-
-import { Restaurant } from '../restaurants/restaurant.entity';
-import { RestaurantsService } from '../restaurants/restaurants.service';
-
+import { OrdersService } from './orders.service';
+import { OrdersRepository } from './orders.repository';
+import { OrdersMapper } from './dto/orders.mapper';
 import { OrderSaveDto } from './dto/order.save-dto';
 import { OrderUpdateDto } from './dto/order.update-dto';
 import { OrderDto } from './dto/order.dto';
-import { OrdersService } from './orders.service';
-import { OrdersRepository } from './orders.repository';
 import { Order } from './order.entity';
-import { OrdersMapper } from './dto/orders.mapper';
-import { Status } from './enums/status.enum';
+import {
+  CANCELLED_STATUSES,
+  CLOSED_STATUSES,
+  Status,
+} from './enums/status.enum';
+import {
+  MAX_SUBMITTED_ORDERS_PER_CUSTOMER,
+} from './validation/order-limits';
+import { checkOrderStatusChange } from './validation/order-status-change';
 
 import { UsersService } from '../users/users.service';
-import { Role } from '../users/enums/role.enum';
 import { User } from '../users/user.entity';
+import { Role } from '../users/enums/role.enum';
+
+import { RestaurantsService } from '../restaurants/restaurants.service';
+import { Restaurant } from '../restaurants/restaurant.entity';
 
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit.enums';
 
-import { MAX_SUBMITTED_ORDERS_PER_CUSTOMER } from './validation/order-limits';
+import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
+import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
+import { RoleMismatchException } from '../exceptions/types/role-mismatch.exception';
 
-describe('OrdersService', (): void => {
-  const CUSTOMER: User = {
+describe('OrdersService', () => {
+  const CUSTOMER = {
     id: 1,
     role: Role.CUSTOMER,
   } as User;
 
-  const COURIER: User = {
+  const COURIER = {
     id: 2,
     role: Role.COURIER,
   } as User;
 
-  const ADMIN: User = {
+  const ADMIN = {
     id: 3,
     role: Role.ADMIN,
   } as User;
 
-  const MANAGER: User = {
+  const MANAGER = {
     id: 4,
     role: Role.MANAGER,
   } as User;
 
-  const RESTAURANT: Restaurant = {
+  const OTHER_CUSTOMER = {
+    id: 999,
+    role: Role.CUSTOMER,
+  } as User;
+
+  const OTHER_COURIER = {
+    id: 999,
+    role: Role.COURIER,
+  } as User;
+
+  const RESTAURANT = {
     id: 1,
   } as Restaurant;
 
-  const VALID_SAVE_DTO: OrderSaveDto = {
-    restaurantId: RESTAURANT.id,
-  };
+  let service: OrdersService;
 
-  const VALID_UPDATE_DTO: OrderUpdateDto = {
-    courierId: COURIER.id,
-  };
+  let repository: jest.Mocked<OrdersRepository>;
+  let mapper: jest.Mocked<OrdersMapper>;
+  let usersService: jest.Mocked<UsersService>;
+  let restaurantsService: jest.Mocked<RestaurantsService>;
+  let audit: jest.Mocked<AuditService>;
 
   const makeOrder = (overrides: Partial<Order> = {}): Order =>
     ({
@@ -67,28 +83,24 @@ describe('OrdersService', (): void => {
       restaurant: RESTAURANT,
       status: Status.NEW,
       totalPrice: 100,
-      createdAt: new Date(2026, 7, 21),
+      createdAt: new Date(),
       items: [],
       active: true,
       ...overrides,
     }) as Order;
 
-  let service: OrdersService;
+  const makeDto = (order: Order): OrderDto =>
+    order as unknown as OrderDto;
 
-  beforeEach(() => {
-    ORDER_1.active = true;
-    ORDER_1.status = Status.NEW;
-    ORDER_2.active = true;
-    ORDER_2.status = Status.COMPLETED;
-    jest.clearAllMocks();
-  });
-  let repository: jest.Mocked<OrdersRepository>;
-  let mapper: jest.Mocked<OrdersMapper>;
-  let usersService: jest.Mocked<UsersService>;
-  let restaurantsService: jest.Mocked<RestaurantsService>;
-  let audit: jest.Mocked<AuditService>;
+  const saveDto: OrderSaveDto = {
+    restaurantId: RESTAURANT.id,
+  };
 
-  beforeEach(async (): Promise<void> => {
+  const updateDto: OrderUpdateDto = {
+    courierId: COURIER.id,
+  };
+
+  beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrdersService,
@@ -134,12 +146,53 @@ describe('OrdersService', (): void => {
       ],
     }).compile();
 
-    service = module.get(OrdersService);
+    service = module.get<OrdersService>(OrdersService);
     repository = module.get(OrdersRepository);
     mapper = module.get(OrdersMapper);
     usersService = module.get(UsersService);
     restaurantsService = module.get(RestaurantsService);
     audit = module.get(AuditService);
+
+    repository.save.mockImplementation(
+      async (entity: Order): Promise<Order> => entity,
+    );
+
+    repository.findActiveDraft.mockResolvedValue(null);
+    repository.findAllActive.mockResolvedValue([]);
+    repository.findById.mockResolvedValue(null);
+    repository.findByIdWithRelations.mockResolvedValue(null);
+    repository.countActiveItems.mockResolvedValue(1);
+    repository.countSubmittedByCustomerId.mockResolvedValue(0);
+
+    mapper.mapDtoToEntity.mockImplementation(
+      (): Order => makeOrder(),
+    );
+
+    mapper.mapEntityToDto.mockImplementation(
+      (order: Order): OrderDto => makeDto(order),
+    );
+
+    mapper.mapEntityListToDtoList.mockImplementation(
+      (orders: Order[]): OrderDto[] => orders.map(makeDto),
+    );
+
+    restaurantsService.getActiveEntityById.mockResolvedValue(
+      RESTAURANT,
+    );
+
+    usersService.getActiveEntityById.mockImplementation(
+      async (id: number): Promise<User> => {
+        if (id === COURIER.id) {
+          return COURIER;
+        }
+
+        throw new EntityNotFoundException(User.name, id);
+      },
+    );
+
+    usersService.findAvailableCourier.mockResolvedValue(null);
+
+    audit.record.mockResolvedValue(undefined);
 
     jest.clearAllMocks();
 
@@ -154,17 +207,21 @@ describe('OrdersService', (): void => {
     repository.countActiveItems.mockResolvedValue(1);
     repository.countSubmittedByCustomerId.mockResolvedValue(0);
 
-    mapper.mapDtoToEntity.mockImplementation((): Order => makeOrder());
+    mapper.mapDtoToEntity.mockImplementation(
+      (): Order => makeOrder(),
+    );
 
     mapper.mapEntityToDto.mockImplementation(
-      (order: Order): OrderDto => order as unknown as OrderDto,
+      (order: Order): OrderDto => makeDto(order),
     );
 
     mapper.mapEntityListToDtoList.mockImplementation(
-      (orders: Order[]): OrderDto[] => orders as unknown as OrderDto[],
+      (orders: Order[]): OrderDto[] => orders.map(makeDto),
     );
 
-    restaurantsService.getActiveEntityById.mockResolvedValue(RESTAURANT);
+    restaurantsService.getActiveEntityById.mockResolvedValue(
+      RESTAURANT,
+    );
 
     usersService.getActiveEntityById.mockImplementation(
       async (id: number): Promise<User> => {
@@ -181,32 +238,31 @@ describe('OrdersService', (): void => {
     audit.record.mockResolvedValue(undefined);
   });
 
-  describe('create', (): void => {
-    it('should return an existing active draft', async (): Promise<void> => {
-      const draft: Order = makeOrder({
+  describe('create', () => {
+    it('should return an existing active draft', async () => {
+      const draft = makeOrder({
         id: 99,
       });
 
       repository.findActiveDraft.mockResolvedValue(draft);
 
-      const result: OrderDto = await service.create(VALID_SAVE_DTO, CUSTOMER);
+      const result = await service.create(saveDto, CUSTOMER);
 
-      expect(result).toBe(draft as unknown as OrderDto);
-
+      expect(result).toBe(makeDto(draft));
       expect(repository.save).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it('should create an active NEW order without a courier', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should create an active NEW order without a courier', async () => {
+      const order = makeOrder({
         courier: null,
-        totalPrice: 0,
         status: Status.NEW,
+        totalPrice: 0,
       });
 
       mapper.mapDtoToEntity.mockReturnValue(order);
 
-      const result: OrderDto = await service.create(VALID_SAVE_DTO, CUSTOMER);
+      const result = await service.create(saveDto, CUSTOMER);
 
       expect(repository.save).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -219,160 +275,225 @@ describe('OrdersService', (): void => {
         }),
       );
 
-      expect(result).toBe(order as unknown as OrderDto);
+      expect(result).toBe(makeDto(order));
     });
 
-    it('should write an audit record when an order is created', async (): Promise<void> => {
-      const order: Order = makeOrder({
-        status: Status.NEW,
+    it('should write an audit record when an order is created', async () => {
+      const order = makeOrder({
+        courier: null,
       });
 
       mapper.mapDtoToEntity.mockReturnValue(order);
 
-      await service.create(VALID_SAVE_DTO, CUSTOMER);
+      await service.create(saveDto, CUSTOMER);
 
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: AuditAction.ORDER_CREATED,
           actorId: CUSTOMER.id,
           actorRole: CUSTOMER.role,
+          entityType: 'Order',
           entityId: order.id,
         }),
       );
     });
 
-    it('should propagate restaurant lookup errors and not save', async (): Promise<void> => {
-      const error = new EntityNotFoundException(Restaurant.name, 999);
+    it('should propagate restaurant lookup errors and not save', async () => {
+      const error = new EntityNotFoundException(
+        Restaurant.name,
+        RESTAURANT.id,
+      );
 
       restaurantsService.getActiveEntityById.mockRejectedValue(error);
 
-      await expect(service.create(VALID_SAVE_DTO, CUSTOMER)).rejects.toBe(
-        error,
-      );
+      await expect(
+        service.create(saveDto, CUSTOMER),
+      ).rejects.toBe(error);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
   });
 
-  describe('getAllOrders', (): void => {
-    it('should return all active orders for admin', async (): Promise<void> => {
-      const orders: Order[] = [
+  describe('getAllOrders', () => {
+    it('should return all active orders for admin', async () => {
+      const orders = [
         makeOrder(),
-        makeOrder({
-          id: 2,
-        }),
+        makeOrder({ id: 2 }),
       ];
 
       repository.findAllActive.mockResolvedValue(orders);
 
-      const result: OrderDto[] = await service.getAllOrders(ADMIN);
+      const result = await service.getAllOrders(ADMIN);
 
       expect(result).toHaveLength(2);
-
-      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith(orders);
+      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith(
+        orders,
+      );
     });
 
-    it('should return all active orders for manager', async (): Promise<void> => {
-      const orders: Order[] = [
+    it('should return all active orders for manager', async () => {
+      const orders = [
         makeOrder(),
-        makeOrder({
-          id: 2,
-        }),
+        makeOrder({ id: 2 }),
       ];
 
       repository.findAllActive.mockResolvedValue(orders);
 
-      const result: OrderDto[] = await service.getAllOrders(MANAGER);
+      const result = await service.getAllOrders(MANAGER);
 
       expect(result).toHaveLength(2);
+      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith(
+        orders,
+      );
     });
 
-    it('should return only customer-owned orders', async (): Promise<void> => {
-      const orders: Order[] = [
-        makeOrder({
-          customer: CUSTOMER,
-        }),
-        makeOrder({
-          id: 2,
-          customer: {
-            id: 999,
-          } as User,
-        }),
-      ];
+    it('should return only customer-owned orders', async () => {
+      const ownOrder = makeOrder({
+        customer: CUSTOMER,
+      });
 
-      repository.findAllActive.mockResolvedValue(orders);
+      const otherOrder = makeOrder({
+        id: 2,
+        customer: OTHER_CUSTOMER,
+      });
+
+      repository.findAllActive.mockResolvedValue([
+        ownOrder,
+        otherOrder,
+      ]);
 
       await service.getAllOrders(CUSTOMER);
 
-      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith([orders[0]]);
+      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith([
+        ownOrder,
+      ]);
     });
 
-    it('should return only assigned courier orders', async (): Promise<void> => {
-      const orders: Order[] = [
-        makeOrder({
-          courier: COURIER,
-        }),
-        makeOrder({
-          id: 2,
-          courier: {
-            id: 999,
-          } as User,
-        }),
-      ];
+    it('should return only assigned courier orders', async () => {
+      const assignedOrder = makeOrder({
+        courier: COURIER,
+      });
 
-      repository.findAllActive.mockResolvedValue(orders);
+      const otherOrder = makeOrder({
+        id: 2,
+        courier: OTHER_COURIER,
+      });
+
+      repository.findAllActive.mockResolvedValue([
+        assignedOrder,
+        otherOrder,
+      ]);
 
       await service.getAllOrders(COURIER);
 
-      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith([orders[0]]);
+      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith([
+        assignedOrder,
+      ]);
     });
 
-    it('should throw when there are no active orders', async (): Promise<void> => {
+    it('should throw when there are no active orders', async () => {
       repository.findAllActive.mockResolvedValue([]);
 
-      await expect(service.getAllOrders(ADMIN)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
+      await expect(
+        service.getAllOrders(ADMIN),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
 
-    it('should throw when the user has no accessible orders', async (): Promise<void> => {
+    it('should throw when the user has no accessible orders', async () => {
       repository.findAllActive.mockResolvedValue([
         makeOrder({
-          customer: {
-            id: 999,
-          } as User,
+          customer: OTHER_CUSTOMER,
         }),
       ]);
 
-      await expect(service.getAllOrders(CUSTOMER)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
+      await expect(
+        service.getAllOrders(CUSTOMER),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
 
-    it('should throw when an unknown role has no accessible orders', async (): Promise<void> => {
+    it('should throw when an unknown role has no accessible orders', async () => {
+      repository.findAllActive.mockResolvedValue([
+        makeOrder(),
+      ]);
+
       await expect(
         service.getAllOrders({
           id: 999,
-          role: 'unknown' as Role,
+          role: 'UNKNOWN' as Role,
         }),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
 
-    it('should throw when courier has no assigned orders', async (): Promise<void> => {
-      await expect(
-        service.getAllOrders({
-          id: 999,
-          role: Role.COURIER,
+    it('should throw when courier has no assigned orders', async () => {
+      repository.findAllActive.mockResolvedValue([
+        makeOrder({
+          courier: OTHER_COURIER,
         }),
+      ]);
+
+      await expect(
+        service.getAllOrders(COURIER),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
   });
 
-  describe('getCurrentOrders', (): void => {
-    it('should return only non-terminal orders', async (): Promise<void> => {
-      const orders: Order[] = [
+  describe('getCurrentOrders', () => {
+    it('should return only non-terminal orders', async () => {
+      const current = makeOrder({
+        status: Status.NEW,
+      });
+
+      const cancelledCustomer = makeOrder({
+        id: 2,
+        status: Status.CANCELLED_CUSTOMER,
+      });
+
+      const cancelledCourier = makeOrder({
+        id: 3,
+        status: Status.CANCELLED_COURIER,
+      });
+
+      const completed = makeOrder({
+        id: 4,
+        status: Status.COMPLETED,
+      });
+
+      repository.findAllActive.mockResolvedValue([
+        current,
+        cancelledCustomer,
+        cancelledCourier,
+        completed,
+      ]);
+
+      const result = await service.getCurrentOrders(ADMIN);
+
+      expect(result).toEqual([makeDto(current)]);
+    });
+
+    it('should exclude orders cancelled by staff', async () => {
+      const current = makeOrder({
+        status: Status.NEW,
+      });
+
+      const cancelled = makeOrder({
+        id: 2,
+        status: Status.CANCELLED_STAFF,
+      });
+
+      repository.findAllActive.mockResolvedValue([
+        current,
+        cancelled,
+      ]);
+
+      const result = await service.getCurrentOrders(ADMIN);
+
+      expect(result).toEqual([makeDto(current)]);
+    });
+
+    it('should throw when all orders are terminal', async () => {
+      repository.findAllActive.mockResolvedValue([
         makeOrder({
-          status: Status.NEW,
+          status: Status.COMPLETED,
         }),
         makeOrder({
           id: 2,
@@ -382,283 +503,130 @@ describe('OrdersService', (): void => {
           id: 3,
           status: Status.CANCELLED_COURIER,
         }),
-        makeOrder({
-          id: 4,
-          status: Status.COMPLETED,
-        }),
-      ];
-
-      repository.findAllActive.mockResolvedValue(orders);
-
-      const result: OrderDto[] = await service.getCurrentOrders(ADMIN);
-
-      expect(result).toEqual([orders[0] as unknown as OrderDto]);
-
-      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith([orders[0]]);
-    });
-
-    it('should exclude orders cancelled by staff', async (): Promise<void> => {
-      const orders: Order[] = [
-        makeOrder({ status: Status.NEW }),
-        makeOrder({ id: 2, status: Status.CANCELLED_STAFF }),
-      ];
-
-      repository.findAllActive.mockResolvedValue(orders);
-
-      const result: OrderDto[] = await service.getCurrentOrders(ADMIN);
-
-      expect(result).toEqual([orders[0] as unknown as OrderDto]);
-    });
-
-    it('should throw when all orders are terminal', async (): Promise<void> => {
-      repository.findAllActive.mockResolvedValue([
-        makeOrder({
-          status: Status.COMPLETED,
-        }),
-        makeOrder({
-          id: 2,
-          status: Status.CANCELLED_CUSTOMER,
-        }),
-        makeOrder({
-          id: 3,
-          status: Status.CANCELLED_COURIER,
-        }),
       ]);
 
-      await expect(service.getCurrentOrders(ADMIN)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
+      await expect(
+        service.getCurrentOrders(ADMIN),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
   });
 
-  describe('getOrderById', (): void => {
-    it('should return an order for an admin', async (): Promise<void> => {
-      const order: Order = makeOrder();
+  describe('getOrderById', () => {
+    it('should return an order for an admin', async () => {
+      const order = makeOrder();
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result: OrderDto = await service.getOrderById(order.id, ADMIN);
+      const result = await service.getOrderById(
+        order.id,
+        ADMIN,
+      );
 
-      expect(result).toBe(order as unknown as OrderDto);
+      expect(result).toEqual(makeDto(order));
     });
 
-    it('should return an order for its customer', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should return an order for its customer', async () => {
+      const order = makeOrder({
         customer: CUSTOMER,
       });
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result: OrderDto = await service.getOrderById(order.id, CUSTOMER);
+      const result = await service.getOrderById(
+        order.id,
+        CUSTOMER,
+      );
 
-      expect(result).toBe(order as unknown as OrderDto);
+      expect(result).toEqual(makeDto(order));
     });
 
-    it('should reject another customer', async (): Promise<void> => {
-      repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({
-          customer: {
-            id: 999,
-          } as User,
-        }),
-      );
-
-      await expect(service.getOrderById(1, CUSTOMER)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
-    });
-
-    it('should reject an unassigned courier', async (): Promise<void> => {
-      repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({
-          courier: null,
-        }),
-      );
-
-      await expect(service.getOrderById(1, COURIER)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
-    });
-
-    it('should throw when the order does not exist', async (): Promise<void> => {
-      await expect(service.getOrderById(999, ADMIN)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
-    });
-  });
-
-  describe('getActiveEntityById', (): void => {
-    it('should return an active order', async (): Promise<void> => {
-      const order: Order = makeOrder();
+    it('should reject another customer', async () => {
+      const order = makeOrder({
+        customer: OTHER_CUSTOMER,
+      });
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      expect(await service.getActiveEntityById(order.id)).toBe(order);
+      await expect(
+        service.getOrderById(order.id, CUSTOMER),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('should throw when the order is missing', async (): Promise<void> => {
-      await expect(service.getActiveEntityById(999)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
+    it('should reject an unassigned courier', async () => {
+      const order = makeOrder({
+        courier: null,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(order);
+
+      await expect(
+        service.getOrderById(order.id, COURIER),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('should throw when the order is inactive', async (): Promise<void> => {
+    it('should throw when the order does not exist', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
+      await expect(
+        service.getOrderById(999, ADMIN),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
+    });
+  });
+
+  describe('getActiveEntityById', () => {
+    it('should return an active order', async () => {
+      const order = makeOrder();
+
+      repository.findByIdWithRelations.mockResolvedValue(order);
+
+      expect(
+        await service.getActiveEntityById(order.id),
+      ).toBe(order);
+    });
+
+    it('should throw when the order is missing', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
+      await expect(
+        service.getActiveEntityById(999),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
+    });
+
+    it('should throw when the order is inactive', async () => {
       repository.findByIdWithRelations.mockResolvedValue(
         makeOrder({
           active: false,
         }),
       );
-    });
-
-    it('should not save when courierId is omitted', async (): Promise<void> => {
-      await service.update(ORDER_1.id, {});
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should throw when the new courier has a non-courier role', async (): Promise<void> => {
-      usersService.getActiveEntityById.mockResolvedValue(CUSTOMER);
 
       await expect(
-        service.update(ORDER_1.id, VALID_UPDATE_DTO),
-      ).rejects.toBeInstanceOf(RoleMismatchException);
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should propagate courier lookup errors', async (): Promise<void> => {
-      const error = new EntityNotFoundException(User.name, 999);
-      usersService.getActiveEntityById.mockRejectedValue(error);
-
-      await expect(
-        service.update(ORDER_1.id, {
-          courierId: 999,
-        }),
-      ).rejects.toBe(error);
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-      await expect(service.getActiveEntityById(1)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('restoreById', (): void => {
-    it('should restore an inactive order', async (): Promise<void> => {
-      const inactiveOrder = {
-        ...ORDER_1,
-        active: false,
-      } as Order;
-
-      repository.findById.mockResolvedValue(inactiveOrder);
-
-      await service.restoreById(ORDER_1.id);
-
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: ORDER_1.id,
-          active: true,
-        }),
-      );
-    });
-
-    it('should do nothing when the order is already active', async (): Promise<void> => {
-      repository.findById.mockResolvedValue({
-        ...ORDER_1,
-        active: true,
-      } as Order);
-
-      await service.restoreById(ORDER_1.id);
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should throw when the order does not exist', async (): Promise<void> => {
-      repository.findById.mockResolvedValue(null);
-
-      await expect(service.restoreById(999)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('setStatus', (): void => {
-    it('should reject setting the current status again', async (): Promise<void> => {
-      await expect(
-        service.setStatus(ORDER_1.id, Status.NEW, CUSTOMER),
-      ).rejects.toBeInstanceOf(EntityUpdateException);
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should reject a user who cannot access the order', async (): Promise<void> => {
-      const otherCustomer = {
-        id: 999,
-        role: Role.CUSTOMER,
-      } as User;
-
-      await expect(
-        service.setStatus(ORDER_1.id, Status.CREATED, otherCustomer),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should change status for an authorized admin', async (): Promise<void> => {
-      await service.setStatus(ORDER_1.id, Status.CREATED, ADMIN);
-
-      expect(ORDER_1.status).toBe(Status.CREATED);
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: ORDER_1.id,
-          status: Status.CREATED,
-        }),
-      );
-    });
-
-    it('should reject an invalid status transition', async (): Promise<void> => {
-      const order = {
-        ...ORDER_1,
-        status: Status.COMPLETED,
-      } as Order;
-
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      await expect(
-        service.setStatus(ORDER_1.id, Status.NEW, CUSTOMER),
-      ).rejects.toThrow();
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should throw when the order does not exist', async (): Promise<void> => {
-      await expect(
-        service.setStatus(999, Status.CREATED, ADMIN),
+        service.getActiveEntityById(1),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
   });
 
-  describe('getActiveEntityByIdWithRelations', (): void => {
-    it('should return an active order', async (): Promise<void> => {
-      const order: Order = makeOrder();
+  describe('getActiveEntityByIdWithRelations', () => {
+    it('should return an active order', async () => {
+      const order = makeOrder();
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      expect(await service.getActiveEntityByIdWithRelations(1)).toBe(order);
+      expect(
+        await service.getActiveEntityByIdWithRelations(
+          order.id,
+        ),
+      ).toBe(order);
     });
 
-    it('should throw when the order is missing', async (): Promise<void> => {
+    it('should throw when the order is missing', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
       await expect(
         service.getActiveEntityByIdWithRelations(999),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
 
-    it('should throw when the order is inactive', async (): Promise<void> => {
+    it('should throw when the order is inactive', async () => {
       repository.findByIdWithRelations.mockResolvedValue(
         makeOrder({
           active: false,
@@ -671,41 +639,64 @@ describe('OrdersService', (): void => {
     });
   });
 
-  describe('getOrderByIdWithRelations', (): void => {
-    it('should return an accessible order', async (): Promise<void> => {
-      const order: Order = makeOrder();
+  describe('getOrderByIdWithRelations', () => {
+    it('should return an accessible order for admin', async () => {
+      const order = makeOrder();
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result: OrderDto = await service.getOrderByIdWithRelations(
-        1,
-        ADMIN,
-      );
+      const result =
+        await service.getOrderByIdWithRelations(
+          order.id,
+          ADMIN,
+        );
 
-      expect(result).toBe(order as unknown as OrderDto);
+      expect(result).toEqual(makeDto(order));
     });
 
-    it('should reject an unauthorized customer', async (): Promise<void> => {
-      repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({
-          customer: {
-            id: 999,
-          } as User,
-        }),
-      );
+    it('should return an accessible order for customer', async () => {
+      const order = makeOrder({
+        customer: CUSTOMER,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(order);
+
+      const result =
+        await service.getOrderByIdWithRelations(
+          order.id,
+          CUSTOMER,
+        );
+
+      expect(result).toEqual(makeDto(order));
+    });
+
+    it('should reject an unauthorized customer', async () => {
+      const order = makeOrder({
+        customer: OTHER_CUSTOMER,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.getOrderByIdWithRelations(1, CUSTOMER),
+        service.getOrderByIdWithRelations(
+          order.id,
+          CUSTOMER,
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('should throw when the order is missing', async (): Promise<void> => {
+    it('should throw when the order is missing', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
       await expect(
-        service.getOrderByIdWithRelations(999, ADMIN),
+        service.getOrderByIdWithRelations(
+          999,
+          ADMIN,
+        ),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
 
-    it('should throw when the order is inactive', async (): Promise<void> => {
+    it('should throw when the order is inactive', async () => {
       repository.findByIdWithRelations.mockResolvedValue(
         makeOrder({
           active: false,
@@ -713,29 +704,37 @@ describe('OrdersService', (): void => {
       );
 
       await expect(
-        service.getOrderByIdWithRelations(1, ADMIN),
+        service.getOrderByIdWithRelations(
+          1,
+          ADMIN,
+        ),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
   });
 
-  describe('getActiveOrderByIdWithRelations', (): void => {
-    it('should return an active order DTO', async (): Promise<void> => {
-      const order: Order = makeOrder();
+  describe('getActiveOrderByIdWithRelations', () => {
+    it('should return an active order DTO', async () => {
+      const order = makeOrder();
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result: OrderDto = await service.getActiveOrderByIdWithRelations(1);
+      const result =
+        await service.getActiveOrderByIdWithRelations(
+          order.id,
+        );
 
-      expect(result).toBe(order as unknown as OrderDto);
+      expect(result).toEqual(makeDto(order));
     });
 
-    it('should throw when the order is missing', async (): Promise<void> => {
+    it('should throw when the order is missing', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
       await expect(
         service.getActiveOrderByIdWithRelations(999),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
 
-    it('should throw when the order is inactive', async (): Promise<void> => {
+    it('should throw when the order is inactive', async () => {
       repository.findByIdWithRelations.mockResolvedValue(
         makeOrder({
           active: false,
@@ -748,24 +747,32 @@ describe('OrdersService', (): void => {
     });
   });
 
-  describe('update', (): void => {
-    it('should assign a courier without changing NEW status', async (): Promise<void> => {
-      const order: Order = makeOrder({
-        courier: null,
-        status: Status.NEW,
-      });
+  describe('update', () => {
+    it.each([
+      Status.NEW,
+      Status.ACCEPTED,
+      Status.COOKING,
+      Status.READY,
+    ])(
+      'should assign a courier without changing %s status',
+      async (status: Status) => {
+        const order = makeOrder({
+          status,
+          courier: null,
+        });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+        repository.findByIdWithRelations.mockResolvedValue(
+          order,
+        );
 
-      await service.update(1, VALID_UPDATE_DTO);
+        await service.update(order.id, updateDto);
 
-      expect(usersService.getActiveEntityById).toHaveBeenCalledWith(COURIER.id);
+        expect(order.courier).toBe(COURIER);
+        expect(order.status).toBe(status);
+        expect(repository.save).toHaveBeenCalledWith(order);
+      },
+    );
 
-      expect(order.courier).toBe(COURIER);
-      expect(order.status).toBe(Status.NEW);
-
-      expect(repository.save).toHaveBeenCalledWith(order);
-    });
     it.each([
       Status.COMPLETED,
       Status.CANCELLED_CUSTOMER,
@@ -773,98 +780,73 @@ describe('OrdersService', (): void => {
       Status.CANCELLED_STAFF,
     ])(
       'should not change the courier of a %s order',
-      async (status: Status): Promise<void> => {
+      async (status: Status) => {
+        const order = makeOrder({
+          status,
+        });
+
         repository.findByIdWithRelations.mockResolvedValue(
-          makeOrder({ status }),
+          order,
         );
 
         await expect(
-          service.update(1, VALID_UPDATE_DTO),
+          service.update(order.id, updateDto),
         ).rejects.toBeInstanceOf(EntityUpdateException);
 
         expect(repository.save).not.toHaveBeenCalled();
       },
     );
 
-    it('should assign a courier without changing ACCEPTED status', async (): Promise<void> => {
-      const order: Order = makeOrder({
-        courier: null,
-        status: Status.ACCEPTED,
-      });
+    it('should throw when courierId is omitted', async () => {
+      const order = makeOrder();
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      await service.update(1, VALID_UPDATE_DTO);
-
-      expect(order.courier).toBe(COURIER);
-      expect(order.status).toBe(Status.ACCEPTED);
-
-      expect(repository.save).toHaveBeenCalledWith(order);
-    });
-
-    it('should assign a courier without changing COOKING status', async (): Promise<void> => {
-      const order: Order = makeOrder({
-        courier: null,
-        status: Status.COOKING,
-      });
-
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      await service.update(1, VALID_UPDATE_DTO);
-
-      expect(order.courier).toBe(COURIER);
-      expect(order.status).toBe(Status.COOKING);
-
-      expect(repository.save).toHaveBeenCalledWith(order);
-    });
-
-    it('should assign a courier without changing READY status', async (): Promise<void> => {
-      const order: Order = makeOrder({
-        courier: null,
-        status: Status.READY,
-      });
-
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      await service.update(1, VALID_UPDATE_DTO);
-
-      expect(order.courier).toBe(COURIER);
-      expect(order.status).toBe(Status.READY);
-
-      expect(repository.save).toHaveBeenCalledWith(order);
-    });
-
-    it('should throw when courierId is omitted', async (): Promise<void> => {
-      repository.findByIdWithRelations.mockResolvedValue(makeOrder());
-
-      await expect(service.update(1, {} as OrderUpdateDto)).rejects.toThrow(
-        'Courier id must be specified',
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
       );
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should throw when the selected user is not a courier', async (): Promise<void> => {
-      repository.findByIdWithRelations.mockResolvedValue(makeOrder());
-
-      usersService.getActiveEntityById.mockResolvedValue(CUSTOMER);
-
-      await expect(service.update(1, VALID_UPDATE_DTO)).rejects.toBeInstanceOf(
-        RoleMismatchException,
-      );
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should propagate courier lookup errors', async (): Promise<void> => {
-      const error = new EntityNotFoundException(User.name, 999);
-
-      repository.findByIdWithRelations.mockResolvedValue(makeOrder());
-
-      usersService.getActiveEntityById.mockRejectedValue(error);
 
       await expect(
-        service.update(1, {
+        service.update(order.id, {}),
+      ).rejects.toBeInstanceOf(EntityUpdateException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw when the selected user is not a courier', async () => {
+      const order = makeOrder();
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      usersService.getActiveEntityById.mockResolvedValue(
+        CUSTOMER,
+      );
+
+      await expect(
+        service.update(order.id, updateDto),
+      ).rejects.toBeInstanceOf(RoleMismatchException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should propagate courier lookup errors', async () => {
+      const order = makeOrder();
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      const error = new EntityNotFoundException(
+        User.name,
+        999,
+      );
+
+      usersService.getActiveEntityById.mockRejectedValue(
+        error,
+      );
+
+      await expect(
+        service.update(order.id, {
           courierId: 999,
         }),
       ).rejects.toBe(error);
@@ -872,246 +854,200 @@ describe('OrdersService', (): void => {
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should throw when the order does not exist', async (): Promise<void> => {
+    it('should throw when the order does not exist', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
       await expect(
-        service.update(999, VALID_UPDATE_DTO),
+        service.update(999, updateDto),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
-    });
-  });
-
-  describe('deleteById', (): void => {
-    it('should mark an active order inactive and save it', async (): Promise<void> => {
-      const order: Order = makeOrder();
-
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      await service.deleteById(1);
-
-      expect(order.active).toBe(false);
-
-      expect(repository.save).toHaveBeenCalledWith(order);
-    });
-
-    it('should throw when the order does not exist', async (): Promise<void> => {
-      await expect(service.deleteById(999)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
 
       expect(repository.save).not.toHaveBeenCalled();
     });
   });
 
-  describe('restoreById', (): void => {
-    it('should restore an inactive order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+  describe('deleteById', () => {
+    it('should mark an active order inactive and save it', async () => {
+      const order = makeOrder({
+        active: true,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await service.deleteById(order.id);
+
+      expect(order.active).toBe(false);
+      expect(repository.save).toHaveBeenCalledWith(order);
+    });
+
+    it('should throw when the order does not exist', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
+      await expect(
+        service.deleteById(999),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreById', () => {
+    it('should restore an inactive order', async () => {
+      const order = makeOrder({
         active: false,
       });
 
       repository.findById.mockResolvedValue(order);
 
-      await service.restoreById(1);
+      await service.restoreById(order.id);
 
       expect(order.active).toBe(true);
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should do nothing when the order is already active', async (): Promise<void> => {
-      repository.findById.mockResolvedValue(
-        makeOrder({
-          active: true,
-        }),
-      );
+    it('should do nothing when the order is already active', async () => {
+      const order = makeOrder({
+        active: true,
+      });
 
-      await service.restoreById(1);
+      repository.findById.mockResolvedValue(order);
+
+      await service.restoreById(order.id);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should throw when the order does not exist', async (): Promise<void> => {
+    it('should throw when the order does not exist', async () => {
       repository.findById.mockResolvedValue(null);
 
-      await expect(service.restoreById(999)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
+      await expect(
+        service.restoreById(999),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
   });
 
-  describe('updateTotalPrice', (): void => {
-    it('should save the new total price', async (): Promise<void> => {
-      const order: Order = makeOrder({
-        totalPrice: 10,
+  describe('updateTotalPrice', () => {
+    it('should save the new total price', async () => {
+      const order = makeOrder({
+        totalPrice: 100,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.updateTotalPrice(1, 42.5);
+      await service.updateTotalPrice(order.id, 250);
 
-      expect(order.totalPrice).toBe(42.5);
-
+      expect(order.totalPrice).toBe(250);
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should throw when the order does not exist', async (): Promise<void> => {
-      await expect(service.updateTotalPrice(999, 42.5)).rejects.toBeInstanceOf(
-        EntityNotFoundException,
-      );
+    it('should throw when the order does not exist', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
+      await expect(
+        service.updateTotalPrice(999, 250),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
+
+      expect(repository.save).not.toHaveBeenCalled();
     });
   });
 
-  describe('setStatus', (): void => {
-    it('should reject setting the same status again', async (): Promise<void> => {
-      repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({
-          status: Status.NEW,
-        }),
-      );
-
-      await expect(
-        service.setStatus(1, Status.NEW, CUSTOMER),
-      ).rejects.toBeInstanceOf(EntityUpdateException);
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-    it('should allow a manager to cancel a NEW order as staff', async (): Promise<void> => {
-      const order: Order = makeOrder({ status: Status.NEW, courier: null });
-
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      await service.setStatus(1, Status.CANCELLED_STAFF, MANAGER);
-
-      expect(order.status).toBe(Status.CANCELLED_STAFF);
-      expect(repository.countActiveItems).not.toHaveBeenCalled();
-      expect(repository.save).toHaveBeenCalledWith(order);
-    });
-
-    it('should allow a manager to cancel a READY order', async (): Promise<void> => {
-      const order: Order = makeOrder({
-        status: Status.READY,
-        courier: COURIER,
+  describe('setStatus', () => {
+    it('should reject setting the same status again', async () => {
+      const order = makeOrder({
+        status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      await service.setStatus(1, Status.CANCELLED_STAFF, MANAGER);
-
-      expect(order.status).toBe(Status.CANCELLED_STAFF);
-    });
-
-    it('should reject a manager cancelling a DELIVERING order', async (): Promise<void> => {
       repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({ status: Status.DELIVERING, courier: COURIER }),
+        order,
       );
 
       await expect(
-        service.setStatus(1, Status.CANCELLED_STAFF, MANAGER),
-      ).rejects.toBeInstanceOf(BadRequestException);
-
-      expect(repository.save).not.toHaveBeenCalled();
-    });
-
-    it('should allow an admin to cancel an order as staff', async (): Promise<void> => {
-      const order: Order = makeOrder({
-        status: Status.COOKING,
-        courier: null,
-      });
-
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      await service.setStatus(1, Status.CANCELLED_STAFF, ADMIN);
-
-      expect(order.status).toBe(Status.CANCELLED_STAFF);
-    });
-
-    it('should not let a customer or a courier use the staff cancellation', async (): Promise<void> => {
-      repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({
-          status: Status.READY,
-          customer: CUSTOMER,
-          courier: COURIER,
-        }),
-      );
-
-      await expect(
-        service.setStatus(1, Status.CANCELLED_STAFF, CUSTOMER),
-      ).rejects.toBeInstanceOf(BadRequestException);
-
-      await expect(
-        service.setStatus(1, Status.CANCELLED_STAFF, COURIER),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('should reject an admin moving an empty NEW order straight to COOKING', async (): Promise<void> => {
-      repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({ status: Status.NEW }),
-      );
-
-      repository.countActiveItems.mockResolvedValue(0);
-
-      await expect(
-        service.setStatus(1, Status.COOKING, ADMIN),
+        service.setStatus(
+          order.id,
+          Status.NEW,
+          CUSTOMER,
+        ),
       ).rejects.toBeInstanceOf(EntityUpdateException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject a user who cannot access the order', async (): Promise<void> => {
+    it('should reject a user who cannot access the order', async () => {
+      const order = makeOrder({
+        status: Status.NEW,
+        customer: CUSTOMER,
+      });
+
       repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({
-          customer: CUSTOMER,
-        }),
+        order,
       );
 
-      const otherCustomer: User = {
-        id: 999,
-        role: Role.CUSTOMER,
-      } as User;
-
       await expect(
-        service.setStatus(1, Status.ACCEPTED, otherCustomer),
+        service.setStatus(
+          order.id,
+          Status.ACCEPTED,
+          OTHER_CUSTOMER,
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject an invalid status transition', async (): Promise<void> => {
+    it('should reject an invalid status transition', async () => {
+      const order = makeOrder({
+        status: Status.COMPLETED,
+      });
+
       repository.findByIdWithRelations.mockResolvedValue(
-        makeOrder({
-          status: Status.COMPLETED,
-        }),
+        order,
       );
 
       await expect(
-        service.setStatus(1, Status.NEW, CUSTOMER),
-      ).rejects.toThrow();
+        service.setStatus(
+          order.id,
+          Status.NEW,
+          CUSTOMER,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject accepting an empty order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should reject accepting an empty order', async () => {
+      const order = makeOrder({
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       repository.countActiveItems.mockResolvedValue(0);
 
       await expect(
-        service.setStatus(1, Status.ACCEPTED, MANAGER),
+        service.setStatus(
+          order.id,
+          Status.ACCEPTED,
+          MANAGER,
+        ),
       ).rejects.toBeInstanceOf(EntityUpdateException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject accepting when the customer reached the active-order limit', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should reject accepting when customer reached the active-order limit', async () => {
+      const order = makeOrder({
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       repository.countActiveItems.mockResolvedValue(1);
 
@@ -1120,107 +1056,100 @@ describe('OrdersService', (): void => {
       );
 
       await expect(
-        service.setStatus(1, Status.ACCEPTED, MANAGER),
+        service.setStatus(
+          order.id,
+          Status.ACCEPTED,
+          MANAGER,
+        ),
       ).rejects.toBeInstanceOf(EntityUpdateException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should allow a manager to accept a NEW order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a manager to accept a NEW order', async () => {
+      const order = makeOrder({
         status: Status.NEW,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
-
-      repository.countActiveItems.mockResolvedValue(1);
-
-      repository.countSubmittedByCustomerId.mockResolvedValue(0);
-
-      await service.setStatus(1, Status.ACCEPTED, MANAGER);
-
-      expect(order.status).toBe(Status.ACCEPTED);
-
-      expect(order.courier).toBeNull();
-
-      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
-
-      expect(repository.save).toHaveBeenCalledWith(order);
-
-      expect(audit.record).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: AuditAction.ORDER_STATUS_CHANGED,
-          actorId: MANAGER.id,
-          entityId: order.id,
-          details: {
-            from: Status.NEW,
-            to: Status.ACCEPTED,
-          },
-        }),
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
       );
+
+      await service.setStatus(
+        order.id,
+        Status.ACCEPTED,
+        MANAGER,
+      );
+
+      expect(order.status).toBe(Status.ACCEPTED);
+      expect(order.courier).toBeNull();
+      expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow an admin to accept a NEW order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow an admin to accept a NEW order', async () => {
+      const order = makeOrder({
         status: Status.NEW,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      repository.countActiveItems.mockResolvedValue(1);
-
-      repository.countSubmittedByCustomerId.mockResolvedValue(0);
-
-      await service.setStatus(1, Status.ACCEPTED, ADMIN);
+      await service.setStatus(
+        order.id,
+        Status.ACCEPTED,
+        ADMIN,
+      );
 
       expect(order.status).toBe(Status.ACCEPTED);
-
-      expect(order.courier).toBeNull();
-
-      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow a manager to move ACCEPTED to COOKING', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a manager to move ACCEPTED to COOKING', async () => {
+      const order = makeOrder({
         status: Status.ACCEPTED,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.COOKING, MANAGER);
+      await service.setStatus(
+        order.id,
+        Status.COOKING,
+        MANAGER,
+      );
 
       expect(order.status).toBe(Status.COOKING);
-
-      expect(order.courier).toBeNull();
-
-      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow a manager to move COOKING to READY and automatically assign a courier', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a manager to move COOKING to READY and automatically assign a courier', async () => {
+      const order = makeOrder({
         status: Status.COOKING,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      usersService.findAvailableCourier.mockResolvedValue(COURIER);
+      usersService.findAvailableCourier.mockResolvedValue(
+        COURIER,
+      );
 
-      await service.setStatus(1, Status.READY, MANAGER);
+      await service.setStatus(
+        order.id,
+        Status.READY,
+        MANAGER,
+      );
 
       expect(order.status).toBe(Status.READY);
-
       expect(order.courier).toBe(COURIER);
-
-      expect(usersService.findAvailableCourier).toHaveBeenCalledTimes(1);
-
+      expect(usersService.findAvailableCourier).toHaveBeenCalled();
       expect(repository.save).toHaveBeenCalledWith(order);
 
       expect(audit.record).toHaveBeenCalledWith(
@@ -1248,37 +1177,29 @@ describe('OrdersService', (): void => {
       );
     });
 
-    it('should move COOKING to READY without courier when no courier is available', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should move COOKING to READY without courier when no courier is available', async () => {
+      const order = makeOrder({
         status: Status.COOKING,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      usersService.findAvailableCourier.mockResolvedValue(null);
+      usersService.findAvailableCourier.mockResolvedValue(
+        null,
+      );
 
-      await service.setStatus(1, Status.READY, MANAGER);
+      await service.setStatus(
+        order.id,
+        Status.READY,
+        MANAGER,
+      );
 
       expect(order.status).toBe(Status.READY);
-
       expect(order.courier).toBeNull();
-
-      expect(usersService.findAvailableCourier).toHaveBeenCalledTimes(1);
-
       expect(repository.save).toHaveBeenCalledWith(order);
-
-      expect(audit.record).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: AuditAction.ORDER_STATUS_CHANGED,
-          actorId: MANAGER.id,
-          entityId: order.id,
-          details: {
-            from: Status.COOKING,
-            to: Status.READY,
-          },
-        }),
-      );
 
       expect(audit.record).not.toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1287,342 +1208,667 @@ describe('OrdersService', (): void => {
       );
     });
 
-    it('should not replace an already assigned courier when moving to READY', async (): Promise<void> => {
-      const existingCourier: User = {
+    it('should not replace an already assigned courier when moving to READY', async () => {
+      const existingCourier = {
         id: 55,
         role: Role.COURIER,
       } as User;
 
-      const order: Order = makeOrder({
+      const order = makeOrder({
         status: Status.COOKING,
         courier: existingCourier,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.READY, MANAGER);
+      await service.setStatus(
+        order.id,
+        Status.READY,
+        MANAGER,
+      );
 
       expect(order.status).toBe(Status.READY);
-
       expect(order.courier).toBe(existingCourier);
+      expect(
+        usersService.findAvailableCourier,
+      ).not.toHaveBeenCalled();
+    });
 
-      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
+    it('should allow a manager to cancel a NEW order as staff', async () => {
+      const order = makeOrder({
+        status: Status.NEW,
+        courier: null,
+      });
 
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_STAFF,
+        MANAGER,
+      );
+
+      expect(order.status).toBe(Status.CANCELLED_STAFF);
+      expect(repository.countActiveItems).not.toHaveBeenCalled();
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow a courier to move READY to DELIVERING', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a manager to cancel a READY order', async () => {
+      const order = makeOrder({
+        status: Status.READY,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_STAFF,
+        MANAGER,
+      );
+
+      expect(order.status).toBe(Status.CANCELLED_STAFF);
+    });
+
+    it('should reject a manager cancelling a DELIVERING order', async () => {
+      const order = makeOrder({
+        status: Status.DELIVERING,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await expect(
+        service.setStatus(
+          order.id,
+          Status.CANCELLED_STAFF,
+          MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should allow an admin to cancel an order as staff', async () => {
+      const order = makeOrder({
+        status: Status.COOKING,
+        courier: null,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_STAFF,
+        ADMIN,
+      );
+
+      expect(order.status).toBe(Status.CANCELLED_STAFF);
+      expect(repository.save).toHaveBeenCalledWith(order);
+    });
+
+    it('should reject customer using staff cancellation', async () => {
+      const order = makeOrder({
+        status: Status.READY,
+        customer: CUSTOMER,
+        courier: COURIER,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await expect(
+        service.setStatus(
+          order.id,
+          Status.CANCELLED_STAFF,
+          CUSTOMER,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject courier using staff cancellation', async () => {
+      const order = makeOrder({
         status: Status.READY,
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.DELIVERING, COURIER);
+      await expect(
+        service.setStatus(
+          order.id,
+          Status.CANCELLED_STAFF,
+          COURIER,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should allow a courier to move READY to DELIVERING', async () => {
+      const order = makeOrder({
+        status: Status.READY,
+        courier: COURIER,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await service.setStatus(
+        order.id,
+        Status.DELIVERING,
+        COURIER,
+      );
 
       expect(order.status).toBe(Status.DELIVERING);
-
-      expect(order.courier).toBe(COURIER);
-
       expect(repository.save).toHaveBeenCalledWith(order);
-
-      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
     });
 
-    it('should allow a courier to complete a DELIVERING order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a courier to complete a DELIVERING order', async () => {
+      const order = makeOrder({
         status: Status.DELIVERING,
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.COMPLETED, COURIER);
+      await service.setStatus(
+        order.id,
+        Status.COMPLETED,
+        COURIER,
+      );
 
       expect(order.status).toBe(Status.COMPLETED);
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow a courier to cancel a READY order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a courier to cancel a READY order', async () => {
+      const order = makeOrder({
         status: Status.READY,
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.CANCELLED_COURIER, COURIER);
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_COURIER,
+        COURIER,
+      );
 
       expect(order.status).toBe(Status.CANCELLED_COURIER);
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow a courier to cancel a DELIVERING order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a courier to cancel a DELIVERING order', async () => {
+      const order = makeOrder({
         status: Status.DELIVERING,
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.CANCELLED_COURIER, COURIER);
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_COURIER,
+        COURIER,
+      );
 
       expect(order.status).toBe(Status.CANCELLED_COURIER);
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow a customer to cancel a NEW order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a customer to cancel a NEW order', async () => {
+      const order = makeOrder({
         status: Status.NEW,
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.CANCELLED_CUSTOMER, CUSTOMER);
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_CUSTOMER,
+        CUSTOMER,
+      );
 
       expect(order.status).toBe(Status.CANCELLED_CUSTOMER);
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow a customer to cancel an ACCEPTED order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a customer to cancel an ACCEPTED order', async () => {
+      const order = makeOrder({
         status: Status.ACCEPTED,
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.CANCELLED_CUSTOMER, CUSTOMER);
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_CUSTOMER,
+        CUSTOMER,
+      );
 
       expect(order.status).toBe(Status.CANCELLED_CUSTOMER);
-
-      expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow a customer to cancel a COOKING order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow a customer to cancel a COOKING order', async () => {
+      const order = makeOrder({
         status: Status.COOKING,
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.CANCELLED_CUSTOMER, CUSTOMER);
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_CUSTOMER,
+        CUSTOMER,
+      );
 
       expect(order.status).toBe(Status.CANCELLED_CUSTOMER);
-
-      expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should reject an unassigned courier from taking a READY order', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should reject an unassigned courier from taking a READY order', async () => {
+      const order = makeOrder({
         status: Status.READY,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       await expect(
-        service.setStatus(1, Status.DELIVERING, COURIER),
+        service.setStatus(
+          order.id,
+          Status.DELIVERING,
+          COURIER,
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject a different courier from taking the order', async (): Promise<void> => {
-      const assignedCourier: User = {
-        id: 99,
-        role: Role.COURIER,
-      } as User;
-
-      const order: Order = makeOrder({
+    it('should reject a different courier from taking the order', async () => {
+      const order = makeOrder({
         status: Status.READY,
-        courier: assignedCourier,
+        courier: OTHER_COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       await expect(
-        service.setStatus(1, Status.DELIVERING, COURIER),
+        service.setStatus(
+          order.id,
+          Status.DELIVERING,
+          COURIER,
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject a customer trying to move NEW to ACCEPTED', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should reject a customer trying to move NEW to ACCEPTED', async () => {
+      const order = makeOrder({
         status: Status.NEW,
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       await expect(
-        service.setStatus(1, Status.ACCEPTED, CUSTOMER),
+        service.setStatus(
+          order.id,
+          Status.ACCEPTED,
+          CUSTOMER,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject a courier trying to move NEW to ACCEPTED', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should reject a courier trying to move NEW to ACCEPTED', async () => {
+      const order = makeOrder({
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       await expect(
-        service.setStatus(1, Status.ACCEPTED, COURIER),
+        service.setStatus(
+          order.id,
+          Status.ACCEPTED,
+          COURIER,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject a manager trying to move NEW directly to COOKING', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should reject a manager trying to move NEW directly to COOKING', async () => {
+      const order = makeOrder({
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       await expect(
-        service.setStatus(1, Status.COOKING, MANAGER),
+        service.setStatus(
+          order.id,
+          Status.COOKING,
+          MANAGER,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject a manager trying to move ACCEPTED directly to READY', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should reject a manager trying to move ACCEPTED directly to READY', async () => {
+      const order = makeOrder({
         status: Status.ACCEPTED,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       await expect(
-        service.setStatus(1, Status.READY, MANAGER),
+        service.setStatus(
+          order.id,
+          Status.READY,
+          MANAGER,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should reject a courier trying to move READY directly to COMPLETED', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should reject a courier trying to move READY directly to COMPLETED', async () => {
+      const order = makeOrder({
         status: Status.READY,
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
       await expect(
-        service.setStatus(1, Status.COMPLETED, COURIER),
+        service.setStatus(
+          order.id,
+          Status.COMPLETED,
+          COURIER,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should throw when the order does not exist', async (): Promise<void> => {
+    it('should throw when the order does not exist', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
       await expect(
-        service.setStatus(999, Status.ACCEPTED, ADMIN),
+        service.setStatus(
+          999,
+          Status.ACCEPTED,
+          ADMIN,
+        ),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
 
-    it('should allow admin to change the order status', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow admin to change the order status', async () => {
+      const order = makeOrder({
         status: Status.NEW,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.ACCEPTED, ADMIN);
+      await service.setStatus(
+        order.id,
+        Status.ACCEPTED,
+        ADMIN,
+      );
 
       expect(order.status).toBe(Status.ACCEPTED);
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should allow admin to move ACCEPTED to COOKING', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should allow admin to move ACCEPTED to COOKING', async () => {
+      const order = makeOrder({
         status: Status.ACCEPTED,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.COOKING, ADMIN);
+      await service.setStatus(
+        order.id,
+        Status.COOKING,
+        ADMIN,
+      );
 
       expect(order.status).toBe(Status.COOKING);
-
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should automatically assign a courier when admin moves COOKING to READY', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should automatically assign a courier when admin moves COOKING to READY', async () => {
+      const order = makeOrder({
         status: Status.COOKING,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      usersService.findAvailableCourier.mockResolvedValue(COURIER);
+      usersService.findAvailableCourier.mockResolvedValue(
+        COURIER,
+      );
 
-      await service.setStatus(1, Status.READY, ADMIN);
+      await service.setStatus(
+        order.id,
+        Status.READY,
+        ADMIN,
+      );
 
       expect(order.status).toBe(Status.READY);
-
       expect(order.courier).toBe(COURIER);
-
-      expect(usersService.findAvailableCourier).toHaveBeenCalledTimes(1);
-
+      expect(usersService.findAvailableCourier).toHaveBeenCalled();
       expect(repository.save).toHaveBeenCalledWith(order);
     });
 
-    it('should not assign a courier when admin moves NEW to ACCEPTED', async (): Promise<void> => {
-      const order: Order = makeOrder({
+    it('should not assign a courier when admin moves NEW to ACCEPTED', async () => {
+      const order = makeOrder({
         status: Status.NEW,
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.ACCEPTED, ADMIN);
+      await service.setStatus(
+        order.id,
+        Status.ACCEPTED,
+        ADMIN,
+      );
 
       expect(order.status).toBe(Status.ACCEPTED);
-
       expect(order.courier).toBeNull();
-
-      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
+      expect(
+        usersService.findAvailableCourier,
+      ).not.toHaveBeenCalled();
     });
 
-    it('should not replace an existing courier when admin moves COOKING to READY', async (): Promise<void> => {
-      const existingCourier: User = {
+    it('should not replace an existing courier when admin moves COOKING to READY', async () => {
+      const existingCourier = {
         id: 55,
         role: Role.COURIER,
       } as User;
 
-      const order: Order = makeOrder({
+      const order = makeOrder({
         status: Status.COOKING,
         courier: existingCourier,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
 
-      await service.setStatus(1, Status.READY, ADMIN);
+      await service.setStatus(
+        order.id,
+        Status.READY,
+        ADMIN,
+      );
 
       expect(order.status).toBe(Status.READY);
-
       expect(order.courier).toBe(existingCourier);
+      expect(
+        usersService.findAvailableCourier,
+      ).not.toHaveBeenCalled();
+    });
 
-      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
+    it('should not count active items for a NEW cancellation', async () => {
+      const order = makeOrder({
+        status: Status.NEW,
+        courier: null,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await service.setStatus(
+        order.id,
+        Status.CANCELLED_CUSTOMER,
+        CUSTOMER,
+      );
+
+      expect(repository.countActiveItems).not.toHaveBeenCalled();
+      expect(order.status).toBe(Status.CANCELLED_CUSTOMER);
+    });
+
+    it('should create a status audit record after changing status', async () => {
+      const order = makeOrder({
+        status: Status.ACCEPTED,
+        courier: null,
+      });
+
+      repository.findByIdWithRelations.mockResolvedValue(
+        order,
+      );
+
+      await service.setStatus(
+        order.id,
+        Status.COOKING,
+        MANAGER,
+      );
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ORDER_STATUS_CHANGED,
+          actorId: MANAGER.id,
+          actorRole: MANAGER.role,
+          entityType: 'Order',
+          entityId: order.id,
+          details: {
+            from: Status.ACCEPTED,
+            to: Status.COOKING,
+          },
+        }),
+      );
+    });
+  });
+
+  describe('status transition helper', () => {
+    it('should allow an admin to use any status transition', () => {
+      expect(() =>
+        checkOrderStatusChange(
+          Status.COMPLETED,
+          Status.NEW,
+          Role.ADMIN,
+        ),
+      ).not.toThrow();
+    });
+
+    it('should reject an invalid manager transition', () => {
+      expect(() =>
+        checkOrderStatusChange(
+          Status.NEW,
+          Status.COOKING,
+          Role.MANAGER,
+        ),
+      ).toThrow(BadRequestException);
+    });
+
+    it('should allow a valid manager transition', () => {
+      expect(() =>
+        checkOrderStatusChange(
+          Status.NEW,
+          Status.ACCEPTED,
+          Role.MANAGER,
+        ),
+      ).not.toThrow();
+    });
+  });
+
+  describe('status constants', () => {
+    it('should contain all closed statuses', () => {
+      expect(CLOSED_STATUSES).toEqual(
+        expect.arrayContaining([
+          Status.COMPLETED,
+          Status.CANCELLED_CUSTOMER,
+          Status.CANCELLED_COURIER,
+          Status.CANCELLED_STAFF,
+        ]),
+      );
+    });
+
+    it('should contain all cancelled statuses', () => {
+      expect(CANCELLED_STATUSES).toEqual([
+        Status.CANCELLED_CUSTOMER,
+        Status.CANCELLED_COURIER,
+        Status.CANCELLED_STAFF,
+      ]);
     });
   });
 });

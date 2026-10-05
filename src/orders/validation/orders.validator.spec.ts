@@ -21,7 +21,9 @@ describe('OrdersValidator', (): void => {
     });
 
     it('should reject a missing DTO', (): void => {
-      expect(() => validator.validateSaveDto(undefined as unknown as OrderSaveDto)).toThrow();
+      expect(() =>
+        validator.validateSaveDto(undefined as unknown as OrderSaveDto),
+      ).toThrow();
     });
 
     it.each([undefined, 0, -1])(
@@ -50,51 +52,33 @@ describe('OrdersValidator', (): void => {
   });
 
   describe('validateUpdateDto', (): void => {
-    it('should accept a valid status without courier', (): void => {
+    it('should accept a valid positive courierId', (): void => {
       const dto: OrderUpdateDto = {
-        status: Status.CREATED,
-      };
-
-      expect(() => validator.validateUpdateDto(dto)).not.toThrow();
-    });
-
-    it('should accept a valid status with a positive courierId', (): void => {
-      const dto: OrderUpdateDto = {
-        status: Status.ACCEPTED,
         courierId: 5,
       };
 
       expect(() => validator.validateUpdateDto(dto)).not.toThrow();
     });
 
+    it('should accept an empty update DTO at validator level', (): void => {
+      const dto: OrderUpdateDto = {};
+
+      expect(() => validator.validateUpdateDto(dto)).not.toThrow();
+    });
+
     it('should reject a missing DTO', (): void => {
-      expect(() => validator.validateUpdateDto(undefined as unknown as OrderUpdateDto)).toThrow();
+      expect(() =>
+        validator.validateUpdateDto(undefined as unknown as OrderUpdateDto),
+      ).toThrow();
     });
 
-    it('should reject an invalid status', (): void => {
-      const dto = {
-        status: 'INVALID_STATUS',
-      } as OrderUpdateDto;
+    it.each([0, -1])(
+      'should reject invalid courierId: %s',
+      (courierId: number): void => {
+        const dto: OrderUpdateDto = { courierId };
 
-      expect(() => validator.validateUpdateDto(dto)).toThrow();
-    });
-
-    it('should reject a negative courierId', (): void => {
-      const dto = {
-        status: Status.CREATED,
-        courierId: -1,
-      } as OrderUpdateDto;
-
-      expect(() => validator.validateUpdateDto(dto)).toThrow();
-    });
-
-    it('should reject courierId equal to zero', (): void => {
-      const dto = {
-        status: Status.CREATED,
-        courierId: 0,
-      } as OrderUpdateDto;
-
-      expect(() => validator.validateUpdateDto(dto)).toThrow();
-    });
+        expect(() => validator.validateUpdateDto(dto)).toThrow();
+      },
+    );
   });
 });

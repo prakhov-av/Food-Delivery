@@ -76,6 +76,7 @@ export class OrderItemsService {
     entity.menuItem = menuItem;
 
     await this.repository.save(entity);
+
     await this.recalculateOrderTotal(order.id);
 
     this.logger.log(
@@ -90,19 +91,20 @@ export class OrderItemsService {
   async getAllActiveOrderItems(user: User): Promise<OrderItemDto[]> {
     const orderItems: OrderItem[] = await this.repository.findAllActive();
 
-    const accessibleOrderItems = orderItems.filter((orderItem) => {
-      if (!orderItem.active) {
-        return false;
-      }
+    const accessibleOrderItems: OrderItem[] = orderItems.filter(
+      (orderItem: OrderItem): boolean => {
+        if (!orderItem.active) {
+          return false;
+        }
 
-      try {
-        checkOrderAccess(orderItem.order, user);
-
-        return true;
-      } catch {
-        return false;
-      }
-    });
+        try {
+          checkOrderAccess(orderItem.order, user);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    );
 
     if (accessibleOrderItems.length === 0) {
       throw new EntityNotFoundException(OrderItem.name);
@@ -112,7 +114,7 @@ export class OrderItemsService {
   }
 
   async getActiveOrderItemById(id: number, user: User): Promise<OrderItemDto> {
-    const orderItem = await this.getActiveEntityById(id);
+    const orderItem: OrderItem = await this.getActiveEntityById(id);
 
     checkOrderAccess(orderItem.order, user);
 
@@ -134,14 +136,14 @@ export class OrderItemsService {
     updateItemDto: OrderItemUpdateDto,
     user: User,
   ): Promise<void> {
-    const foundOrderItem = await this.getActiveEntityById(id);
+    const foundOrderItem: OrderItem = await this.getActiveEntityById(id);
 
     checkOrderAccess(foundOrderItem.order, user);
     checkOrderModificationAllowed(foundOrderItem.order, user);
 
     const otherItems: OrderItem[] = (
       await this.repository.findAllActiveByOrderId(foundOrderItem.order.id)
-    ).filter((item) => item.id !== foundOrderItem.id);
+    ).filter((item: OrderItem): boolean => item.id !== foundOrderItem.id);
 
     this.checkOrderTotalLimit(
       foundOrderItem.order.id,
@@ -152,6 +154,7 @@ export class OrderItemsService {
     foundOrderItem.quantity = updateItemDto.newQuantity;
 
     await this.repository.save(foundOrderItem);
+
     await this.recalculateOrderTotal(foundOrderItem.order.id);
 
     this.logger.log(
@@ -161,7 +164,7 @@ export class OrderItemsService {
   }
 
   async deleteById(id: number, user: User): Promise<void> {
-    const orderItem = await this.getActiveEntityById(id);
+    const orderItem: OrderItem = await this.getActiveEntityById(id);
 
     checkOrderAccess(orderItem.order, user);
     checkOrderModificationAllowed(orderItem.order, user);
@@ -169,6 +172,7 @@ export class OrderItemsService {
     orderItem.active = false;
 
     await this.repository.save(orderItem);
+
     await this.recalculateOrderTotal(orderItem.order.id);
 
     this.logger.log(`Order item marked as inactive: id ${id}`);
@@ -203,6 +207,7 @@ export class OrderItemsService {
       orderItem.active = true;
 
       await this.repository.save(orderItem);
+
       await this.recalculateOrderTotal(orderItem.order.id);
 
       this.logger.log(`Order item marked as active: id ${id}`);
@@ -215,7 +220,8 @@ export class OrderItemsService {
     extra: number,
   ): void {
     const current: number = otherItems.reduce(
-      (sum, item) => sum + Number(item.menuItem.price) * item.quantity,
+      (sum: number, item: OrderItem): number =>
+        sum + Number(item.menuItem.price) * item.quantity,
       0,
     );
 
@@ -231,7 +237,8 @@ export class OrderItemsService {
       await this.repository.findAllActiveByOrderId(orderId);
 
     const total: number = items.reduce(
-      (sum, item) => sum + Number(item.menuItem.price) * item.quantity,
+      (sum: number, item: OrderItem): number =>
+        sum + Number(item.menuItem.price) * item.quantity,
       0,
     );
 

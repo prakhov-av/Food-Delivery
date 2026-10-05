@@ -11,6 +11,14 @@ describe('AuthController', () => {
     revokeRefreshToken: jest.fn(),
   };
 
+  const auditServiceMock = {
+    record: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const createRequestMock = () => ({
+    headers: {},
+  });
+
   const createResponseMock = () => ({
     cookie: jest.fn(),
     clearCookie: jest.fn(),
@@ -18,7 +26,10 @@ describe('AuthController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new AuthController(authServiceMock as unknown as AuthService);
+    controller = new AuthController(
+      authServiceMock as unknown as AuthService,
+      auditServiceMock as any,
+    );
     process.env.NODE_ENV = 'test';
   });
 
@@ -41,9 +52,11 @@ describe('AuthController', () => {
     authServiceMock.login.mockResolvedValue({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
+      userId: 1,
+      role: 'customer',
     });
 
-    await controller.login(dto, response as any);
+    await controller.login(dto, createRequestMock() as any, response as any);
 
     expect(authServiceMock.login).toHaveBeenCalledWith(dto);
     expect(response.cookie).toHaveBeenCalledTimes(2);
@@ -132,6 +145,8 @@ describe('AuthController', () => {
     authServiceMock.login.mockResolvedValue({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
+      userId: 1,
+      role: 'customer',
     });
 
     await controller.login(
@@ -139,6 +154,7 @@ describe('AuthController', () => {
         email: 'user@test.com',
         password: 'password',
       } as LoginRequestDto,
+      createRequestMock() as any,
       response as any,
     );
 
@@ -170,7 +186,11 @@ describe('AuthController', () => {
     authServiceMock.login.mockRejectedValue(error);
 
     await expect(
-      controller.login({} as LoginRequestDto, response as any),
+      controller.login(
+        {} as LoginRequestDto,
+        createRequestMock() as any,
+        response as any,
+      ),
     ).rejects.toBe(error);
 
     expect(response.cookie).not.toHaveBeenCalled();

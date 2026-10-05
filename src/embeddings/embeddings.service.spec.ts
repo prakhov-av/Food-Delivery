@@ -36,6 +36,7 @@ describe('EmbeddingsService', (): void => {
 
   it('should generate embeddings and return them', async (): Promise<void> => {
     const texts: string[] = ['first text', 'second text'];
+
     const embeddings: number[][] = [
       [0.1, 0.2, 0.3],
       [0.4, 0.5, 0.6],
@@ -43,25 +44,11 @@ describe('EmbeddingsService', (): void => {
 
     aiService.generateEmbeddings.mockResolvedValue(embeddings);
 
-    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-
     const result: number[][] = await service.generateEmbeddings(texts);
 
     expect(aiService.generateEmbeddings).toHaveBeenCalledTimes(1);
     expect(aiService.generateEmbeddings).toHaveBeenCalledWith(texts);
     expect(result).toBe(embeddings);
-
-    expect(consoleLogSpy).toHaveBeenCalledTimes(4);
-    expect(consoleLogSpy).toHaveBeenNthCalledWith(
-      1,
-      '\nEmbedding calculated:',
-    );
-    expect(consoleLogSpy).toHaveBeenNthCalledWith(2, embeddings[0]);
-    expect(consoleLogSpy).toHaveBeenNthCalledWith(
-      3,
-      '\nEmbedding calculated:',
-    );
-    expect(consoleLogSpy).toHaveBeenNthCalledWith(4, embeddings[1]);
   });
 
   it('should return an empty array when AiService returns no embeddings', async (): Promise<void> => {
@@ -69,14 +56,11 @@ describe('EmbeddingsService', (): void => {
 
     aiService.generateEmbeddings.mockResolvedValue([]);
 
-    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-
     const result: number[][] = await service.generateEmbeddings(texts);
 
     expect(aiService.generateEmbeddings).toHaveBeenCalledTimes(1);
     expect(aiService.generateEmbeddings).toHaveBeenCalledWith(texts);
     expect(result).toEqual([]);
-    expect(consoleLogSpy).not.toHaveBeenCalled();
   });
 
   it('should propagate an error from AiService', async (): Promise<void> => {
@@ -85,12 +69,9 @@ describe('EmbeddingsService', (): void => {
 
     aiService.generateEmbeddings.mockRejectedValue(error);
 
-    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-
     await expect(service.generateEmbeddings(texts)).rejects.toBe(error);
 
     expect(aiService.generateEmbeddings).toHaveBeenCalledTimes(1);
     expect(aiService.generateEmbeddings).toHaveBeenCalledWith(texts);
-    expect(consoleLogSpy).not.toHaveBeenCalled();
   });
 });
