@@ -14,6 +14,9 @@ import { User } from '../../src/users/user.entity';
 import { Role } from '../../src/users/enums/role.enum';
 import { Restaurant } from '../../src/restaurants/restaurant.entity';
 import { OrderItem } from '../../src/order-items/order-item.entity';
+import { ThrottlerGuard } from '@nestjs/throttler';
+
+ThrottlerGuard.prototype.canActivate = async () => true;
 
 describe('OrdersController (IT)', (): void => {
   const RESOURCE_NAME = '/orders';
@@ -195,6 +198,8 @@ describe('OrdersController (IT)', (): void => {
 
   describe('create', (): void => {
     it('should create order for authenticated customer without courier assignment', async (): Promise<void> => {
+      await repository.delete(activeOrder.id);
+
       const saveDto: OrderSaveDto = {
         customerId: activeCustomer.id,
         restaurantId: activeRestaurant.id,
@@ -262,6 +267,8 @@ describe('OrdersController (IT)', (): void => {
     });
 
     it('should use authenticated customer even if another customer id is supplied', async (): Promise<void> => {
+      await repository.delete(activeOrder.id);
+
       const saveDto: OrderSaveDto = {
         customerId: inactiveCustomer.id,
         restaurantId: activeRestaurant.id,
@@ -278,6 +285,8 @@ describe('OrdersController (IT)', (): void => {
     });
 
     it('should not assign a courier during customer order creation', async (): Promise<void> => {
+      await repository.delete(activeOrder.id);
+
       const saveDto = {
         customerId: activeCustomer.id,
         restaurantId: activeRestaurant.id,

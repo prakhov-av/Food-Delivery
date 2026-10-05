@@ -16,6 +16,7 @@ import { RestaurantsModule } from '../../src/restaurants/restaurants.module';
 import { MenusModule } from '../../src/menus/menus.module';
 import { MenuItemsModule } from '../../src/menu-items/menu-items.module';
 import { OrderItemsModule } from '../../src/order-items/order-items.module';
+import { AuditModule } from '../../src/audit/audit.module';
 
 describe('AuthController (IT)', (): void => {
   const RESOURCE_NAME = '/auth';
@@ -53,6 +54,7 @@ describe('AuthController (IT)', (): void => {
         ConfirmationCodesModule,
         EmailModule,
         AuthModule,
+        AuditModule,
       ],
     }).compile();
 
@@ -148,7 +150,7 @@ describe('AuthController (IT)', (): void => {
         email: 'unknown@test.com',
         password: '123456',
       })
-      .expect(HttpStatus.NOT_FOUND);
+      .expect(HttpStatus.UNAUTHORIZED);
   });
 
   it('should return 401 for inactive user', async (): Promise<void> => {
@@ -158,9 +160,8 @@ describe('AuthController (IT)', (): void => {
         email: unconfirmedUser.email,
         password: '123456',
       })
-      .expect(HttpStatus.FORBIDDEN);
+      .expect(HttpStatus.UNAUTHORIZED);
   });
-
 
   it('should refresh access token successfully', async (): Promise<void> => {
     const loginResponse = await request(httpServer)
@@ -201,7 +202,6 @@ describe('AuthController (IT)', (): void => {
       .set('Cookie', ['refresh-token=invalid-token'])
       .expect(HttpStatus.UNAUTHORIZED);
   });
-
 
   it('should logout successfully', async (): Promise<void> => {
     const loginResponse = await request(httpServer)
