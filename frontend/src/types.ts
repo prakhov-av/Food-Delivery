@@ -2,18 +2,16 @@ export type Role = 'ADMIN' | 'MANAGER' | 'CUSTOMER' | 'COURIER';
 
 export type OrderStatus =
   | 'NEW'
-  | 'CREATED'
   | 'ACCEPTED'
   | 'COOKING'
   | 'READY'
   | 'DELIVERING'
   | 'COMPLETED'
   | 'CANCELLED_CUSTOMER'
-  | 'CANCELLED_COURIER';
-
+  | 'CANCELLED_COURIER'
+  | 'CANCELLED_STAFF';
 export const ORDER_STATUSES: OrderStatus[] = [
   'NEW',
-  'CREATED',
   'ACCEPTED',
   'COOKING',
   'READY',
@@ -73,8 +71,6 @@ export interface OrderItemDto {
   quantity: number;
 }
 
-
-
 export const CATALOG_MANAGERS: Role[] = ['ADMIN', 'MANAGER'];
 
 export const canManageCatalog = (role: Role): boolean =>
@@ -85,35 +81,74 @@ export const canCreateOrder = (role: Role): boolean => role === 'CUSTOMER';
 export const canAssignCourier = (role: Role): boolean =>
   role === 'ADMIN' || role === 'MANAGER';
 
-
 export function canEditItems(role: Role, status?: OrderStatus): boolean {
-  if (!status || CLOSED_STATUSES.includes(status)) return false;
-  if (role === 'CUSTOMER') return status === 'NEW';
+  if (!status || CLOSED_STATUSES.includes(status)) {
+    return false;
+  }
+
+  // Клиент может изменять заказ только до его принятия.
+  if (role === 'CUSTOMER') {
+    return status === 'NEW';
+  }
+
+  // Менеджер и администратор могут редактировать
+  // позиции активного заказа.
   return role === 'ADMIN' || role === 'MANAGER';
 }
 
+/**
+ * Возможные переходы статусов.
+ *
+ * CUSTOMER:
+ * NEW -> CANCELLED_CUSTOMER
+ * ACCEPTED -> CANCELLED_CUSTOMER
+ * COOKING -> CANCELLED_CUSTOMER
+ *
+ * MANAGER:
+ * NEW -> ACCEPTED
+ * ACCEPTED -> COOKING
+ * COOKING -> READY
+ *
+ * COURIER:
+ * READY -> DELIVERING
+ * READY -> CANCELLED_COURIER
+ * DELIVERING -> COMPLETED
+ * DELIVERING -> CANCELLED_COURIER
+ *
+ * ADMIN:
+ * Может менять статус через административный интерфейс.
+ */
 const TRANSITIONS: Record<Role, Partial<Record<OrderStatus, OrderStatus[]>>> = {
   CUSTOMER: {
-    NEW: ['CREATED', 'CANCELLED_CUSTOMER'],
-    CREATED: ['CANCELLED_CUSTOMER'],
+    NEW: ['CANCELLED_CUSTOMER'],
     ACCEPTED: ['CANCELLED_CUSTOMER'],
     COOKING: ['CANCELLED_CUSTOMER'],
   },
+
   MANAGER: {
-    CREATED: ['ACCEPTED'],
-    ACCEPTED: ['COOKING'],
-    COOKING: ['READY'],
+    NEW: ['ACCEPTED', 'CANCELLED_STAFF'],
+    ACCEPTED: ['COOKING', 'CANCELLED_STAFF'],
+    COOKING: ['READY', 'CANCELLED_STAFF'],
+    READY: ['CANCELLED_STAFF'],
   },
+
   COURIER: {
     READY: ['DELIVERING', 'CANCELLED_COURIER'],
     DELIVERING: ['COMPLETED', 'CANCELLED_COURIER'],
   },
+
   ADMIN: {},
 };
 
 export function nextStatuses(role: Role, current?: OrderStatus): OrderStatus[] {
-  if (!current) return [];
-  if (role === 'ADMIN') return ORDER_STATUSES.filter((s) => s !== current);
+  if (!current) {
+    return [];
+  }
+
+  if (role === 'ADMIN') {
+    return ORDER_STATUSES.filter((status) => status !== current);
+  }
+
   return TRANSITIONS[role][current] ?? [];
 }
 

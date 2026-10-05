@@ -19,14 +19,20 @@ import {
 } from '../ui';
 
 const isCancel = (s: OrderStatus): boolean =>
-  s === 'CANCELLED_CUSTOMER' || s === 'CANCELLED_COURIER';
+  s === 'CANCELLED_CUSTOMER' ||
+  s === 'CANCELLED_COURIER' ||
+  s === 'CANCELLED_STAFF';
 
 const isClosed = (s?: OrderStatus): boolean =>
-  s === 'COMPLETED' || s === 'CANCELLED_CUSTOMER' || s === 'CANCELLED_COURIER';
+  s === 'COMPLETED' || (s !== undefined && isCancel(s));
 
 function actionLabel(target: OrderStatus): string {
-  if (target === 'CREATED') return 'Отправить';
-  if (target === 'ACCEPTED') return 'Оформить';
+  if (target === 'ACCEPTED') return 'Принять заказ';
+  if (target === 'COOKING') return 'Заказ готовится';
+  if (target === 'READY') return 'Заказ готов';
+  if (target === 'DELIVERING') return 'Заказ отправлен';
+  if (target === 'COMPLETED') return 'Доставлен';
+  if (target === 'CANCELLED_COURIER') return 'Отменить заказ';
   if (isCancel(target)) return 'Отменить';
 
   return statusLabel(target);
@@ -45,6 +51,8 @@ export default function OrdersView({ role }: { role: Role }) {
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const isStaff: boolean = canAssignCourier(role);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -56,13 +64,17 @@ export default function OrdersView({ role }: { role: Role }) {
       ]);
 
       setOrders([...ordersData].sort((a, b) => b.id - a.id));
-
       setItems(itemsData);
 
-      if (canAssignCourier(role)) {
-        const users = await apiList<UserDto>('/users');
+      if (isStaff) {
+        try {
+          const users = await apiList<UserDto>('/users');
 
-        setCouriers(users.filter((u) => u.role === 'COURIER'));
+          setCouriers(users.filter((u) => u.role === 'COURIER'));
+        } catch {
+          // Список курьеров нужен только для ручного назначения.
+          setCouriers([]);
+        }
       }
     } catch (err) {
       setError(
@@ -71,7 +83,7 @@ export default function OrdersView({ role }: { role: Role }) {
     } finally {
       setLoading(false);
     }
-  }, [role]);
+  }, [isStaff]);
 
   useEffect(() => {
     void load();
@@ -90,8 +102,7 @@ export default function OrdersView({ role }: { role: Role }) {
     return map;
   }, [items]);
 
-  // Пустой черновик NEW без позиций
-  // = пустая корзина, не показываем.
+  // Пустой NEW без позиций = пустая корзина, не показываем.
   const { active, history } = useMemo(() => {
     const visible = orders.filter(
       (o) =>
@@ -111,7 +122,9 @@ export default function OrdersView({ role }: { role: Role }) {
 
     try {
       await action();
+
       setSuccess(successMessage);
+
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Операция не выполнена');
@@ -139,11 +152,9 @@ export default function OrdersView({ role }: { role: Role }) {
       () =>
         api(`/orders/${id}`, {
           method: 'PATCH',
-          body: JSON.stringify({
-            courierId,
-          }),
+          body: JSON.stringify({ courierId }),
         }),
-      `Курьер заказа #${id} обновлён`,
+      `Курьер заказа #${id} назначен`,
     );
 
   const changeQty = (item: OrderItemDto, newQuantity: number) =>
@@ -171,8 +182,18 @@ export default function OrdersView({ role }: { role: Role }) {
     const list = itemsByOrder.get(o.id) ?? [];
 
     const editable = canEditItems(role, o.status);
+    const closed = isClosed(o.status);
 
-    const next = nextStatuses(role, o.status);
+    // Администратор получает кнопки менеджера, остальные статусы лежат в списке «Принудительно».
+    const primary: OrderStatus[] =
+      role === 'ADMIN'
+        ? nextStatuses('MANAGER', o.status)
+        : nextStatuses(role, o.status);
+
+    const forced: OrderStatus[] =
+      role === 'ADMIN'
+        ? nextStatuses('ADMIN', o.status).filter((s) => !primary.includes(s))
+        : [];
 
     return (
       <div className="card" key={o.id} style={{ padding: 16 }}>
@@ -196,12 +217,11 @@ export default function OrdersView({ role }: { role: Role }) {
         </div>
 
         <div style={{ marginTop: 4 }}>
-          Курьер:{' '}
-          {canAssignCourier(role) &&
-          couriers.length > 0 &&
-          !isClosed(o.status) ? (
+          <b>Курьер:</b>{' '}
+          {isStaff && !closed && couriers.length > 0 ? (
             <select
               value={o.courier?.id ?? ''}
+              disabled={busy}
               onChange={(e) => {
                 const id = Number(e.target.value);
 
@@ -209,9 +229,8 @@ export default function OrdersView({ role }: { role: Role }) {
                   void changeCourier(o.id, id);
                 }
               }}
-              disabled={busy}
             >
-              {!o.courier && <option value="">—</option>}
+              {!o.courier && <option value="">Не назначен</option>}
 
               {couriers.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -220,9 +239,23 @@ export default function OrdersView({ role }: { role: Role }) {
               ))}
             </select>
           ) : (
-            (o.courier?.name ?? '—')
+            (o.courier?.name ?? 'Не назначен')
           )}
         </div>
+
+        {o.status === 'READY' && !o.courier && (
+          <div className="muted" style={{ marginTop: 4 }}>
+            {isStaff
+              ? 'Свободного курьера не нашлось. Назначьте курьера вручную.'
+              : 'Заказ готов. Ищем свободного курьера.'}
+          </div>
+        )}
+
+        {o.status === 'DELIVERING' && o.courier && (
+          <div className="muted" style={{ marginTop: 4 }}>
+            Курьер {o.courier.name} доставляет заказ.
+          </div>
+        )}
 
         {list.length === 0 ? (
           <div className="muted" style={{ marginTop: 8 }}>
@@ -296,9 +329,22 @@ export default function OrdersView({ role }: { role: Role }) {
           <b>Итого: {formatPrice(itemsTotal(list))}</b>
         </div>
 
-        {next.length > 0 && (
+        {(primary.length > 0 || forced.length > 0) && (
           <div className="card-actions" style={{ marginTop: 8 }}>
-            {role === 'ADMIN' ? (
+            {primary.map((s) => (
+              <button
+                key={s}
+                className={`btn btn-sm ${
+                  isCancel(s) ? 'btn-danger' : 'btn-primary'
+                }`}
+                disabled={busy || (s === 'ACCEPTED' && list.length === 0)}
+                onClick={() => void setStatus(o.id, s)}
+              >
+                {actionLabel(s)}
+              </button>
+            ))}
+
+            {forced.length > 0 && (
               <select
                 className="status-select"
                 value=""
@@ -309,27 +355,14 @@ export default function OrdersView({ role }: { role: Role }) {
                   }
                 }}
               >
-                <option value="">Сменить статус…</option>
+                <option value="">Принудительно…</option>
 
-                {next.map((s) => (
+                {forced.map((s) => (
                   <option key={s} value={s}>
                     {statusLabel(s)}
                   </option>
                 ))}
               </select>
-            ) : (
-              next.map((s) => (
-                <button
-                  key={s}
-                  className={`btn btn-sm ${
-                    isCancel(s) ? 'btn-danger' : 'btn-primary'
-                  }`}
-                  disabled={busy || (s === 'CREATED' && list.length === 0)}
-                  onClick={() => void setStatus(o.id, s)}
-                >
-                  {actionLabel(s)}
-                </button>
-              ))
             )}
           </div>
         )}
@@ -342,7 +375,11 @@ export default function OrdersView({ role }: { role: Role }) {
       <header className="view-header">
         <h1>Заказы</h1>
 
-        <button className="btn btn-ghost" onClick={() => void load()}>
+        <button
+          className="btn btn-ghost"
+          onClick={() => void load()}
+          disabled={loading || busy}
+        >
           Обновить
         </button>
       </header>

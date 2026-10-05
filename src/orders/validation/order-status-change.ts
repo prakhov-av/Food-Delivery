@@ -4,9 +4,7 @@ import { Role } from '../../users/enums/role.enum';
 
 const allowedTransitions: Record<Role, Partial<Record<Status, Status[]>>> = {
   [Role.CUSTOMER]: {
-    [Status.NEW]: [Status.CREATED, Status.CANCELLED_CUSTOMER],
-
-    [Status.CREATED]: [Status.CANCELLED_CUSTOMER],
+    [Status.NEW]: [Status.CANCELLED_CUSTOMER],
 
     [Status.ACCEPTED]: [Status.CANCELLED_CUSTOMER],
 
@@ -14,11 +12,13 @@ const allowedTransitions: Record<Role, Partial<Record<Status, Status[]>>> = {
   },
 
   [Role.MANAGER]: {
-    [Status.CREATED]: [Status.ACCEPTED],
+    [Status.NEW]: [Status.ACCEPTED, Status.CANCELLED_STAFF],
 
-    [Status.ACCEPTED]: [Status.COOKING],
+    [Status.ACCEPTED]: [Status.COOKING, Status.CANCELLED_STAFF],
 
-    [Status.COOKING]: [Status.READY],
+    [Status.COOKING]: [Status.READY, Status.CANCELLED_STAFF],
+
+    [Status.READY]: [Status.CANCELLED_STAFF],
   },
 
   [Role.COURIER]: {

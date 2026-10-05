@@ -31,14 +31,14 @@ export function SuccessBanner({
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   NEW: 'Новый',
-  CREATED: 'Ждёт подтверждения',
-  ACCEPTED: 'Оформлен',
+  ACCEPTED: 'Принят',
   COOKING: 'Готовится',
   READY: 'Готов',
   DELIVERING: 'Доставляется',
   COMPLETED: 'Завершён',
   CANCELLED_CUSTOMER: 'Отменён клиентом',
   CANCELLED_COURIER: 'Отменён курьером',
+  CANCELLED_STAFF: 'Отменён персоналом',
 };
 
 export function statusLabel(status?: OrderStatus): string {

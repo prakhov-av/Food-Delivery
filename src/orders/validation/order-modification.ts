@@ -1,14 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { Order } from '../order.entity';
-import { Status } from '../enums/status.enum';
+import { CLOSED_STATUSES, Status } from '../enums/status.enum';
 import { User } from '../../users/user.entity';
 import { Role } from '../../users/enums/role.enum';
-
-const CLOSED_STATUSES: Status[] = [
-  Status.COMPLETED,
-  Status.CANCELLED_CUSTOMER,
-  Status.CANCELLED_COURIER,
-];
 
 export function checkOrderModificationAllowed(
   order: Order,

@@ -5,7 +5,11 @@ import { OrdersMapper } from './dto/orders.mapper';
 import { OrderSaveDto } from './dto/order.save-dto';
 import { OrderDto } from './dto/order.dto';
 import { Order } from './order.entity';
-import { Status } from './enums/status.enum';
+import {
+  CANCELLED_STATUSES,
+  CLOSED_STATUSES,
+  Status,
+} from './enums/status.enum';
 import { OrderUpdateDto } from './dto/order.update-dto';
 
 import { UsersService } from '../users/users.service';
@@ -75,7 +79,9 @@ export class OrdersService {
       actorRole: user.role,
       entityType: 'Order',
       entityId: entity.id,
-      details: { restaurantId: entity.restaurant.id },
+      details: {
+        restaurantId: entity.restaurant.id,
+      },
     });
 
     return this.mapper.mapEntityToDto(entity);
@@ -116,9 +122,7 @@ export class OrdersService {
 
     const currentOrders: OrderDto[] = orders.filter(
       (order: OrderDto): boolean =>
-        order.status !== Status.COMPLETED &&
-        order.status !== Status.CANCELLED_CUSTOMER &&
-        order.status !== Status.CANCELLED_COURIER,
+        order.status === undefined || !CLOSED_STATUSES.includes(order.status),
     );
 
     if (currentOrders.length === 0) {
@@ -146,6 +150,16 @@ export class OrdersService {
     return order;
   }
 
+  async getActiveEntityByIdWithRelations(id: number): Promise<Order> {
+    const order: Order | null = await this.repository.findByIdWithRelations(id);
+
+    if (!order || !order.active) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
+
+    return order;
+  }
+
   async getOrderByIdWithRelations(
     id: number,
     user: Pick<User, 'id' | 'role'>,
@@ -161,26 +175,25 @@ export class OrdersService {
     return this.mapper.mapEntityToDto(order);
   }
 
-  async getActiveEntityByIdWithRelations(id: number): Promise<Order> {
-    return this.getActiveEntityById(id);
-  }
+  async getActiveOrderByIdWithRelations(id: number): Promise<OrderDto> {
+    const order: Order | null = await this.repository.findByIdWithRelations(id);
 
-  // async getActiveOrderByIdWithRelations(id: number): Promise<OrderDto> {
-  //   const order: Order | null = await this.repository.findByIdWithRelations(id);
-  //
-  //   if (!order || !order.active) {
-  //     throw new EntityNotFoundException(Order.name, id);
-  //   }
-  //
-  //   return this.mapper.mapEntityToDto(order);
-  // }
+    if (!order || !order.active) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
+
+    return this.mapper.mapEntityToDto(order);
+  }
 
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
     const order: Order = await this.getActiveEntityById(id);
 
-    if (order.status === Status.COMPLETED) {
+    if (CLOSED_STATUSES.includes(order.status)) {
+      const state: string =
+        order.status === Status.COMPLETED ? 'completed' : 'cancelled';
+
       throw new EntityUpdateException(
-        `Order id ${id} is already completed and cannot be updated`,
+        `Order id ${id} is already ${state} and cannot be updated`,
       );
     }
 
@@ -201,10 +214,36 @@ export class OrdersService {
     await this.repository.save(order);
 
     this.logger.log(
-      `Order courier manually changed: ` +
-        `order id ${id}, ` +
-        `new courier id ${courier.id}`,
+      `Order updated: id ${id}, ` +
+        `new courier ${order.courier.id}, ` +
+        `status ${order.status}`,
     );
+  }
+
+  async deleteById(id: number): Promise<void> {
+    const order: Order = await this.getActiveEntityById(id);
+
+    order.active = false;
+
+    await this.repository.save(order);
+
+    this.logger.log(`Order marked as inactive: id ${id}`);
+  }
+
+  async restoreById(id: number): Promise<void> {
+    const order: Order | null = await this.repository.findById(id);
+
+    if (!order) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
+
+    if (!order.active) {
+      order.active = true;
+
+      await this.repository.save(order);
+
+      this.logger.log(`Order marked as active: id ${id}`);
+    }
   }
 
   async updateTotalPrice(id: number, totalPrice: number): Promise<void> {
@@ -228,12 +267,21 @@ export class OrdersService {
 
     checkOrderStatusChange(order.status, status, user.role);
 
-    // Отправка заказа (NEW → CREATED):
-    // состав не пуст и лимит активных заказов не превышен.
-    if (order.status === Status.NEW && status === Status.CREATED) {
-      if ((await this.repository.countActiveItems(order.id)) === 0) {
+    /**
+     * Выход из NEW в любой статус, кроме отмены
+     * (в том числе принудительно администратором).
+     *
+     * Заказ должен содержать хотя бы одну позицию,
+     * и у клиента не должно быть слишком много активных заказов.
+     */
+    if (order.status === Status.NEW && !CANCELLED_STATUSES.includes(status)) {
+      const activeItems: number = await this.repository.countActiveItems(
+        order.id,
+      );
+
+      if (activeItems === 0) {
         throw new EntityUpdateException(
-          `Order id ${id} is empty and cannot be submitted`,
+          `Order id ${id} is empty and cannot be accepted`,
         );
       }
 
@@ -253,7 +301,13 @@ export class OrdersService {
 
     let autoAssignedCourierId: number | null = null;
 
-    if (status === Status.CREATED && !order.courier) {
+    /**
+     * READY: автоматически назначаем свободного курьера.
+     *
+     * Если свободного курьера нет, заказ остаётся READY без курьера,
+     * менеджер или администратор назначает его вручную.
+     */
+    if (status === Status.READY && !order.courier) {
       this.logger.log(`Trying to find available courier for order id ${id}`);
 
       const courier: User | null =

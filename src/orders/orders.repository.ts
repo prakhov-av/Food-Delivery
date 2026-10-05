@@ -73,7 +73,6 @@ export class OrdersRepository {
         active: true,
         customer: { id: customerId },
         status: In([
-          Status.CREATED,
           Status.ACCEPTED,
           Status.COOKING,
           Status.READY,
