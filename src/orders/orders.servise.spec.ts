@@ -74,6 +74,14 @@ describe('OrdersService', (): void => {
     }) as Order;
 
   let service: OrdersService;
+
+  beforeEach(() => {
+    ORDER_1.active = true;
+    ORDER_1.status = Status.NEW;
+    ORDER_2.active = true;
+    ORDER_2.status = Status.COMPLETED;
+    jest.clearAllMocks();
+  });
   let repository: jest.Mocked<OrdersRepository>;
   let mapper: jest.Mocked<OrdersMapper>;
   let usersService: jest.Mocked<UsersService>;
@@ -500,10 +508,138 @@ describe('OrdersService', (): void => {
           active: false,
         }),
       );
+    });
+
+    it('should not save when courierId is omitted', async (): Promise<void> => {
+      await service.update(ORDER_1.id, {});
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw when the new courier has a non-courier role', async (): Promise<void> => {
+      usersService.getActiveEntityById.mockResolvedValue(CUSTOMER);
+
+      await expect(
+        service.update(ORDER_1.id, VALID_UPDATE_DTO),
+      ).rejects.toBeInstanceOf(RoleMismatchException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should propagate courier lookup errors', async (): Promise<void> => {
+      const error = new EntityNotFoundException(User.name, 999);
+      usersService.getActiveEntityById.mockRejectedValue(error);
+
+      await expect(
+        service.update(ORDER_1.id, {
+          courierId: 999,
+        }),
+      ).rejects.toBe(error);
+      expect(repository.save).not.toHaveBeenCalled();
+    });
 
       await expect(service.getActiveEntityById(1)).rejects.toBeInstanceOf(
         EntityNotFoundException,
       );
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreById', (): void => {
+    it('should restore an inactive order', async (): Promise<void> => {
+      const inactiveOrder = {
+        ...ORDER_1,
+        active: false,
+      } as Order;
+
+      repository.findById.mockResolvedValue(inactiveOrder);
+
+      await service.restoreById(ORDER_1.id);
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: ORDER_1.id,
+          active: true,
+        }),
+      );
+    });
+
+    it('should do nothing when the order is already active', async (): Promise<void> => {
+      repository.findById.mockResolvedValue({
+        ...ORDER_1,
+        active: true,
+      } as Order);
+
+      await service.restoreById(ORDER_1.id);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw when the order does not exist', async (): Promise<void> => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.restoreById(999)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setStatus', (): void => {
+    it('should reject setting the current status again', async (): Promise<void> => {
+      await expect(
+        service.setStatus(ORDER_1.id, Status.NEW, CUSTOMER),
+      ).rejects.toBeInstanceOf(EntityUpdateException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should reject a user who cannot access the order', async (): Promise<void> => {
+      const otherCustomer = {
+        id: 999,
+        role: Role.CUSTOMER,
+      } as User;
+
+      await expect(
+        service.setStatus(ORDER_1.id, Status.CREATED, otherCustomer),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should change status for an authorized admin', async (): Promise<void> => {
+      await service.setStatus(ORDER_1.id, Status.CREATED, ADMIN);
+
+      expect(ORDER_1.status).toBe(Status.CREATED);
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: ORDER_1.id,
+          status: Status.CREATED,
+        }),
+      );
+    });
+
+    it('should reject an invalid status transition', async (): Promise<void> => {
+      const order = {
+        ...ORDER_1,
+        status: Status.COMPLETED,
+      } as Order;
+
+      repository.findByIdWithRelations.mockResolvedValue(order);
+
+      await expect(
+        service.setStatus(ORDER_1.id, Status.NEW, CUSTOMER),
+      ).rejects.toThrow();
+
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw when the order does not exist', async (): Promise<void> => {
+      await expect(
+        service.setStatus(999, Status.CREATED, ADMIN),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
   });
 

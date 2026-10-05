@@ -379,4 +379,174 @@ describe('ChatService', (): void => {
 
     expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
+
+  it('should reject malformed JSON classification', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue('{invalid-json');
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
+
+  it('should reject classification when parsed value is not an object', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue('null');
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
+
+  it('should reject classification when required fields are missing', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue('{"documentType":"ORDER"}');
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
+
+  it('should normalize a valid document type returned with spaces and lowercase letters', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer'),
+    );
+
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"  order  ","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    contextService.generateContext.mockReturnValue([]);
+
+    await service.generateResponse('question', 10, Role.CUSTOMER);
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.ORDER,
+      Role.CUSTOMER,
+    );
+  });
+
+  it('should reject non-string document type', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue(
+      '{"documentType":123,"liveDataRequired":false}',
+    );
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
+
+  it('should reject invalid live data resource', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue(
+      '{"documentType":"ORDER","liveDataRequired":true,"resource":"USER","resourceId":1}',
+    );
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
+
+  it.each([
+    ['a string', '"123"'],
+    ['a fractional number', '1.5'],
+    ['zero', '0'],
+    ['a negative number', '-1'],
+  ])(
+    'should reject invalid live data resourceId when it is %s',
+    async (_caseName, resourceId): Promise<void> => {
+      promptService.buildPromptForDocumentType.mockReturnValue(
+        createPromptBuilder('classifier'),
+      );
+
+      aiService.generateResponse.mockResolvedValue(
+        `{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":${resourceId}}`,
+      );
+
+      await expect(
+        service.generateResponse('question', 10, Role.CUSTOMER),
+      ).rejects.toBeInstanceOf(ConfigurationException);
+    },
+  );
+
+  it('should reject resourceId without resource', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue(
+      '{"documentType":"ORDER","liveDataRequired":false,"resourceId":123}',
+    );
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
+
+  it('should reject live data classification without resource', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue(
+      '{"documentType":"ORDER","liveDataRequired":true}',
+    );
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
+
+  it('should reject live data fields when liveDataRequired is false', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue(
+      '{"documentType":"ORDER","liveDataRequired":false,"resource":"ORDER"}',
+    );
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
+
+  it('should reject ORDER live data resource for a non-ORDER document type', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValue(
+      '{"documentType":"USER","liveDataRequired":true,"resource":"ORDER","resourceId":123}',
+    );
+
+    await expect(
+      service.generateResponse('question', 10, Role.CUSTOMER),
+    ).rejects.toBeInstanceOf(ConfigurationException);
+  });
 });

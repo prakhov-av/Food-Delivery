@@ -88,6 +88,38 @@ describe('OrderItemsService', (): void => {
   };
 
   beforeEach(async (): Promise<void> => {
+    repository = {
+      save: jest.fn(),
+      findById: jest.fn(),
+      findAllActive: jest.fn(),
+    };
+
+    mapper = {
+      mapEntityToDto: jest.fn((entity: OrderItem) => ({
+        id: entity?.id,
+        quantity: entity?.quantity,
+      })),
+      mapDtoToEntity: jest.fn(() => {
+        return {
+          ...orderItem,
+        } as OrderItem;
+      }),
+      mapEntityListToDtoList: jest.fn((entities: OrderItem[]) =>
+        entities.map((entity: OrderItem) => ({
+          id: entity.id,
+          quantity: entity.quantity,
+        })),
+      ),
+    };
+
+    ordersService = {
+      getActiveEntityByIdWithRelations: jest.fn(),
+    };
+
+    menuItemsService = {
+      getActiveEntityById: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrderItemsService,
@@ -534,6 +566,7 @@ describe('OrderItemsService', (): void => {
 
       expect(repository.save).not.toHaveBeenCalled();
     });
+  });
 
     it('should reject update when order total exceeds the limit', async (): Promise<void> => {
       const item: OrderItem = {

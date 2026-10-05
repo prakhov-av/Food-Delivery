@@ -3,6 +3,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TokensService } from './tokens.service';
 import { User } from '../users/user.entity';
+import jwt from 'jsonwebtoken';
 
 describe('TokensService', () => {
   let service: TokensService;
@@ -79,6 +80,14 @@ describe('TokensService', () => {
     });
   });
 
+  it('should throw UnauthorizedException for a structurally invalid but correctly signed access token', () => {
+    const token = jwt.sign({ sub: 1 }, 'access-secret');
+
+    expect(() => service.validateAccessTokenAndGetEmail(token)).toThrow(
+      UnauthorizedException,
+    );
+  });
+
   describe('validateRefreshTokenAndGetEmail', () => {
     it('should return email from valid refresh token', () => {
       const token = service.generateRefreshToken(user);
@@ -92,6 +101,14 @@ describe('TokensService', () => {
       expect(() =>
         service.validateRefreshTokenAndGetEmail('invalid-token'),
       ).toThrow();
+    });
+
+    it('should throw UnauthorizedException for a structurally invalid but correctly signed refresh token', () => {
+      const token = jwt.sign({ sub: 1 }, 'refresh-secret');
+
+      expect(() => service.validateRefreshTokenAndGetEmail(token)).toThrow(
+        UnauthorizedException,
+      );
     });
   });
 
