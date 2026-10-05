@@ -99,10 +99,12 @@ describe('LiveDataService', (): void => {
     );
 
     expect(result).toContain('Заказ №123');
+
     expect(getCurrentOrders).toHaveBeenCalledWith({
       id: 10,
       role: Role.CUSTOMER,
     });
+
     expect(getOrderByIdWithRelations).not.toHaveBeenCalled();
   });
 
@@ -114,6 +116,7 @@ describe('LiveDataService', (): void => {
     );
 
     expect(result).toContain('Заказ №123');
+
     expect(getCurrentOrders).toHaveBeenCalledWith({
       id: 20,
       role: Role.COURIER,
@@ -148,6 +151,7 @@ describe('LiveDataService', (): void => {
     expect(result).not.toContain('COMPLETED');
     expect(result).not.toContain('CANCELLED_CUSTOMER');
     expect(result).not.toContain('CANCELLED_COURIER');
+
     expect(getCurrentOrders).toHaveBeenCalledWith({
       id: 10,
       role: Role.CUSTOMER,
@@ -197,13 +201,13 @@ describe('LiveDataService', (): void => {
 
   it('should propagate unexpected backend errors', async (): Promise<void> => {
     const error: Error = new Error('Database unavailable');
+
     getOrderByIdWithRelations.mockRejectedValue(error);
 
     await expect(
       service.getLiveData(classification, 10, Role.CUSTOMER),
     ).rejects.toBe(error);
   });
-
 
   it('should return courier-specific no-order message for an inaccessible order', async (): Promise<void> => {
     getOrderByIdWithRelations.mockRejectedValue(
@@ -227,6 +231,7 @@ describe('LiveDataService', (): void => {
 
   it('should propagate unexpected errors when loading current orders', async (): Promise<void> => {
     const error: Error = new Error('Database unavailable');
+
     getCurrentOrders.mockRejectedValue(error);
 
     await expect(

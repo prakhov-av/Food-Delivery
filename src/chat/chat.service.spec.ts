@@ -9,7 +9,6 @@ import { ContextService } from './context.service';
 import { Role } from '../users/enums/role.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { LiveDataResource } from './enums/live-data-resource.enum';
-import { ConfigurationException } from '../exceptions/types/configuration.exception';
 import { PromptBuilder } from '../prompts/prompt.builder';
 import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
 
@@ -200,7 +199,6 @@ describe('ChatService', (): void => {
     const secondClassifierPrompt = aiService.generateResponse.mock.calls[2][0];
 
     expect(secondClassifierPrompt).not.toContain('Вопрос пользователя 10');
-
     expect(secondClassifierPrompt).not.toContain('user 10 answer');
   });
 
@@ -308,32 +306,78 @@ describe('ChatService', (): void => {
     expect(contextService.generateContext).not.toHaveBeenCalled();
   });
 
-  it('should reject invalid document type', async (): Promise<void> => {
+  it('should fallback to SYSTEM for invalid document type', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"UNKNOWN","liveDataRequired":false}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"UNKNOWN","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
   });
 
-  it('should reject non-boolean liveDataRequired', async (): Promise<void> => {
+  it('should fallback to SYSTEM for non-boolean liveDataRequired', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
     );
 
-    aiService.generateResponse.mockResolvedValue(
-      '{"documentType":"ORDER","liveDataRequired":"true"}',
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
     );
 
-    await expect(
-      service.generateResponse('question', 10, Role.CUSTOMER),
-    ).rejects.toBeInstanceOf(ConfigurationException);
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"ORDER","liveDataRequired":"true"}',
+      )
+      .mockResolvedValueOnce('fallback answer');
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    contextService.generateContext.mockReturnValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toBe('fallback answer');
+
+    expect(vectorStorageService.getRelevantChunkByAccess).toHaveBeenCalledWith(
+      [1, 2, 3],
+      DocumentType.SYSTEM,
+      Role.CUSTOMER,
+    );
+
+    expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
   it('should reject malformed JSON classification', async (): Promise<void> => {

@@ -37,7 +37,15 @@ export class MenuItemsService {
     return this.mapper.mapEntityToDto(entity);
   }
 
-  async getAllActiveMenuItems(): Promise<MenuItemDto[]> {
+  async getAllActiveMenuItems(menuId?: number): Promise<MenuItemDto[]> {
+    if (menuId !== undefined) {
+      // 404, если меню нет или оно неактивно
+      await this.menusService.getActiveEntityById(menuId);
+      const menuItems: MenuItem[] =
+        await this.repository.findAllActiveByMenuId(menuId);
+      return this.mapper.mapEntityListToDtoList(menuItems);
+    }
+
     const menuItems: MenuItem[] = await this.repository.findAllActive();
 
     if (menuItems.length === 0) {
@@ -95,5 +103,16 @@ export class MenuItemsService {
       await this.repository.save(menuItem);
       this.logger.log(`Menu item marked as active: id ${id}`);
     }
+  }
+
+  async getActiveEntityWithRestaurantById(id: number): Promise<MenuItem> {
+    const menuItem: MenuItem | null =
+      await this.repository.findByIdWithRestaurant(id);
+
+    if (!menuItem || !menuItem.active) {
+      throw new EntityNotFoundException(MenuItem.name, id);
+    }
+
+    return menuItem;
   }
 }

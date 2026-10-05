@@ -12,7 +12,13 @@ export function ErrorBanner({ message, onClose }: { message: string; onClose: ()
   );
 }
 
-export function SuccessBanner({ message, onClose }: { message: string; onClose: () => void }) {
+export function SuccessBanner({
+  message,
+  onClose,
+}: {
+  message: string;
+  onClose: () => void;
+}) {
   return (
     <div className="banner banner-success">
       <span>{message}</span>
@@ -25,13 +31,14 @@ export function SuccessBanner({ message, onClose }: { message: string; onClose: 
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   NEW: 'Новый',
-  CREATED: 'Создан',
   ACCEPTED: 'Принят',
   COOKING: 'Готовится',
   READY: 'Готов',
   DELIVERING: 'Доставляется',
   COMPLETED: 'Завершён',
-  CANCELLED: 'Отменён',
+  CANCELLED_CUSTOMER: 'Отменён клиентом',
+  CANCELLED_COURIER: 'Отменён курьером',
+  CANCELLED_STAFF: 'Отменён персоналом',
 };
 
 export function statusLabel(status?: OrderStatus): string {
@@ -68,7 +75,6 @@ export function formatDate(value: string): string {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('ru-RU');
 }
 
-/** Карточка-«раскрывашка» для форм создания. */
 export function CollapsibleForm({
   title,
   children,

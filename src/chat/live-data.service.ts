@@ -7,6 +7,21 @@ import { EntityNotFoundException } from '../exceptions/types/entity-not-found.ex
 import { ChatClassification } from './types/chat-classification';
 import { LiveDataResource } from './enums/live-data-resource.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
+import { Status } from '../orders/enums/status.enum';
+
+const STATUS_DESCRIPTIONS: Record<Status, string> = {
+  [Status.NEW]: 'NEW — новый заказ, ожидает подтверждения менеджера',
+  [Status.ACCEPTED]:
+    'ACCEPTED — заказ принят менеджером, готовится к приготовлению',
+  [Status.COOKING]: 'COOKING — готовится',
+  [Status.READY]: 'READY — готов, ждёт курьера',
+  [Status.DELIVERING]: 'DELIVERING — доставляется курьером',
+  [Status.COMPLETED]: 'COMPLETED — завершён',
+  [Status.CANCELLED_CUSTOMER]: 'CANCELLED_CUSTOMER — отменён клиентом',
+  [Status.CANCELLED_COURIER]: 'CANCELLED_COURIER — отменён курьером',
+  [Status.CANCELLED_STAFF]:
+    'CANCELLED_STAFF — отменён менеджером или администратором',
+};
 
 @Injectable()
 export class LiveDataService {
@@ -97,7 +112,7 @@ export class LiveDataService {
   private formatOrderData(order: OrderDto): string {
     return [
       `Заказ №${order.id}`,
-      `Статус: ${order.status ?? 'не указан'}`,
+      `Статус: ${order.status ? STATUS_DESCRIPTIONS[order.status] : 'не указан'}`,
       `Сумма: ${order.totalPrice}`,
       `Ресторан: ${order.restaurant.name}`,
       `Клиент: ${order.customer.name}`,

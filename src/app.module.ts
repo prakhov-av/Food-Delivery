@@ -13,6 +13,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EmailModule } from './email/email.module';
 import { ConfirmationCodesModule } from './confirmation-codes/confirmation-codes.module';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 // import { typeOrmConfig } from './database/typeorm.config';
 import { AiModule } from './ai/ai.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
@@ -20,6 +21,8 @@ import { VectorStorageModule } from './vector-storage/vector-storage.module';
 import { IngestionModule } from './ingestion/ingestion.module';
 import { ChatModule } from './chat/chat.module';
 import { PromptsModule } from './prompts/prompts.module';
+
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -38,6 +41,8 @@ import { PromptsModule } from './prompts/prompts.module';
     IngestionModule,
     ChatModule,
     PromptsModule,
+    AuditModule,
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     // TypeOrmModule.forRoot(typeOrmConfig),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -63,6 +68,10 @@ import { PromptsModule } from './prompts/prompts.module';
   ],
   controllers: [],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: AuthGuard,

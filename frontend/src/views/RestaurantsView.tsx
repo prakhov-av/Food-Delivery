@@ -3,14 +3,25 @@ import { api, apiList } from '../api';
 import type { RestaurantDto } from '../types';
 import { CollapsibleForm, ErrorBanner, SuccessBanner } from '../ui';
 
-export default function RestaurantsView() {
+export default function RestaurantsView({
+  canManage,
+  onSelect,
+}: {
+  canManage: boolean;
+  onSelect: (restaurant: RestaurantDto) => void;
+}) {
   const [restaurants, setRestaurants] = useState<RestaurantDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const [form, setForm] = useState({ name: '', address: '', phone: '', email: '' });
+  const [form, setForm] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    email: '',
+  });
   const [renameId, setRenameId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
@@ -20,7 +31,9 @@ export default function RestaurantsView() {
     try {
       setRestaurants(await apiList<RestaurantDto>('/restaurants'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить рестораны');
+      setError(
+        err instanceof Error ? err.message : 'Не удалось загрузить рестораны',
+      );
     } finally {
       setLoading(false);
     }
@@ -61,7 +74,10 @@ export default function RestaurantsView() {
     }, 'Название обновлено');
 
   const remove = (id: number) =>
-    run(() => api(`/restaurants/${id}`, { method: 'DELETE' }), 'Ресторан деактивирован');
+    run(
+      () => api(`/restaurants/${id}`, { method: 'DELETE' }),
+      'Ресторан деактивирован',
+    );
 
   return (
     <div className="view">
@@ -73,45 +89,53 @@ export default function RestaurantsView() {
       </header>
 
       {error && <ErrorBanner message={error} onClose={() => setError('')} />}
-      {success && <SuccessBanner message={success} onClose={() => setSuccess('')} />}
+      {success && (
+        <SuccessBanner message={success} onClose={() => setSuccess('')} />
+      )}
 
-      <CollapsibleForm title="Добавить ресторан" onSubmit={create} busy={busy}>
-        <label>
-          Название (латиницей)
-          <input
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            required
-            minLength={2}
-          />
-        </label>
-        <label>
-          Адрес
-          <input
-            value={form.address}
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
-            required
-            minLength={5}
-          />
-        </label>
-        <label>
-          Телефон
-          <input
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            required
-          />
-        </label>
-        <label>
-          Email
-          <input
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            required
-          />
-        </label>
-      </CollapsibleForm>
+      {canManage && (
+        <CollapsibleForm
+          title="Добавить ресторан"
+          onSubmit={create}
+          busy={busy}
+        >
+          <label>
+            Название (латиницей)
+            <input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
+              minLength={2}
+            />
+          </label>
+          <label>
+            Адрес
+            <input
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+              required
+              minLength={5}
+            />
+          </label>
+          <label>
+            Телефон
+            <input
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              required
+            />
+          </label>
+          <label>
+            Email
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              required
+            />
+          </label>
+        </CollapsibleForm>
+      )}
 
       {loading ? (
         <div className="empty">Загрузка…</div>
@@ -130,38 +154,55 @@ export default function RestaurantsView() {
                 <div>📞 {r.phone}</div>
                 <div>✉️ {r.email}</div>
               </div>
-              {renameId === r.id ? (
+
+              {canManage && renameId === r.id ? (
                 <div className="inline-form">
                   <input
                     value={renameValue}
                     onChange={(e) => setRenameValue(e.target.value)}
                     placeholder="Новое название"
                   />
-                  <button className="btn btn-primary btn-sm" onClick={() => void rename(r.id)}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => void rename(r.id)}
+                  >
                     ОК
                   </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setRenameId(null)}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setRenameId(null)}
+                  >
                     Отмена
                   </button>
                 </div>
               ) : (
                 <div className="card-actions">
                   <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => {
-                      setRenameId(r.id);
-                      setRenameValue(r.name);
-                    }}
+                    className="btn btn-primary btn-sm"
+                    onClick={() => onSelect(r)}
                   >
-                    Переименовать
+                    Меню →
                   </button>
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={() => void remove(r.id)}
-                    disabled={busy}
-                  >
-                    Удалить
-                  </button>
+                  {canManage && (
+                    <>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => {
+                          setRenameId(r.id);
+                          setRenameValue(r.name);
+                        }}
+                      >
+                        Переименовать
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => void remove(r.id)}
+                        disabled={busy}
+                      >
+                        Удалить
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>

@@ -38,7 +38,15 @@ export class MenusService {
     return this.mapper.mapEntityToDto(entity);
   }
 
-  async getAllActiveMenus(): Promise<MenuDto[]> {
+  async getAllActiveMenus(restaurantId?: number): Promise<MenuDto[]> {
+    if (restaurantId !== undefined) {
+      // 404, если ресторана нет или он неактивен
+      await this.restaurantsService.getActiveEntityById(restaurantId);
+      const menus: Menu[] =
+        await this.repository.findAllActiveByRestaurantId(restaurantId);
+      return this.mapper.mapEntityListToDtoList(menus);
+    }
+
     const menus: Menu[] = await this.repository.findAllActive();
 
     if (menus.length === 0) {

@@ -1,13 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Status } from '../enums/status.enum';
-import { IsEnum, Min } from 'class-validator';
+import { IsInt, IsOptional, Min } from 'class-validator';
 
 export class OrderUpdateDto {
-  @ApiProperty({ enum: Status })
-  @IsEnum(Status)
-  status: Status;
-
-  @ApiProperty({ required: false })
+  @ApiProperty({
+    required: false,
+    description: 'ID курьера для ручного назначения или замены',
+  })
+  @IsOptional()
+  @IsInt()
   @Min(1)
   courierId?: number;
 }

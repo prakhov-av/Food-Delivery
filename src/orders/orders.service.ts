@@ -5,11 +5,17 @@ import { OrdersMapper } from './dto/orders.mapper';
 import { OrderSaveDto } from './dto/order.save-dto';
 import { OrderDto } from './dto/order.dto';
 import { Order } from './order.entity';
-import { Status } from './enums/status.enum';
+import {
+  CANCELLED_STATUSES,
+  CLOSED_STATUSES,
+  Status,
+} from './enums/status.enum';
 import { OrderUpdateDto } from './dto/order.update-dto';
 
 import { UsersService } from '../users/users.service';
 import { RestaurantsService } from '../restaurants/restaurants.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '../audit/audit.enums';
 
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
@@ -21,6 +27,8 @@ import { User } from '../users/user.entity';
 import { checkOrderStatusChange } from './validation/order-status-change';
 import { checkOrderAccess } from './validation/order-access';
 
+import { MAX_SUBMITTED_ORDERS_PER_CUSTOMER } from './validation/order-limits';
+
 @Injectable()
 export class OrdersService {
   private readonly logger: Logger = new Logger(OrdersService.name);
@@ -30,9 +38,19 @@ export class OrdersService {
     private readonly mapper: OrdersMapper,
     private readonly usersService: UsersService,
     private readonly restaurantsService: RestaurantsService,
+    private readonly audit: AuditService,
   ) {}
 
   async create(saveDto: OrderSaveDto, user: User): Promise<OrderDto> {
+    const draft: Order | null = await this.repository.findActiveDraft(
+      user.id,
+      saveDto.restaurantId,
+    );
+
+    if (draft) {
+      return this.mapper.mapEntityToDto(draft);
+    }
+
     const entity: Order = this.mapper.mapDtoToEntity(saveDto);
 
     entity.customer = user;
@@ -41,10 +59,7 @@ export class OrdersService {
       saveDto.restaurantId,
     );
 
-    // Courier assignment is an administrative/managerial operation
-    // and must not be controlled by the customer creating the order.
     entity.courier = null;
-
     entity.status = Status.NEW;
     entity.active = true;
     entity.totalPrice = 0;
@@ -57,6 +72,17 @@ export class OrdersService {
         `courier id not assigned, ` +
         `restaurant id ${entity.restaurant.id}`,
     );
+
+    await this.audit.record({
+      action: AuditAction.ORDER_CREATED,
+      actorId: user.id,
+      actorRole: user.role,
+      entityType: 'Order',
+      entityId: entity.id,
+      details: {
+        restaurantId: entity.restaurant.id,
+      },
+    });
 
     return this.mapper.mapEntityToDto(entity);
   }
@@ -74,11 +100,11 @@ export class OrdersService {
       accessibleOrders = orders;
     } else if (user.role === Role.CUSTOMER) {
       accessibleOrders = orders.filter(
-        (order) => order.customer.id === user.id,
+        (order: Order): boolean => order.customer.id === user.id,
       );
     } else if (user.role === Role.COURIER) {
       accessibleOrders = orders.filter(
-        (order) => order.courier?.id === user.id,
+        (order: Order): boolean => order.courier?.id === user.id,
       );
     } else {
       accessibleOrders = [];
@@ -96,9 +122,7 @@ export class OrdersService {
 
     const currentOrders: OrderDto[] = orders.filter(
       (order: OrderDto): boolean =>
-        order.status !== Status.COMPLETED &&
-        order.status !== Status.CANCELLED_CUSTOMER &&
-        order.status !== Status.CANCELLED_COURIER,
+        order.status === undefined || !CLOSED_STATUSES.includes(order.status),
     );
 
     if (currentOrders.length === 0) {
@@ -108,11 +132,8 @@ export class OrdersService {
     return currentOrders;
   }
 
-  /**
-   * Получение одного заказа.
-   */
   async getOrderById(id: number, user: User): Promise<OrderDto> {
-    const order = await this.getActiveEntityById(id);
+    const order: Order = await this.getActiveEntityById(id);
 
     checkOrderAccess(order, user);
 
@@ -165,37 +186,42 @@ export class OrdersService {
   }
 
   async update(id: number, updateDto: OrderUpdateDto): Promise<void> {
-    const order = await this.getActiveEntityById(id);
+    const order: Order = await this.getActiveEntityById(id);
 
-    if (updateDto.courierId !== undefined) {
-      const courier = await this.usersService.getActiveEntityById(
-        updateDto.courierId,
-      );
+    if (CLOSED_STATUSES.includes(order.status)) {
+      const state: string =
+        order.status === Status.COMPLETED ? 'completed' : 'cancelled';
 
-      if (courier.role !== Role.COURIER) {
-        throw new RoleMismatchException(updateDto.courierId, Role.COURIER);
-      }
-
-      order.courier = courier;
-
-      // A newly created order becomes CREATED
-      // after a courier has been assigned.
-      if (order.status === Status.NEW) {
-        order.status = Status.CREATED;
-      }
-
-      await this.repository.save(order);
-
-      this.logger.log(
-        `Order updated: id ${id}, ` +
-          `new courier ${order.courier.id}, ` +
-          `status ${order.status}`,
+      throw new EntityUpdateException(
+        `Order id ${id} is already ${state} and cannot be updated`,
       );
     }
+
+    if (updateDto.courierId === undefined) {
+      throw new EntityUpdateException('Courier id must be specified');
+    }
+
+    const courier: User = await this.usersService.getActiveEntityById(
+      updateDto.courierId,
+    );
+
+    if (courier.role !== Role.COURIER) {
+      throw new RoleMismatchException(updateDto.courierId, Role.COURIER);
+    }
+
+    order.courier = courier;
+
+    await this.repository.save(order);
+
+    this.logger.log(
+      `Order updated: id ${id}, ` +
+        `new courier ${order.courier.id}, ` +
+        `status ${order.status}`,
+    );
   }
 
   async deleteById(id: number): Promise<void> {
-    const order = await this.getActiveEntityById(id);
+    const order: Order = await this.getActiveEntityById(id);
 
     order.active = false;
 
@@ -220,8 +246,16 @@ export class OrdersService {
     }
   }
 
+  async updateTotalPrice(id: number, totalPrice: number): Promise<void> {
+    const order: Order = await this.getActiveEntityById(id);
+
+    order.totalPrice = totalPrice;
+
+    await this.repository.save(order);
+  }
+
   async setStatus(id: number, status: Status, user: User): Promise<void> {
-    const order = await this.getActiveEntityById(id);
+    const order: Order = await this.getActiveEntityById(id);
 
     if (order.status === status) {
       throw new EntityUpdateException(
@@ -233,7 +267,65 @@ export class OrdersService {
 
     checkOrderStatusChange(order.status, status, user.role);
 
+    /**
+     * Выход из NEW в любой статус, кроме отмены
+     * (в том числе принудительно администратором).
+     *
+     * Заказ должен содержать хотя бы одну позицию,
+     * и у клиента не должно быть слишком много активных заказов.
+     */
+    if (order.status === Status.NEW && !CANCELLED_STATUSES.includes(status)) {
+      const activeItems: number = await this.repository.countActiveItems(
+        order.id,
+      );
+
+      if (activeItems === 0) {
+        throw new EntityUpdateException(
+          `Order id ${id} is empty and cannot be accepted`,
+        );
+      }
+
+      const submitted: number =
+        await this.repository.countSubmittedByCustomerId(order.customer.id);
+
+      if (submitted >= MAX_SUBMITTED_ORDERS_PER_CUSTOMER) {
+        throw new EntityUpdateException(
+          `Customer id ${order.customer.id} cannot have more than ${MAX_SUBMITTED_ORDERS_PER_CUSTOMER} active orders`,
+        );
+      }
+    }
+
+    const previousStatus: Status = order.status;
+
     order.status = status;
+
+    let autoAssignedCourierId: number | null = null;
+
+    /**
+     * READY: автоматически назначаем свободного курьера.
+     *
+     * Если свободного курьера нет, заказ остаётся READY без курьера,
+     * менеджер или администратор назначает его вручную.
+     */
+    if (status === Status.READY && !order.courier) {
+      this.logger.log(`Trying to find available courier for order id ${id}`);
+
+      const courier: User | null =
+        await this.usersService.findAvailableCourier();
+
+      if (courier) {
+        order.courier = courier;
+        autoAssignedCourierId = courier.id;
+
+        this.logger.log(
+          `Courier automatically assigned: ` +
+            `order id ${id}, ` +
+            `courier id ${courier.id}`,
+        );
+      } else {
+        this.logger.warn(`No available courier found for order id ${id}`);
+      }
+    }
 
     await this.repository.save(order);
 
@@ -243,5 +335,31 @@ export class OrdersService {
         `user id ${user.id}, ` +
         `role ${user.role}`,
     );
+
+    await this.audit.record({
+      action: AuditAction.ORDER_STATUS_CHANGED,
+      actorId: user.id,
+      actorRole: user.role,
+      entityType: 'Order',
+      entityId: id,
+      details: {
+        from: previousStatus,
+        to: status,
+      },
+    });
+
+    if (autoAssignedCourierId !== null) {
+      await this.audit.record({
+        action: AuditAction.ORDER_COURIER_ASSIGNED,
+        actorId: user.id,
+        actorRole: user.role,
+        entityType: 'Order',
+        entityId: id,
+        details: {
+          courierId: autoAssignedCourierId,
+          mode: 'AUTO',
+        },
+      });
+    }
   }
 }

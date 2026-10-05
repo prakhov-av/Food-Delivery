@@ -15,6 +15,7 @@ export class OrderItemsMapper {
 
     const dto: OrderItemDto = new OrderItemDto();
     dto.id = entity.id;
+    dto.orderId = entity.order?.id;
     dto.menuItem = this.menuItemsMapper.mapEntityToDto(entity.menuItem);
     dto.quantity = entity.quantity;
     return dto;

@@ -6,8 +6,11 @@ import { RequestLoggingInterceptor } from './logging/request-logging.interceptor
 import { GlobalExceptionHandler } from './exceptions/global-exception-handler';
 import { WinstonModule } from 'nest-winston';
 import winston from 'winston';
+import helmet from 'helmet';
 
 async function bootstrap() {
+  const isProduction: boolean = process.env.NODE_ENV === 'production';
+
   const app = await NestFactory.create(AppModule, {
     logger: WinstonModule.createLogger({
       format: winston.format.combine(
@@ -23,9 +26,12 @@ async function bootstrap() {
           filename: 'logs/app.log',
         }),
       ],
-      level: 'debug',
+      level: process.env.LOG_LEVEL ?? (isProduction ? 'info' : 'debug'),
     }),
   });
+
+  // Swagger UI не совместим со строгим CSP, поэтому вне продакшена CSP выключен.
+  app.use(helmet({ contentSecurityPolicy: isProduction ? undefined : false }));
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -39,21 +45,29 @@ async function bootstrap() {
 
   app.useGlobalFilters(new GlobalExceptionHandler());
 
+  const corsOrigins: string[] = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: 'https://fds-frontend-app-v4kqn.ondigitalocean.app',
+    origin: corsOrigins,
     credentials: true,
   });
 
-  const config = new DocumentBuilder()
-    .setTitle('Food Delivery API')
-    .setDescription('REST API for Food Delivery Service')
-    .setVersion('1.0.12')
-    .build();
+  if (!isProduction || process.env.SWAGGER_ENABLED === 'true') {
+    const config = new DocumentBuilder()
+      .setTitle('Food Delivery API')
+      .setDescription('REST API for Food Delivery Service')
+      .setVersion('1.0.12')
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
+    const document = SwaggerModule.createDocument(app, config);
 
-  SwaggerModule.setup('swagger', app, document);
+    SwaggerModule.setup('swagger', app, document);
+  }
 
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 bootstrap();

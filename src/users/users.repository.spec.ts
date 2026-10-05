@@ -1,5 +1,7 @@
 import { UsersRepository } from './users.repository';
 import { User } from './user.entity';
+import { Role } from './enums/role.enum';
+import { Status } from '../orders/enums/status.enum';
 
 describe('UsersRepository', (): void => {
   let repository: UsersRepository;
@@ -10,6 +12,7 @@ describe('UsersRepository', (): void => {
     findOneBy: jest.fn(),
     delete: jest.fn(),
     existsBy: jest.fn(),
+    createQueryBuilder: jest.fn(),
   };
 
   beforeEach((): void => {
@@ -242,6 +245,35 @@ describe('UsersRepository', (): void => {
 
       await expect(repository.findByEmail('test@test.com')).rejects.toThrow(
         'Database query error',
+      );
+    });
+  });
+
+  describe('findAvailableCourier', (): void => {
+    it('should look for an active courier without READY or DELIVERING orders', async (): Promise<void> => {
+      const courier: User = {
+        id: 7,
+        role: Role.COURIER,
+      } as User;
+
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(courier),
+      };
+
+      typeOrmRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+
+      const result: User | null = await repository.findAvailableCourier();
+
+      expect(result).toBe(courier);
+      expect(typeOrmRepository.createQueryBuilder).toHaveBeenCalledWith(
+        'courier',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('NOT EXISTS'),
+        { busyStatuses: [Status.READY, Status.DELIVERING] },
       );
     });
   });

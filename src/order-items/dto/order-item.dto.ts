@@ -10,4 +10,7 @@ export class OrderItemDto {
 
   @ApiProperty()
   quantity: number;
+
+  @ApiProperty()
+  orderId: number;
 }

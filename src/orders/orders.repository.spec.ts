@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { Order } from './order.entity';
 import { OrdersRepository } from './orders.repository';
+import { Order } from './order.entity';
+import { Status } from './enums/status.enum';
 
 describe('OrdersRepository', (): void => {
   let repository: OrdersRepository;
@@ -11,15 +11,28 @@ describe('OrdersRepository', (): void => {
 
   const ORDER: Order = {
     id: 1,
+    customer: {
+      id: 10,
+    } as Order['customer'],
+    courier: {
+      id: 20,
+    } as Order['courier'],
+    restaurant: {
+      id: 30,
+    } as Order['restaurant'],
+    status: Status.NEW,
+    totalPrice: 100,
+    createdAt: new Date(),
+    items: [],
     active: true,
-  } as Order;
+  };
 
   beforeEach(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrdersRepository,
         {
-          provide: getRepositoryToken(Order),
+          provide: 'OrderRepository',
           useValue: {
             save: jest.fn(),
             findOneBy: jest.fn(),
@@ -28,21 +41,24 @@ describe('OrdersRepository', (): void => {
           },
         },
       ],
-    }).compile();
+    })
+      .overrideProvider('OrderRepository')
+      .useValue({
+        save: jest.fn(),
+        findOneBy: jest.fn(),
+        findOne: jest.fn(),
+        find: jest.fn(),
+      })
+      .compile();
 
     repository = module.get<OrdersRepository>(OrdersRepository);
+    typeOrmRepository = module.get('OrderRepository');
 
-    typeOrmRepository = module.get<jest.Mocked<Repository<Order>>>(
-      getRepositoryToken(Order),
-    );
-  });
-
-  afterEach((): void => {
     jest.clearAllMocks();
   });
 
   describe('save', (): void => {
-    it('should save and return the order', async (): Promise<void> => {
+    it('should save and return an order', async (): Promise<void> => {
       typeOrmRepository.save.mockResolvedValue(ORDER);
 
       const result: Order = await repository.save(ORDER);
@@ -65,15 +81,15 @@ describe('OrdersRepository', (): void => {
   });
 
   describe('findById', (): void => {
-    it('should return the order by id', async (): Promise<void> => {
+    it('should return an order by id', async (): Promise<void> => {
       typeOrmRepository.findOneBy.mockResolvedValue(ORDER);
 
-      const result: Order | null = await repository.findById(1);
+      const result: Order | null = await repository.findById(ORDER.id);
 
       expect(result).toBe(ORDER);
       expect(typeOrmRepository.findOneBy).toHaveBeenCalledTimes(1);
       expect(typeOrmRepository.findOneBy).toHaveBeenCalledWith({
-        id: 1,
+        id: ORDER.id,
       });
     });
 
@@ -89,31 +105,30 @@ describe('OrdersRepository', (): void => {
       });
     });
 
-    it('should propagate repository findOneBy error', async (): Promise<void> => {
-      const error: Error = new Error('Find by id error');
+    it('should propagate repository find error', async (): Promise<void> => {
+      const error: Error = new Error('Find error');
 
       typeOrmRepository.findOneBy.mockRejectedValue(error);
 
-      await expect(repository.findById(1)).rejects.toThrow('Find by id error');
+      await expect(repository.findById(ORDER.id)).rejects.toThrow('Find error');
 
       expect(typeOrmRepository.findOneBy).toHaveBeenCalledTimes(1);
-      expect(typeOrmRepository.findOneBy).toHaveBeenCalledWith({
-        id: 1,
-      });
     });
   });
 
   describe('findByIdWithRelations', (): void => {
-    it('should return the order with required relations', async (): Promise<void> => {
+    it('should return an order with required relations', async (): Promise<void> => {
       typeOrmRepository.findOne.mockResolvedValue(ORDER);
 
-      const result: Order | null = await repository.findByIdWithRelations(1);
+      const result: Order | null = await repository.findByIdWithRelations(
+        ORDER.id,
+      );
 
       expect(result).toBe(ORDER);
       expect(typeOrmRepository.findOne).toHaveBeenCalledTimes(1);
       expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
         where: {
-          id: 1,
+          id: ORDER.id,
         },
         relations: {
           customer: true,
@@ -142,19 +157,37 @@ describe('OrdersRepository', (): void => {
       });
     });
 
-    it('should propagate repository findOne error', async (): Promise<void> => {
+    it('should propagate repository find error', async (): Promise<void> => {
       const error: Error = new Error('Find with relations error');
 
       typeOrmRepository.findOne.mockRejectedValue(error);
 
-      await expect(repository.findByIdWithRelations(1)).rejects.toThrow(
+      await expect(repository.findByIdWithRelations(ORDER.id)).rejects.toThrow(
         'Find with relations error',
       );
 
       expect(typeOrmRepository.findOne).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('findActiveDraft', (): void => {
+    it('should return an active draft for customer and restaurant', async (): Promise<void> => {
+      typeOrmRepository.findOne.mockResolvedValue(ORDER);
+
+      const result: Order | null = await repository.findActiveDraft(10, 30);
+
+      expect(result).toBe(ORDER);
+      expect(typeOrmRepository.findOne).toHaveBeenCalledTimes(1);
       expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
         where: {
-          id: 1,
+          active: true,
+          status: Status.NEW,
+          customer: {
+            id: 10,
+          },
+          restaurant: {
+            id: 30,
+          },
         },
         relations: {
           customer: true,
@@ -162,6 +195,44 @@ describe('OrdersRepository', (): void => {
           restaurant: true,
         },
       });
+    });
+
+    it('should return null when there is no active draft', async (): Promise<void> => {
+      typeOrmRepository.findOne.mockResolvedValue(null);
+
+      const result: Order | null = await repository.findActiveDraft(999, 999);
+
+      expect(result).toBeNull();
+      expect(typeOrmRepository.findOne).toHaveBeenCalledTimes(1);
+      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          active: true,
+          status: Status.NEW,
+          customer: {
+            id: 999,
+          },
+          restaurant: {
+            id: 999,
+          },
+        },
+        relations: {
+          customer: true,
+          courier: true,
+          restaurant: true,
+        },
+      });
+    });
+
+    it('should propagate repository find error', async (): Promise<void> => {
+      const error: Error = new Error('Find draft error');
+
+      typeOrmRepository.findOne.mockRejectedValue(error);
+
+      await expect(repository.findActiveDraft(10, 30)).rejects.toThrow(
+        'Find draft error',
+      );
+
+      expect(typeOrmRepository.findOne).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -23,6 +23,13 @@ export class MenusRepository {
   }
 
   async deleteById(id: number): Promise<void> {
-    await this.repository.delete(id);
+    await this.repository.delete(id)
+  }
+
+  async findAllActiveByRestaurantId(restaurantId: number): Promise<Menu[]> {
+    return this.repository.findBy({
+      active: true,
+      restaurant: { id: restaurantId },
+    });
   }
 }
