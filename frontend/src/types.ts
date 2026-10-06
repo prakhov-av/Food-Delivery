@@ -1,5 +1,7 @@
 export type Role = 'ADMIN' | 'MANAGER' | 'CUSTOMER' | 'COURIER';
 
+export const ALL_ROLES: Role[] = ['ADMIN', 'MANAGER', 'CUSTOMER', 'COURIER'];
+
 export type OrderStatus =
   | 'NEW'
   | 'ACCEPTED'
@@ -19,12 +21,14 @@ export const ORDER_STATUSES: OrderStatus[] = [
   'COMPLETED',
   'CANCELLED_CUSTOMER',
   'CANCELLED_COURIER',
+  'CANCELLED_STAFF',
 ];
 
 const CLOSED_STATUSES: OrderStatus[] = [
   'COMPLETED',
   'CANCELLED_CUSTOMER',
   'CANCELLED_COURIER',
+  'CANCELLED_STAFF',
 ];
 
 export interface UserDto {
@@ -80,6 +84,27 @@ export const canCreateOrder = (role: Role): boolean => role === 'CUSTOMER';
 
 export const canAssignCourier = (role: Role): boolean =>
   role === 'ADMIN' || role === 'MANAGER';
+
+// Загрузка документов в базу знаний. Настоящая защита на backend (@Roles(ADMIN)).
+export const canUploadDocs = (role: Role): boolean => role === 'ADMIN';
+
+export type DocumentType =
+  'AUTH' | 'USER' | 'RESTAURANT' | 'MENU' | 'DELIVERY' | 'ORDER' | 'SYSTEM';
+
+export const DOCUMENT_TYPES: DocumentType[] = [
+  'AUTH',
+  'USER',
+  'RESTAURANT',
+  'MENU',
+  'DELIVERY',
+  'ORDER',
+  'SYSTEM',
+];
+
+// Совпадает с лимитом в IngestionController (5 МБ).
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+export const UPLOAD_EXTENSIONS = ['.txt', '.pdf', '.docx'];
 
 export function canEditItems(role: Role, status?: OrderStatus): boolean {
   if (!status || CLOSED_STATUSES.includes(status)) {

@@ -1,4 +1,9 @@
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { UsersModule } from './users/users.module';
 import { RestaurantsModule } from './restaurants/restaurants.module';
 import { MenuItemsModule } from './menu-items/menu-items.module';
@@ -23,6 +28,7 @@ import { ChatModule } from './chat/chat.module';
 import { PromptsModule } from './prompts/prompts.module';
 
 import { AuditModule } from './audit/audit.module';
+import { CsrfMiddleware } from './security/csrf.middleware';
 
 @Module({
   imports: [
@@ -82,4 +88,11 @@ import { AuditModule } from './audit/audit.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    // Origin-проверка для всех маршрутов, меняющих состояние.
+    consumer
+      .apply(CsrfMiddleware)
+      .forRoutes({ path: '*path', method: RequestMethod.ALL });
+  }
+}

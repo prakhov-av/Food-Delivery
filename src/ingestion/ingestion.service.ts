@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { CleanService } from './clean.service';
 import { ChunkingService } from './chunking.service';
 import { VectorStorageService } from '../vector-storage/vector-storage.service';
@@ -38,7 +38,7 @@ export class IngestionService {
 
     const response: string = await this.aiService.generateResponse(prompt);
 
-    if (response === 'safe') {
+    if (this.isSafe(response)) {
       const cleanedPages: string[] = this.cleanService.cleanTexts(pages);
       const chunks: Chunk[] = this.chunkingService.chunkBySizeWithOverlap(
         cleanedPages,
@@ -50,12 +50,26 @@ export class IngestionService {
         ingestDocumentDto.documentId,
         ingestDocumentDto.documentVersion,
       );
-    } else {
-      const document: QuarantineDocument = new QuarantineDocument();
-      document.documentId = ingestDocumentDto.documentId;
-      document.text = pages.join('\n\n');
-      document.reason = 'Unsafe content';
-      await this.quarantineRepository.save(document);
+
+      return;
     }
+
+    const document: QuarantineDocument = new QuarantineDocument();
+    document.documentId = ingestDocumentDto.documentId;
+    document.text = pages.join('\n\n');
+    document.reason = 'Unsafe content';
+    await this.quarantineRepository.save(document);
+
+    // Ошибка, а не молчаливый успех: фронт покажет причину,
+    // а AuditInterceptor запишет FAILED вместо SUCCESS.
+    throw new UnprocessableEntityException(
+      'Документ не прошёл проверку безопасности и отправлен в карантин',
+    );
+  }
+
+  // Модель может ответить "safe", "Safe", "safe." или "safe\n".
+  // "unsafe" и "not safe" после нормализации не равны "safe".
+  private isSafe(response: string): boolean {
+    return response.toLowerCase().replace(/[^a-z]/g, '') === 'safe';
   }
 }

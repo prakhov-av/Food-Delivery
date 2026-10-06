@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, setSessionExpiredHandler } from './api';
-import { canManageCatalog } from './types';
+import { canManageCatalog, canUploadDocs } from './types';
 import type { MenuDto, RestaurantDto, Role, UserDto } from './types';
 import AuthPage from './views/AuthPage';
 import RestaurantsView from './views/RestaurantsView';
@@ -9,9 +9,10 @@ import DishesView from './views/DishesView';
 import OrdersView from './views/OrdersView';
 import UsersView from './views/UsersView';
 import AuditView from './views/AuditView';
+import UploadView from './views/UploadView.tsx';
 import ChatWidget from './ChatWidget';
 
-type ViewKey = 'restaurants' | 'orders' | 'users' | 'audit';
+type ViewKey = 'restaurants' | 'orders' | 'users' | 'audit' | 'upload';
 
 const NAV: {
   key: ViewKey;
@@ -23,6 +24,7 @@ const NAV: {
   { key: 'orders', label: 'Заказы', icon: '🛵' },
   { key: 'users', label: 'Пользователи', icon: '👥', adminOnly: true },
   { key: 'audit', label: 'Журнал', icon: '📜', adminOnly: true },
+  { key: 'upload', label: 'Загрузка документа', icon: '📄', adminOnly: true },
 ];
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -150,6 +152,7 @@ export default function App() {
         {view === 'orders' && <OrdersView role={user.role} />}
         {view === 'users' && isAdmin && <UsersView />}
         {view === 'audit' && isAdmin && <AuditView />}
+        {view === 'upload' && canUploadDocs(user.role) && <UploadView />}
       </main>
       <ChatWidget role={user.role} />
     </div>
