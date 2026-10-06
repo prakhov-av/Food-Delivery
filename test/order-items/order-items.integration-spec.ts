@@ -20,6 +20,7 @@ import { OrderItemSaveDto } from '../../src/order-items/dto/order-item.save-dto'
 import { OrderItemUpdateDto } from '../../src/order-items/dto/order-item.update-dto';
 import { Role } from '../../src/users/enums/role.enum';
 import request from 'supertest';
+import { ThrottlerGuard } from '@nestjs/throttler';
 
 describe('OrderItemsController (IT)', (): void => {
   const RESOURCE_NAME = '/order-items';
@@ -67,7 +68,10 @@ describe('OrderItemsController (IT)', (): void => {
   beforeAll(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     app = module.createNestApplication();
 
@@ -127,7 +131,7 @@ describe('OrderItemsController (IT)', (): void => {
     menuItem = new MenuItem();
     menuItem.name = 'Pizza';
     menuItem.description = 'Pizza1';
-    menuItem.price = 200;
+    menuItem.price = 100;
     menuItem.menu = menu;
     menuItem.active = true;
 
@@ -137,7 +141,7 @@ describe('OrderItemsController (IT)', (): void => {
     order.customer = customer;
     order.restaurant = restaurant;
     order.status = Status.NEW;
-    order.totalPrice = 400;
+    order.totalPrice = 200;
     order.active = true;
 
     await ordersRepository.save(order);

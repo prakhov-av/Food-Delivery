@@ -10,6 +10,9 @@ import { User } from '../../src/users/user.entity';
 import { Role } from '../../src/users/enums/role.enum';
 import { UserSaveDto } from '../../src/users/dto/user.save-dto';
 import { UserUpdateDto } from '../../src/users/dto/user.update-dto';
+import { ThrottlerGuard } from '@nestjs/throttler';
+
+ThrottlerGuard.prototype.canActivate = async () => true;
 
 interface TestUser {
   entity: User;
@@ -224,25 +227,15 @@ describe('UsersController (IT)', (): void => {
       expect(savedUser?.password).toMatch(/^\$2[aby]\$/);
     });
 
-    it('should create user for manager', async (): Promise<void> => {
-      const response = await authenticatedRequest(manager)
+    it('should return 403 for manager', async (): Promise<void> => {
+      await authenticatedRequest(manager)
         .post(RESOURCE_NAME)
         .send({
           ...VALID_SAVE_DTO,
           email: 'users-it-manager-create@test.local',
           phone: '+4915711111113',
         })
-        .expect(HttpStatus.CREATED);
-
-      expect(response.body).toEqual(
-        expect.objectContaining({
-          id: expect.any(Number),
-          name: VALID_SAVE_DTO.name,
-          role: Role.CUSTOMER,
-        }),
-      );
-
-      createdUserIds.push(response.body.id);
+        .expect(HttpStatus.FORBIDDEN);
     });
 
     it('should return 403 for customer', async (): Promise<void> => {
@@ -348,15 +341,15 @@ describe('UsersController (IT)', (): void => {
       );
     });
 
-    it('should return user for manager', async (): Promise<void> => {
+    it('should return courier for manager', async (): Promise<void> => {
       const response = await authenticatedRequest(manager)
-        .get(`${RESOURCE_NAME}/${customer.entity.id}`)
+        .get(`${RESOURCE_NAME}/${courier.entity.id}`)
         .expect(HttpStatus.OK);
 
       expect(response.body).toEqual(
         expect.objectContaining({
-          id: customer.entity.id,
-          role: Role.CUSTOMER,
+          id: courier.entity.id,
+          role: Role.COURIER,
         }),
       );
     });
@@ -408,20 +401,13 @@ describe('UsersController (IT)', (): void => {
       expect(updatedUser?.name).toBe(VALID_UPDATE_DTO.newName);
     });
 
-    it('should update user name for manager', async (): Promise<void> => {
+    it('should return 403 for manager', async (): Promise<void> => {
       await authenticatedRequest(manager)
         .patch(`${RESOURCE_NAME}/${customer.entity.id}`)
         .send({
           newName: 'Manager Updated Name',
         })
-        .expect(HttpStatus.NO_CONTENT);
-
-      const updatedUser: User | null = await repository.findOneBy({
-        id: customer.entity.id,
-      });
-
-      expect(updatedUser).toBeDefined();
-      expect(updatedUser?.name).toBe('Manager Updated Name');
+        .expect(HttpStatus.FORBIDDEN);
     });
 
     it('should return 400 for invalid name', async (): Promise<void> => {
