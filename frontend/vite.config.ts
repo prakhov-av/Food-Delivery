@@ -14,6 +14,7 @@ const apiPaths = [
   '/order-items',
   '/chat',
   '/audit-logs',
+  '/ingestion',
 ];
 
 export default defineConfig({
@@ -21,7 +22,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: Object.fromEntries(
-      apiPaths.map((p) => [p, { target: backend, changeOrigin: true, }]),
+      apiPaths.map((p) => [p, { target: backend, changeOrigin: true }]),
     ),
   },
 });

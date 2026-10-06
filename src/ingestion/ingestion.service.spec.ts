@@ -1,3 +1,4 @@
+import { UnprocessableEntityException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { IngestionService } from './ingestion.service';
@@ -134,8 +135,8 @@ describe('IngestionService', (): void => {
     expect(
       promptService.buildPromptForDocumentSafetyDetermination,
     ).toHaveBeenCalledTimes(1);
-    const generatedPrompt: string =
-      aiService.generateResponse.mock.calls[0][0] as string;
+    const generatedPrompt: string = aiService.generateResponse.mock
+      .calls[0][0] as string;
 
     expect(generatedPrompt).toBe(promptBuilder.build());
     expect(generatedPrompt).toContain('page one');
@@ -154,7 +155,7 @@ describe('IngestionService', (): void => {
     expect(quarantineRepository.save).not.toHaveBeenCalled();
   });
 
-  it('should put unsafe documents into quarantine and stop the normal ingestion pipeline', async (): Promise<void> => {
+  it('should put unsafe documents into quarantine, reject with 422 and stop the normal ingestion pipeline', async (): Promise<void> => {
     const pages: string[] = ['unsafe content'];
     const promptBuilder: PromptBuilder = new PromptBuilder('safety prompt');
 
@@ -165,7 +166,9 @@ describe('IngestionService', (): void => {
     aiService.generateResponse.mockResolvedValue('unsafe');
     quarantineRepository.save.mockResolvedValue({});
 
-    await service.ingest(createFile(), createDto());
+    await expect(
+      service.ingest(createFile(), createDto()),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
 
     expect(quarantineRepository.save).toHaveBeenCalledTimes(1);
     expect(quarantineRepository.save).toHaveBeenCalledWith({
@@ -178,6 +181,46 @@ describe('IngestionService', (): void => {
     expect(chunkingService.chunkBySizeWithOverlap).not.toHaveBeenCalled();
     expect(vectorStorageService.saveToDb).not.toHaveBeenCalled();
   });
+
+  it.each(['Safe', 'safe.', ' safe\n', 'SAFE'])(
+    'should treat the model verdict %j as safe',
+    async (verdict: string): Promise<void> => {
+      const pages: string[] = ['normal content'];
+
+      multiformatExtractor.extract.mockResolvedValue(pages);
+      promptService.buildPromptForDocumentSafetyDetermination.mockReturnValue(
+        new PromptBuilder('safety prompt'),
+      );
+      aiService.generateResponse.mockResolvedValue(verdict);
+      cleanService.cleanTexts.mockReturnValue(pages);
+      chunkingService.chunkBySizeWithOverlap.mockReturnValue([]);
+      vectorStorageService.saveToDb.mockResolvedValue();
+
+      await service.ingest(createFile(), createDto());
+
+      expect(vectorStorageService.saveToDb).toHaveBeenCalledTimes(1);
+      expect(quarantineRepository.save).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['unsafe', 'Unsafe.', 'not safe', 'I cannot tell', ''])(
+    'should quarantine the model verdict %j',
+    async (verdict: string): Promise<void> => {
+      multiformatExtractor.extract.mockResolvedValue(['content']);
+      promptService.buildPromptForDocumentSafetyDetermination.mockReturnValue(
+        new PromptBuilder('safety prompt'),
+      );
+      aiService.generateResponse.mockResolvedValue(verdict);
+      quarantineRepository.save.mockResolvedValue({});
+
+      await expect(
+        service.ingest(createFile(), createDto()),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+
+      expect(quarantineRepository.save).toHaveBeenCalledTimes(1);
+      expect(vectorStorageService.saveToDb).not.toHaveBeenCalled();
+    },
+  );
 
   it('should preserve page order when building the safety prompt', async (): Promise<void> => {
     const pages: string[] = ['first page', 'second page', 'third page'];
@@ -199,8 +242,8 @@ describe('IngestionService', (): void => {
         .value;
 
     expect(builder).toBe(promptBuilder);
-    const generatedPrompt: string =
-      aiService.generateResponse.mock.calls[0][0] as string;
+    const generatedPrompt: string = aiService.generateResponse.mock
+      .calls[0][0] as string;
 
     expect(generatedPrompt).toBe(promptBuilder.build());
     expect(generatedPrompt.indexOf('first page')).toBeLessThan(

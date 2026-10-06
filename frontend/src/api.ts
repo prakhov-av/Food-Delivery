@@ -23,10 +23,15 @@ async function rawRequest(
 ): Promise<Response> {
   const normalizedPath = `/${path.replace(/^\/+/, '')}`;
 
+  // Для FormData Content-Type выставляет сам браузер (multipart + boundary).
+  // Ручной application/json сломал бы разбор файла на backend.
+  const isFormData =
+    typeof FormData !== 'undefined' && options.body instanceof FormData;
+
   return fetch(`${API_URL}${normalizedPath}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(options.headers ?? {}),
     },
     credentials: 'include',
@@ -45,7 +50,7 @@ async function parseError(response: Response): Promise<ApiError> {
         : body.message;
     }
   } catch {
-
+    // тело ответа не JSON, остаётся сообщение по умолчанию
   }
 
   return new ApiError(response.status, message);
@@ -91,7 +96,6 @@ export async function api<T = void>(
     return text as T;
   }
 }
-
 
 export async function apiList<T>(path: string): Promise<T[]> {
   try {
