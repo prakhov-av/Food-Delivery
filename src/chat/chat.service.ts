@@ -305,10 +305,10 @@ export class ChatService {
     }
 
     return {
-      documentType: normalizedDocumentType as DocumentType,
-      liveDataRequired: classification.liveDataRequired,
-      resource: normalizedResource,
-      resourceId: normalizedResourceId,
+      documentType: DocumentType.SYSTEM,
+      liveDataRequired: false,
+      resource: undefined,
+      resourceId: undefined,
     };
   }
 }

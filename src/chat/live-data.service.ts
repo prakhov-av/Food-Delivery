@@ -36,7 +36,7 @@ export class LiveDataService {
       classification.documentType !== DocumentType.ORDER ||
       classification.resource !== LiveDataResource.ORDER
     ) {
-      return 'Для ответа на этот вопрос необходимы актуальные данные системы.';
+      return 'Актуальные данные по этому запросу недоступны.';
     }
 
     const user: Pick<User, 'id' | 'role'> = {
