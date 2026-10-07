@@ -233,24 +233,14 @@ export default function ChatWidget({ role }: { role: Role }) {
 
       <button
         onClick={() => setOpen((o) => !o)}
-        aria-label={open ? 'Закрыть чат' : 'Открыть чат'}
-        style={{
-          position: 'fixed',
-          right: 24,
-          bottom: 24,
-          width: 56,
-          height: 56,
-          borderRadius: '33%',
-          border: 'none',
-          background: ACCENT,
-          color: '#fff',
-          fontSize: 26,
-          cursor: 'pointer',
-          boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
-          zIndex: 1000,
-        }}
+        aria-label={open ? 'Закрыть AI ассистента' : 'Открыть AI ассистента'}
+        className={`ai-chat-button ${open ? 'open' : ''}`}
       >
-        {open ? '×' : '💬'}
+        <span className="ai-chat-icon">{open ? '×' : '💬'}</span>
+
+        <span className="ai-chat-label">
+          {open ? 'Закрыть' : 'AI ассистент'}
+        </span>
       </button>
     </>
   );
