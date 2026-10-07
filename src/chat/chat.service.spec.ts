@@ -188,7 +188,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -327,7 +329,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -363,7 +367,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -399,7 +405,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -435,7 +443,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -469,7 +479,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -504,7 +516,9 @@ describe('ChatService', (): void => {
       .mockResolvedValueOnce('answer');
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
     contextService.generateContext.mockReturnValue([]);
 
     await service.generateResponse('question', 10, Role.CUSTOMER);
@@ -531,7 +545,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -567,7 +583,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -612,7 +630,9 @@ describe('ChatService', (): void => {
 
       embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+        createQdrantResult('context text'),
+      ]);
 
       contextService.generateContext.mockReturnValue([]);
 
@@ -649,7 +669,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -683,7 +705,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -721,7 +745,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -759,7 +785,9 @@ describe('ChatService', (): void => {
 
     embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
 
-    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
 
     contextService.generateContext.mockReturnValue([]);
 
@@ -779,4 +807,32 @@ describe('ChatService', (): void => {
 
     expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
+
+
+  it('should return a fixed answer without calling the model when nothing was found', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+
+    aiService.generateResponse.mockResolvedValueOnce(
+      '{"documentType":"ORDER","liveDataRequired":false}',
+    );
+
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+    const result: string = await service.generateResponse(
+      'question',
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result).toContain('В базе знаний нет информации');
+
+    expect(aiService.generateResponse).toHaveBeenCalledTimes(1);
+
+    expect(promptService.buildPromptForChat).not.toHaveBeenCalled();
+  });
+
 });

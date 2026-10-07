@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { QdrantPoint } from './types/search/qdrant-point';
-import axios from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { QdrantResult } from './types/search/qdrant-result';
 import { SearchFilterMatcher } from './types/filters/search-filter-matcher';
@@ -10,14 +10,21 @@ import { SearchFilterAnd } from './types/filters/search-filter-and';
 import { Role } from '../../users/enums/role.enum';
 import { DocumentType } from '../../ingestion/enums/document-type.enum';
 import { QdrantScrollResponse } from './types/scroll/qdrant-scroll-response';
+import { ConfigurationException } from '../../exceptions/types/configuration.exception';
 
 @Injectable()
 export class QdrantClient {
   private readonly baseUrl: string;
   private readonly archiveUrl: string;
 
+  // Заголовок api-key добавляется только если задан QDRANT_API_KEY.
+  // Без ключа запросы уходят как раньше (локальный Qdrant без защиты).
+  private readonly requestConfig?: AxiosRequestConfig;
+
   constructor(private readonly configService: ConfigService) {
-    const dbUrl: string = this.configService.getOrThrow('QDRANT_URL');
+    const dbUrl: string = this.normalizeUrl(
+      this.configService.getOrThrow('QDRANT_URL'),
+    );
     const collectionName: string = this.configService.getOrThrow(
       'KNOWLEDGE_DB_COLLECTION_NAME',
     );
@@ -27,12 +34,20 @@ export class QdrantClient {
       'ARCHIVE_DB_COLLECTION_NAME',
     );
     this.archiveUrl = `${dbUrl}/collections/${archiveCollectionName}`;
+
+    const apiKey: string | undefined = this.configService
+      .get<string>('QDRANT_API_KEY')
+      ?.trim();
+
+    if (apiKey) {
+      this.requestConfig = { headers: { 'api-key': apiKey } };
+    }
   }
 
   async onModuleInit(): Promise<void> {
     for (const url of [this.baseUrl, this.archiveUrl]) {
       try {
-        await axios.put(url, {
+        await this.put(url, {
           vectors: {
             size: 1536,
             distance: 'Cosine',
@@ -47,7 +62,7 @@ export class QdrantClient {
   async save(points: QdrantPoint[], toArchive?: boolean): Promise<void> {
     const url: string = toArchive ? this.archiveUrl : this.baseUrl;
 
-    await axios.put(`${url}/points`, {
+    await this.put(`${url}/points`, {
       points: points,
     });
   }
@@ -57,7 +72,7 @@ export class QdrantClient {
     documentType: DocumentType,
     userRole: Role,
   ): Promise<QdrantResult[]> {
-    const response: QdrantResponse = await axios.post(
+    const response: QdrantResponse = await this.post(
       `${this.baseUrl}/points/search`,
       {
         vector: embedding,
@@ -102,7 +117,7 @@ export class QdrantClient {
     let offset: string | null = null;
 
     do {
-      const response: QdrantScrollResponse = await axios.post(
+      const response: QdrantScrollResponse = await this.post(
         `${this.baseUrl}/points/scroll`,
         {
           with_payload: true,
@@ -136,6 +151,41 @@ export class QdrantClient {
   async deletePointsByDocumentId(documentId: string): Promise<void> {
     const filter: SearchFilterAnd = this.createScrollFilter(documentId);
 
-    await axios.post(`${this.baseUrl}/points/delete`, { filter: filter });
+    await this.post(`${this.baseUrl}/points/delete`, { filter: filter });
+  }
+
+  // Единая точка для всех HTTP-вызовов: так api-key не пропустит ни один метод.
+  // Без ключа третий аргумент не передаётся вовсе.
+  private put(url: string, body: unknown): Promise<AxiosResponse> {
+    return this.requestConfig
+      ? axios.put(url, body, this.requestConfig)
+      : axios.put(url, body);
+  }
+
+  private post(url: string, body: unknown): Promise<AxiosResponse> {
+    return this.requestConfig
+      ? axios.post(url, body, this.requestConfig)
+      : axios.post(url, body);
+  }
+
+  // QDRANT_URL принимает ровно один адрес (без запятых и без /dashboard).
+  private normalizeUrl(value: string): string {
+    const trimmed: string = value.trim().replace(/\/+$/, '');
+
+    if (!this.isValidUrl(trimmed)) {
+      throw new ConfigurationException(
+        `QDRANT_URL must be a single valid URL, got: ${value}`,
+      );
+    }
+
+    return trimmed;
+  }
+
+  private isValidUrl(value: string): boolean {
+    try {
+      return Boolean(new URL(value));
+    } catch {
+      return false;
+    }
   }
 }

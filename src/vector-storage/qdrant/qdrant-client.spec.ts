@@ -19,6 +19,7 @@ describe('QdrantClient', (): void => {
     jest.clearAllMocks();
 
     configService = {
+      get: jest.fn(),
       getOrThrow: jest.fn((key: string): string => {
         const values: Record<string, string> = {
           QDRANT_URL: 'http://qdrant:6333',
@@ -255,5 +256,57 @@ describe('QdrantClient', (): void => {
     await expect(
       client.deletePointsByDocumentId('document-123'),
     ).rejects.toThrow('delete failed');
+  });
+  it('should send the api-key header on every request when QDRANT_API_KEY is set', async (): Promise<void> => {
+    (configService.get as jest.Mock).mockImplementation((key: string) =>
+      key === 'QDRANT_API_KEY' ? ' secret-key ' : undefined,
+    );
+    const securedClient: QdrantClient = new QdrantClient(configService);
+    const headers = { headers: { 'api-key': 'secret-key' } };
+
+    mockedAxios.put.mockResolvedValue({} as never);
+    mockedAxios.post.mockResolvedValue({ data: { result: [] } } as never);
+
+    await securedClient.onModuleInit();
+    await securedClient.save([]);
+    await securedClient.getRelevantChunksByAccess(
+      [0.1],
+      DocumentType.ORDER,
+      Role.CUSTOMER,
+    );
+    await securedClient.deletePointsByDocumentId('document-123');
+
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      'http://qdrant:6333/collections/food_delivery',
+      expect.any(Object),
+      headers,
+    );
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      'http://qdrant:6333/collections/food_delivery/points',
+      { points: [] },
+      headers,
+    );
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'http://qdrant:6333/collections/food_delivery/points/search',
+      expect.any(Object),
+      headers,
+    );
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'http://qdrant:6333/collections/food_delivery/points/delete',
+      expect.any(Object),
+      headers,
+    );
+  });
+
+  it('should reject a QDRANT_URL that is not a single valid URL', (): void => {
+    configService.getOrThrow.mockImplementation((key: string): string =>
+      key === 'QDRANT_URL'
+        ? 'http://a:6333,http://localhost:6333'
+        : 'collection',
+    );
+
+    expect(() => new QdrantClient(configService)).toThrow(
+      'QDRANT_URL must be a single valid URL',
+    );
   });
 });
