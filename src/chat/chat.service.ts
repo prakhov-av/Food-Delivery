@@ -14,6 +14,9 @@ import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-resul
 import { ContextService } from './context.service';
 
 const MAX_HISTORY_MESSAGES = 10;
+const NO_KNOWLEDGE_ANSWER =
+  'В базе знаний нет информации по этому вопросу. Попробуйте переформулировать вопрос.';
+const MIN_CHUNK_SCORE: number = Number(process.env.CHAT_MIN_SCORE ?? 0);
 
 @Injectable()
 export class ChatService {
@@ -86,12 +89,27 @@ export class ChatService {
       await this.embeddingsService.generateEmbeddings([request])
     )[0];
 
-    const relevantChunks: QdrantResult[] =
+    const relevantChunks: QdrantResult[] = (
       await this.vectorStorageService.getRelevantChunkByAccess(
         embedding,
         documentType,
         userRole,
-      );
+      )
+    ).filter(
+      (chunk: QdrantResult): boolean => (chunk.score ?? 0) >= MIN_CHUNK_SCORE,
+    );
+
+    this.logger.debug(
+      `Retrieval: type=${documentType}, role=${userRole}, chunks=${relevantChunks.length}, scores=[${relevantChunks
+        .map((c: QdrantResult): string => (c.score ?? 0).toFixed(2))
+        .join(', ')}]`,
+    );
+
+    if (relevantChunks.length === 0) {
+      this.addChatHistoryByUserId(userId, request, NO_KNOWLEDGE_ANSWER);
+
+      return NO_KNOWLEDGE_ANSWER;
+    }
 
     const context: string[] =
       this.contextService.generateContext(relevantChunks);
