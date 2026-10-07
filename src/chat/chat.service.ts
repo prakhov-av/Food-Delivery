@@ -89,13 +89,23 @@ export class ChatService {
       await this.embeddingsService.generateEmbeddings([request])
     )[0];
 
-    const relevantChunks: QdrantResult[] = (
+    let relevantChunks: QdrantResult[] =
       await this.vectorStorageService.getRelevantChunkByAccess(
         embedding,
         documentType,
         userRole,
-      )
-    ).filter(
+      );
+
+    // Классификатор мог ошибиться с темой: ищем по всем документам, доступным роли.
+    if (relevantChunks.length === 0) {
+      relevantChunks = await this.vectorStorageService.getRelevantChunkByAccess(
+        embedding,
+        undefined,
+        userRole,
+      );
+    }
+
+    relevantChunks = relevantChunks.filter(
       (chunk: QdrantResult): boolean => (chunk.score ?? 0) >= MIN_CHUNK_SCORE,
     );
 

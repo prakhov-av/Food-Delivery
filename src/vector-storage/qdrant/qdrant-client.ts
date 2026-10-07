@@ -69,7 +69,7 @@ export class QdrantClient {
 
   async getRelevantChunksByAccess(
     embedding: number[],
-    documentType: DocumentType,
+    documentType: DocumentType | undefined,
     userRole: Role,
   ): Promise<QdrantResult[]> {
     const response: QdrantResponse = await this.post(
@@ -86,19 +86,26 @@ export class QdrantClient {
     return response.data.result;
   }
 
+  // Роль всегда обязательна (это контроль доступа). Тип документа необязателен:
+  // без него поиск идёт по всем документам, доступным роли.
   private createMetadataSearchFilter(
-    documentType: DocumentType,
+    documentType: DocumentType | undefined,
     userRole: Role,
   ): SearchFilterAnd {
     const filter: SearchFilterAnd = new SearchFilterAnd();
 
-    const documentTypeMatcher: SearchFilterMatcher = new SearchFilterMatcher();
-    documentTypeMatcher.value = documentType;
+    if (documentType) {
+      const documentTypeMatcher: SearchFilterMatcher =
+        new SearchFilterMatcher();
+      documentTypeMatcher.value = documentType;
 
-    const documentTypeParameter: SearchFilterParameter =
-      new SearchFilterParameter();
-    documentTypeParameter.key = 'documentType';
-    documentTypeParameter.match = documentTypeMatcher;
+      const documentTypeParameter: SearchFilterParameter =
+        new SearchFilterParameter();
+      documentTypeParameter.key = 'documentType';
+      documentTypeParameter.match = documentTypeMatcher;
+
+      filter.must.push(documentTypeParameter);
+    }
 
     const roleMatcher: SearchFilterMatcher = new SearchFilterMatcher();
     roleMatcher.any = [userRole];
@@ -107,7 +114,7 @@ export class QdrantClient {
     roleParameter.key = 'allowedRoles';
     roleParameter.match = roleMatcher;
 
-    filter.must.push(documentTypeParameter, roleParameter);
+    filter.must.push(roleParameter);
 
     return filter;
   }

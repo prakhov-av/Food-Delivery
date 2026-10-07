@@ -88,7 +88,7 @@ export class VectorStorageService {
 
   async getRelevantChunkByAccess(
     embedding: number[],
-    documentType: DocumentType,
+    documentType: DocumentType | undefined,
     userRole: Role,
   ): Promise<QdrantResult[]> {
     const relevantChunks: QdrantResult[] =

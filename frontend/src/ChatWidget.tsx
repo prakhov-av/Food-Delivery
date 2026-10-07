@@ -239,7 +239,7 @@ export default function ChatWidget({ role }: { role: Role }) {
         <span className="ai-chat-icon">{open ? '×' : '💬'}</span>
 
         <span className="ai-chat-label">
-          {open ? 'Закрыть' : 'AI ассистент'}
+          {open ? 'Закрыть' : 'Chat with AI'}
         </span>
       </button>
     </>
