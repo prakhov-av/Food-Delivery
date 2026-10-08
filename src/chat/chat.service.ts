@@ -18,7 +18,7 @@ import { BASE_PROMPT_FOR_AI_CHAT } from '../prompts/constants/prompt.constants';
 const MAX_HISTORY_MESSAGES = 10;
 const PROMPT_LEAK_ANSWER =
   'Я не могу показывать внутренние инструкции. Могу помочь с заказами, ресторанами, меню, доставкой и регистрацией.';
-const LEAK_SHINGLE_SIZE = 6;
+const LEAK_SHINGLE_SIZE = 9;
 
 const toWords = (text: string): string[] =>
   text
@@ -38,7 +38,11 @@ const shingles = (words: string[]): Set<string> => {
   return result;
 };
 
-const PROMPT_SHINGLES: Set<string> = shingles(toWords(BASE_PROMPT_FOR_AI_CHAT));
+const PROTECTED_PROMPT_TEXT: string = BASE_PROMPT_FOR_AI_CHAT.split(/\n\s*\n/)
+  .filter((paragraph: string): boolean => !/рестор/i.test(paragraph))
+  .join('\n');
+
+const PROMPT_SHINGLES: Set<string> = shingles(toWords(PROTECTED_PROMPT_TEXT));
 
 const leaksPrompt = (answer: string): boolean =>
   [...shingles(toWords(answer))].some((s: string): boolean =>
