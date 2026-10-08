@@ -49,7 +49,16 @@ export class LiveDataService {
         const orders: OrderDto[] =
           await this.ordersService.getCurrentOrders(user);
 
-        return this.formatOrdersData(orders);
+        // Пустые корзины скрыты на вкладке «Заказы», в чате их тоже не показываем.
+        const visibleOrders: OrderDto[] = orders.filter(
+          (order: OrderDto): boolean => !this.isEmptyCart(order),
+        );
+
+        if (visibleOrders.length === 0) {
+          return this.formatNoOrdersMessage(userRole);
+        }
+
+        return this.formatOrdersData(visibleOrders);
       } catch (error) {
         if (error instanceof EntityNotFoundException) {
           return this.formatNoOrdersMessage(userRole);
@@ -109,6 +118,11 @@ export class LiveDataService {
     return 'В системе нет доступных заказов.';
   }
 
+
+  private isEmptyCart(order: OrderDto): boolean {
+    return order.status === Status.NEW && Number(order.totalPrice) === 0;
+  }
+
   private formatOrderData(order: OrderDto): string {
     return [
       `Заказ №${order.id}`,
@@ -118,6 +132,9 @@ export class LiveDataService {
       `Клиент: ${order.customer.name}`,
       `Курьер: ${order.courier?.name ?? 'не назначен'}`,
       `Создан: ${order.createdAt.toISOString()}`,
+      ...(this.isEmptyCart(order)
+        ? ['Это пустая корзина: блюд в заказе нет, такой заказ нельзя принять.']
+        : []),
     ].join('\n');
   }
 }

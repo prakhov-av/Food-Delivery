@@ -8,8 +8,7 @@ interface Message {
 }
 
 const ACCENT = 'rgb(1 61 182 / 0.65)';
-const BUBBLE = '#f1efec';
-
+const BUBBLE = 'rgba(241, 239, 236, 0.62)';
 
 const QUICK_QUESTIONS: Record<Role, string[]> = {
   CUSTOMER: [
@@ -25,39 +24,59 @@ const QUICK_QUESTIONS: Record<Role, string[]> = {
 
 export default function ChatWidget({ role }: { role: Role }) {
   const [open, setOpen] = useState(false);
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
       text: 'Здравствуйте! Выберите вопрос ниже или напишите свой.',
     },
   ]);
+
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      bottomRef.current?.scrollIntoView({
+        behavior: 'smooth',
+      });
     }
   }, [messages, busy, open]);
 
   const ask = async (raw: string) => {
     const text = raw.trim();
+
     if (!text || busy) return;
 
     setError('');
-    setMessages((m) => [...m, { role: 'user', text }]);
+
+    setMessages((m) => [
+      ...m,
+      {
+        role: 'user',
+        text,
+      },
+    ]);
+
     setBusy(true);
 
     try {
       const reply = await api<string>('/chat', {
         method: 'POST',
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+        }),
       });
+
       setMessages((m) => [
         ...m,
-        { role: 'assistant', text: String(reply ?? '') },
+        {
+          role: 'assistant',
+          text: String(reply ?? ''),
+        },
       ]);
     } catch (err) {
       if (err instanceof ApiError && err.status >= 500) {
@@ -74,8 +93,11 @@ export default function ChatWidget({ role }: { role: Role }) {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
+
     const text = input;
+
     setInput('');
+
     void ask(text);
   };
 
@@ -87,53 +109,100 @@ export default function ChatWidget({ role }: { role: Role }) {
             position: 'fixed',
             right: 24,
             bottom: 92,
+
             width: 'min(360px, calc(100vw - 32px))',
             height: 'min(520px, 70vh)',
-            background: '#fff',
-            borderRadius: 16,
-            boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
+
             display: 'flex',
             flexDirection: 'column',
+
             overflow: 'hidden',
+
+            background: 'rgba(255, 255, 255, 0.42)',
+
+            border: '1px solid rgba(255, 255, 255, 0.72)',
+            borderRadius: 22,
+
+            boxShadow:
+              '0 20px 60px rgba(31, 29, 26, 0.16), inset 0 1px 0 rgba(255,255,255,.75)',
+
+            backdropFilter: 'blur(24px) saturate(125%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(125%)',
+
             zIndex: 1000,
           }}
         >
+          {/* ================= HEADER ================= */}
+
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              padding: '12px 16px',
-              background: ACCENT,
+
+              padding: '13px 16px',
+
+              background: 'rgba(1, 61, 182, 0.72)',
+
               color: '#fff',
-              fontWeight: 600,
+
+              borderBottom: '1px solid rgba(255,255,255,.2)',
+
+              boxShadow: '0 4px 18px rgba(1,61,182,.12)',
+
+              backdropFilter: 'blur(14px)',
+              WebkitBackdropFilter: 'blur(14px)',
+
+              fontWeight: 650,
             }}
           >
-            <span>Помощник</span>
+            <span>AI помощник</span>
+
             <button
               onClick={() => setOpen(false)}
               aria-label="Закрыть чат"
               style={{
-                background: 'transparent',
-                border: 'none',
+                width: 30,
+                height: 30,
+
+                display: 'grid',
+                placeItems: 'center',
+
+                background: 'rgba(255,255,255,.12)',
+
+                border: '1px solid rgba(255,255,255,.18)',
+
+                borderRadius: 9,
+
                 color: '#fff',
                 fontSize: 20,
+
                 cursor: 'pointer',
                 lineHeight: 1,
+
+                transition: 'all .2s ease',
               }}
             >
               ×
             </button>
           </div>
 
+          {/* ================= MESSAGES ================= */}
+
           <div
             style={{
               flex: 1,
+
               overflowY: 'auto',
+
               padding: 12,
+
               display: 'flex',
               flexDirection: 'column',
               gap: 8,
+
+              background:
+                'linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.02))',
             }}
           >
             {messages.map((m, i) => (
@@ -141,46 +210,111 @@ export default function ChatWidget({ role }: { role: Role }) {
                 key={i}
                 style={{
                   alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+
                   maxWidth: '85%',
+
                   padding: '8px 12px',
-                  borderRadius: 15,
+
+                  borderRadius:
+                    m.role === 'user'
+                      ? '15px 15px 5px 15px'
+                      : '15px 15px 15px 5px',
+
                   whiteSpace: 'pre-wrap',
+
                   background: m.role === 'user' ? ACCENT : BUBBLE,
-                  color: m.role === 'user' ? '#fff' : 'inherit',
+
+                  color: m.role === 'user' ? '#fff' : '#27231f',
+
+                  border:
+                    m.role === 'user'
+                      ? '1px solid rgba(255,255,255,.14)'
+                      : '1px solid rgba(255,255,255,.58)',
+
+                  boxShadow: '0 4px 14px rgba(31,29,26,.05)',
+
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
                 }}
               >
                 {m.text}
               </div>
             ))}
+
             {busy && (
               <div
                 style={{
                   alignSelf: 'flex-start',
+
                   padding: '8px 12px',
-                  borderRadius: 15,
+
+                  borderRadius: '15px 15px 15px 5px',
+
                   background: BUBBLE,
+
+                  color: '#81776f',
+
+                  border: '1px solid rgba(255,255,255,.58)',
+
+                  boxShadow: '0 4px 14px rgba(31,29,26,.05)',
+
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
                 }}
               >
                 Думаю…
               </div>
             )}
+
             <div ref={bottomRef} />
           </div>
 
+          {/* ================= ERROR ================= */}
+
           {error && (
             <div
-              style={{ padding: '6px 12px', color: '#c0392b', fontSize: 13 }}
+              style={{
+                margin: '0 12px 4px',
+
+                padding: '7px 10px',
+
+                borderRadius: 10,
+
+                background: 'rgba(253, 236, 236, .58)',
+
+                border: '1px solid rgba(217,83,79,.2)',
+
+                color: '#c0392b',
+
+                fontSize: 13,
+
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+              }}
             >
               {error}
             </div>
           )}
+
+          {/* ================= QUICK QUESTIONS ================= */}
 
           <div
             style={{
               display: 'flex',
               flexWrap: 'wrap',
               gap: 6,
-              padding: '0 12px 8px',
+
+              padding: '6px 12px 10px',
+
+              /*
+               * ВАЖНО:
+               * Никакого background: #fff.
+               * Блок полностью прозрачный.
+               */
+              background: 'transparent',
+
+              position: 'relative',
+              zIndex: 2,
             }}
           >
             {QUICK_QUESTIONS[role].map((q) => (
@@ -188,15 +322,22 @@ export default function ChatWidget({ role }: { role: Role }) {
                 key={q}
                 disabled={busy}
                 onClick={() => void ask(q)}
+                className="ai-quick-question"
                 style={{
-                  border: `1px solid ${ACCENT}`,
+                  border: '1px solid rgba(1, 61, 182, 0.35)',
                   color: ACCENT,
-                  background: '#fff',
+                  background: 'rgba(255, 255, 255, 0.18)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
                   borderRadius: 999,
-                  padding: '4px 10px',
-                  fontSize: 13,
+                  padding: '5px 10px',
+                  fontSize: 12,
+                  fontWeight: 500,
                   cursor: busy ? 'default' : 'pointer',
                   opacity: busy ? 0.5 : 1,
+                  boxShadow:
+                    '0 2px 10px rgba(31,29,26,.04), inset 0 1px 0 rgba(255,255,255,.45)',
+                  transition: 'all .2s ease',
                 }}
               >
                 {q}
@@ -204,32 +345,67 @@ export default function ChatWidget({ role }: { role: Role }) {
             ))}
           </div>
 
+          {/* ================= INPUT ================= */}
+
           <form
             onSubmit={onSubmit}
             style={{
               display: 'flex',
               gap: 8,
-              padding: 12,
-              borderTop: '1px solid #eee',
+
+              padding: '10px 12px 12px',
+
+              background: 'rgba(255,255,255,.10)',
+
+              borderTop: '1px solid rgba(255,255,255,.35)',
+
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
             }}
           >
             <input
-              style={{ flex: 1, minWidth: 0 }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+
+                padding: '10px 12px',
+
+                border: '1px solid rgba(173,157,143,.22)',
+
+                borderRadius: 12,
+
+                background: 'rgba(255,255,255,.34)',
+
+                color: '#1f1d1a',
+
+                outline: 'none',
+
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+              }}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ваш вопрос…"
               disabled={busy}
             />
+
             <button
               className="btn btn-primary"
               type="submit"
               disabled={busy || !input.trim()}
+              style={{
+                minWidth: 46,
+                padding: '0 13px',
+                borderRadius: 12,
+              }}
             >
               ➤
             </button>
           </form>
         </div>
       )}
+
+      {/* ================= AI BUTTON ================= */}
 
       <button
         onClick={() => setOpen((o) => !o)}

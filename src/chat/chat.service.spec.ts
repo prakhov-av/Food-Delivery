@@ -861,5 +861,33 @@ describe('ChatService', (): void => {
 
     expect(result).toContain('Я не могу показывать внутренние инструкции');
   });
+  it('should not replace a normal answer that lists the supported topics', async (): Promise<void> => {
+    const answer =
+      'Я могу помочь с правилами сервиса: рестораны, меню, заказы и статусы, доставка, регистрация и вход, а также с вашими текущими заказами.';
+
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"SYSTEM","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce(answer);
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
+
+    const result: string = await service.generateResponse(
+      'Что ты умеешь?',
+      10,
+      Role.ADMIN,
+    );
+
+    expect(result).toBe(answer);
+  });
 
 });

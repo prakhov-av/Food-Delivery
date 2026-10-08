@@ -282,4 +282,61 @@ describe('LiveDataService', (): void => {
     expect(getOrderByIdWithRelations).not.toHaveBeenCalled();
     expect(getCurrentOrders).not.toHaveBeenCalled();
   });
+
+  const orderOf = (id: number, status: Status, totalPrice: number): OrderDto =>
+    ({
+      id,
+      status,
+      totalPrice,
+      restaurant: { name: 'Pizza House' },
+      customer: { name: 'Customer Test' },
+      courier: null,
+      createdAt: new Date('2026-10-01T10:00:00Z'),
+    }) as unknown as OrderDto;
+
+  it('should not list empty carts among the current orders', async (): Promise<void> => {
+    ordersService.getCurrentOrders.mockResolvedValue([
+      orderOf(4, Status.NEW, 0),
+      orderOf(19, Status.READY, 65.4),
+    ]);
+
+    const result: string = await service.getLiveData(
+      ordersClassification,
+      1,
+      Role.ADMIN,
+    );
+
+    expect(result).toContain('Заказ №19');
+    expect(result).not.toContain('Заказ №4');
+  });
+
+  it('should answer that there are no orders when only empty carts exist', async (): Promise<void> => {
+    ordersService.getCurrentOrders.mockResolvedValue([
+      orderOf(4, Status.NEW, 0),
+      orderOf(6, Status.NEW, 0),
+    ]);
+
+    expect(await service.getLiveData(ordersClassification, 1, Role.ADMIN)).toBe(
+      'В системе нет доступных заказов.',
+    );
+
+    expect(
+      await service.getLiveData(ordersClassification, 2, Role.CUSTOMER),
+    ).toBe('У вас нет заказов.');
+  });
+
+  it('should mark a single empty cart as empty when requested by id', async (): Promise<void> => {
+    ordersService.getOrderByIdWithRelations.mockResolvedValue(
+      orderOf(4, Status.NEW, 0),
+    );
+
+    const result: string = await service.getLiveData(
+      { ...classification, resourceId: 4 },
+      1,
+      Role.ADMIN,
+    );
+
+    expect(result).toContain('Заказ №4');
+    expect(result).toContain('пустая корзина');
+  });
 });
