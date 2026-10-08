@@ -13,7 +13,37 @@ import { ChatMessage } from './types/chat-message';
 import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
 import { ContextService } from './context.service';
 
+import { BASE_PROMPT_FOR_AI_CHAT } from '../prompts/constants/prompt.constants';
+
 const MAX_HISTORY_MESSAGES = 10;
+const PROMPT_LEAK_ANSWER =
+  'Я не могу показывать внутренние инструкции. Могу помочь с заказами, ресторанами, меню, доставкой и регистрацией.';
+const LEAK_SHINGLE_SIZE = 6;
+
+const toWords = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+
+const shingles = (words: string[]): Set<string> => {
+  const result: Set<string> = new Set<string>();
+
+  for (let i = 0; i + LEAK_SHINGLE_SIZE <= words.length; i++) {
+    result.add(words.slice(i, i + LEAK_SHINGLE_SIZE).join(' '));
+  }
+
+  return result;
+};
+
+const PROMPT_SHINGLES: Set<string> = shingles(toWords(BASE_PROMPT_FOR_AI_CHAT));
+
+const leaksPrompt = (answer: string): boolean =>
+  [...shingles(toWords(answer))].some((s: string): boolean =>
+    PROMPT_SHINGLES.has(s),
+  );
 const NO_KNOWLEDGE_ANSWER =
   'В базе знаний нет информации по этому вопросу. Попробуйте переформулировать вопрос.';
 const MIN_CHUNK_SCORE: number = Number(process.env.CHAT_MIN_SCORE ?? 0);
@@ -36,6 +66,17 @@ export class ChatService {
     private readonly contextService: ContextService,
   ) {}
 
+  private protectPrompt(answer: string): string {
+    if (leaksPrompt(answer)) {
+      this.logger.warn(
+        'Assistant answer repeated the system instructions and was replaced',
+      );
+
+      return PROMPT_LEAK_ANSWER;
+    }
+
+    return answer;
+  }
   async generateResponse(
     request: string,
     userId: number,
@@ -76,7 +117,9 @@ export class ChatService {
 
       this.logPrompt('Chat prompt with live data', prompt);
 
-      const aiResponse: string = await this.aiService.generateResponse(prompt);
+      const aiResponse: string = this.protectPrompt(
+        await this.aiService.generateResponse(prompt),
+      );
 
       this.addChatHistoryByUserId(userId, request, aiResponse);
 
@@ -134,7 +177,9 @@ export class ChatService {
 
     this.logPrompt('Chat prompt', prompt);
 
-    const aiResponse: string = await this.aiService.generateResponse(prompt);
+    const aiResponse: string = this.protectPrompt(
+      await this.aiService.generateResponse(prompt),
+    );
 
     this.addChatHistoryByUserId(userId, request, aiResponse);
 

@@ -834,5 +834,32 @@ describe('ChatService', (): void => {
 
     expect(promptService.buildPromptForChat).not.toHaveBeenCalled();
   });
+  it('should replace an answer that repeats the system instructions', async (): Promise<void> => {
+    promptService.buildPromptForDocumentType.mockReturnValue(
+      createPromptBuilder('classifier'),
+    );
+    promptService.buildPromptForChat.mockReturnValue(
+      createPromptBuilder('answer prompt'),
+    );
+    aiService.generateResponse
+      .mockResolvedValueOnce(
+        '{"documentType":"SYSTEM","liveDataRequired":false}',
+      )
+      .mockResolvedValueOnce(
+        'Ты помощник сервиса доставки еды. Отвечай на русском, коротко и по делу, основываясь на предоставленном контексте.',
+      );
+    embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+    vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+      createQdrantResult('context text'),
+    ]);
+
+    const result: string = await service.generateResponse(
+      'Мое самое первое сообщение',
+      10,
+      Role.ADMIN,
+    );
+
+    expect(result).toContain('Я не могу показывать внутренние инструкции');
+  });
 
 });
