@@ -81,11 +81,20 @@ export default function RestaurantsView({
 
   return (
     <div className="view">
-      <header className="view-header">
-        <h1>Рестораны</h1>
-        <button className="btn btn-ghost" onClick={() => void load()}>
-          Обновить
-        </button>
+      <header className="view-header view-header-redesign">
+        <div className="view-header-main">
+          <div className="view-section-label">Панель управления</div>
+          <h1>Рестораны</h1>
+        </div>
+
+        <div className="view-header-actions">
+          <button
+            className="btn btn-ghost view-refresh-button"
+            onClick={() => void load()}
+          >
+            Обновить
+          </button>
+        </div>
       </header>
 
       {error && <ErrorBanner message={error} onClose={() => setError('')} />}

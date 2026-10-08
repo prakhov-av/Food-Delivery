@@ -172,18 +172,23 @@ export default function DishesView({
 
   return (
     <div className="view">
-      <header className="view-header">
-        <div>
-          <button className="btn btn-ghost btn-sm" onClick={onBack}>
+      <header className="view-header view-header-redesign">
+        <div className="view-header-main">
+          <button className="view-back-link" onClick={onBack}>
             ← К меню {restaurant.name}
           </button>
 
           <h1>Блюда · {menu.name}</h1>
         </div>
 
-        <button className="btn btn-ghost" onClick={() => void load()}>
-          Обновить
-        </button>
+        <div className="view-header-actions">
+          <button
+            className="btn btn-ghost view-refresh-button"
+            onClick={() => void load()}
+          >
+            Обновить
+          </button>
+        </div>
       </header>
 
       {error && <ErrorBanner message={error} onClose={() => setError('')} />}

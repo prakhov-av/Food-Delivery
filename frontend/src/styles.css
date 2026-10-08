@@ -2023,3 +2023,166 @@ tbody tr:last-child td {
 .ai-quick-question:nth-child(4) {
   animation-delay: .12s;
 }
+
+
+/* =========================================================
+   HEADER FIX — Glass layout
+   Moves the top controls into a clean header row.
+   AI chat styles are intentionally untouched.
+   ========================================================= */
+
+.view-header-redesign {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 0;
+  margin-bottom: 14px;
+  padding: 0 2px 2px;
+}
+
+/* Remove the old decorative "Панель управления" pseudo-element
+   that was floating above the page title. */
+.view-header-redesign::before,
+.view-header::before {
+  content: none !important;
+  display: none !important;
+}
+
+.view-header-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.view-section-label {
+  margin: 0 0 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.view-back-link {
+  width: fit-content;
+  margin: 0 0 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color .18s ease, transform .18s ease;
+}
+
+.view-back-link:hover {
+  color: var(--text);
+  transform: translateX(-2px);
+}
+
+.view-header-main h1,
+.view-header-redesign h1 {
+  margin: 0 !important;
+  font-size: clamp(25px, 2.6vw, 34px);
+  line-height: 1.08;
+  letter-spacing: -.045em;
+  font-weight: 800;
+}
+
+.view-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.view-refresh-button {
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 11px;
+  background: rgba(255,255,255,.46);
+  color: var(--text);
+  box-shadow:
+          0 6px 18px rgba(50,36,25,.06),
+          inset 0 1px 0 rgba(255,255,255,.78);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  transition:
+          transform .2s ease,
+          background .2s ease,
+          box-shadow .2s ease;
+}
+
+.view-refresh-button:hover {
+  transform: translateY(-1px);
+  background: rgba(255,255,255,.68);
+  box-shadow:
+          0 9px 22px rgba(50,36,25,.09),
+          inset 0 1px 0 rgba(255,255,255,.9);
+}
+
+/* Keep the add-dish form close to the header instead of creating
+   an oversized gap. */
+.view-header-redesign + .banner {
+  margin-top: 0;
+}
+
+.view-header-redesign + .form-card {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+/* The form title itself stays compact and glassy. */
+.view-header-redesign ~ .form-card {
+  border-radius: 18px;
+  background: rgba(255,255,255,.42);
+  border: 1px solid rgba(255,255,255,.72);
+  box-shadow:
+          0 12px 30px rgba(50,36,25,.07),
+          inset 0 1px 0 rgba(255,255,255,.8);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+}
+
+/* Mobile header */
+@media (max-width: 700px) {
+  .view-header-redesign {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .view-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .view-refresh-button {
+    width: auto;
+  }
+
+  .view-header-main h1,
+  .view-header-redesign h1 {
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .view-header-actions,
+  .view-refresh-button {
+    width: 100%;
+  }
+
+  .view-refresh-button {
+    justify-content: center;
+  }
+}
