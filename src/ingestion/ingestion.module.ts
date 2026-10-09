@@ -31,4 +31,7 @@ import { QuarantineDocument } from './quarantine-document.entity';
     TypeOrmModule.forFeature([QuarantineDocument]),
   ],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class IngestionModule {}

@@ -3,9 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
 import { QdrantPayload } from '../vector-storage/qdrant/types/search/qdrant-payload';
 
+/**
+   * Формирует компактный контекст для RAG: группирует найденные фрагменты по документам, восстанавливает их порядок, объединяет соседние фрагменты с удалением перекрытий и ограничивает размер контекста.
+   */
 @Injectable()
 export class ContextService {
   constructor(private readonly configService: ConfigService) {}
+/**
+   * Формирует контекст для RAG из результатов векторного поиска. Фрагменты группируются по документам, сортируются по индексу, соседние фрагменты объединяются с удалением перекрывающегося текста, после чего выбираются наиболее релевантные фрагменты в пределах настроенного лимита слов.
+   * @param chunks Результаты поиска Qdrant с оценками релевантности и метаданными фрагментов.
+   * @returns Массив текстовых блоков, готовых для включения в промпт.
+   */
 
   generateContext(chunks: QdrantResult[]): string[] {
     const chunksByDocId: Map<string, QdrantResult[]> =

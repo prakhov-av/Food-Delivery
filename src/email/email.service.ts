@@ -4,6 +4,9 @@ import { MailerService } from '@nestjs-modules/mailer';
 import { ConfirmationCodesService } from '../confirmation-codes/confirmation-codes.service';
 import { ConfigService } from '@nestjs/config';
 
+/**
+   * Отправляет электронные письма, используемые прикладными сценариями, в частности для подтверждения регистрации.
+   */
 @Injectable()
 export class EmailService {
   constructor(
@@ -12,6 +15,9 @@ export class EmailService {
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async sendConfirmationEmail(user: User): Promise<void> {
     const codeValue: string =
       await this.confirmationCodesService.generateConfirmationCode(user);
@@ -28,8 +34,12 @@ export class EmailService {
   private buildConfirmationLink(codeValue: string): string {
     const host: string = this.configService.getOrThrow('SERVER_HOST');
     const port: string = this.configService.getOrThrow('SERVER_PORT');
+    const nodeEnv: string = this.configService.get('NODE_ENV') ?? 'development';
+
+    if (nodeEnv === 'production') {
+      return `https://${host}/users/confirm/${codeValue}`;
+    }
 
     return `http://${host}:${port}/users/confirm/${codeValue}`;
-    // return `http://${host}/users/confirm/${codeValue}`;
   }
 }

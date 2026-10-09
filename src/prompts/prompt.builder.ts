@@ -1,6 +1,9 @@
 import { Role } from '../users/enums/role.enum';
 import { ChatMessage } from '../chat/types/chat-message';
 
+/**
+   * Последовательно собирает промпт из системных инструкций, роли пользователя, истории диалога, контекста и текущего вопроса.
+   */
 export class PromptBuilder {
   private prompt: string;
 
@@ -8,6 +11,9 @@ export class PromptBuilder {
     this.prompt = basePrompt;
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   withUserRole(role: Role): PromptBuilder {
     this.prompt = `${this.prompt}
     
@@ -16,6 +22,9 @@ ${role}`;
     return this;
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   withContext(chunks: string[]): PromptBuilder {
     this.prompt = `${this.prompt}
     
@@ -27,6 +36,9 @@ ${chunks.join('\n\n')}
     return this;
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   withChatHistory(chatHistory: ChatMessage[]): PromptBuilder {
     this.prompt = `${this.prompt}
     
@@ -47,6 +59,9 @@ ${this.mapChatHistoryToMultistring(chatHistory)}
       .join('\n\n');
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   withQuestion(request: string): PromptBuilder {
     this.prompt = `${this.prompt}
     
@@ -55,6 +70,9 @@ ${request}`;
     return this;
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   withDocument(documentText: string): PromptBuilder {
     this.prompt = `${this.prompt}
     
@@ -66,6 +84,9 @@ ${documentText}
     return this;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   build(): string {
     return this.prompt;
   }

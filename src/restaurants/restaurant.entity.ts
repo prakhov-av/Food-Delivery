@@ -9,6 +9,9 @@ import {
 import { Menu } from '../menus/menu.entity';
 import { Order } from '../orders/order.entity';
 
+/**
+   * Представляет ресторан, доступный в системе, и служит родительской сущностью для меню.
+   */
 @Entity('restaurants')
 export class Restaurant {
   @PrimaryGeneratedColumn({ name: 'id' })

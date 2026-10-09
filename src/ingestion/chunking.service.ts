@@ -4,18 +4,30 @@ import { ConfigurationException } from '../exceptions/types/configuration.except
 import { Chunk } from './types/chunk';
 import { IngestDocumentDto } from './dto/ingest-document.dto';
 
+/**
+   * Разбивает очищенный текст документов на индексируемые фрагменты с перекрытием и добавляет к ним метаданные источника и доступа.
+   */
 @Injectable()
 export class ChunkingService {
   constructor(private readonly configService: ConfigService) {}
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   chunkBySentences(text: string): string[] {
     return text.split(/(?<=[.!?])(?: |\r?\n)+/);
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   chunkByParagraph(text: string): string[] {
     return text.split(/(?:\r?\n){2,}/);
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   chunkBySize(text: string): string[] {
     const chunkSize: number = this.getChunkSize();
 
@@ -32,6 +44,13 @@ export class ChunkingService {
 
     return result;
   }
+/**
+   * Разбивает страницы очищенного документа на фрагменты заданного размера с перекрытием соседних фрагментов. Каждому фрагменту назначаются порядковый индекс и метаданные, необходимые для поиска, фильтрации доступа и восстановления контекста.
+   * @param pages Очищенный текст документа, представленный массивом страниц.
+   * @param docTitle Исходное имя документа для метаданных.
+   * @param ingestDocumentDto Метаданные документа и правила доступа.
+   * @returns Упорядоченный массив фрагментов для векторной индексации.
+   */
 
   chunkBySizeWithOverlap(
     texts: string[],

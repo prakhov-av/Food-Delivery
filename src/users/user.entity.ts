@@ -8,6 +8,9 @@ import {
 } from 'typeorm';
 import { Order } from '../orders/order.entity';
 
+/**
+   * Представляет учётную запись пользователя системы доставки еды. Роль определяет доступные операции, а флаг активности позволяет деактивировать запись без физического удаления.
+   */
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn({ name: 'id' })

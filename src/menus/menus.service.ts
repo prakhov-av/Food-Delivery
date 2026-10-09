@@ -10,6 +10,9 @@ import { MenuUpdateDto } from './dto/menu.update-dto';
 // import { MenusValidator } from './validation/menus.validator';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 
+/**
+   * Реализует операции управления меню и связь меню с рестораном.
+   */
 @Injectable()
 export class MenusService {
   private readonly logger: Logger = new Logger(MenusService.name);
@@ -21,6 +24,9 @@ export class MenusService {
     // private readonly validator: MenusValidator,
   ) {}
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async create(saveDto: MenuSaveDto): Promise<MenuDto> {
     // this.validator.validateSaveDto(saveDto);
     const entity: Menu = this.mapper.mapDtoToEntity(saveDto);
@@ -38,6 +44,9 @@ export class MenusService {
     return this.mapper.mapEntityToDto(entity);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getAllActiveMenus(restaurantId?: number): Promise<MenuDto[]> {
     if (restaurantId !== undefined) {
       // 404, если ресторана нет или он неактивен
@@ -56,11 +65,17 @@ export class MenusService {
     return this.mapper.mapEntityListToDtoList(menus);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getActiveMenuById(id: number): Promise<MenuDto> {
     const menu: Menu = await this.getActiveEntityById(id);
     return this.mapper.mapEntityToDto(menu);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getActiveEntityById(id: number): Promise<Menu> {
     const menu: Menu | null = await this.repository.findById(id);
 
@@ -71,6 +86,9 @@ export class MenusService {
     return menu;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async update(id: number, updateDto: MenuUpdateDto): Promise<void> {
     // this.validator.validateUpdateDto(updateDto);
     const foundMenu: Menu = await this.getActiveEntityById(id);
@@ -87,6 +105,9 @@ export class MenusService {
     }
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async deleteById(id: number): Promise<void> {
     const menu: Menu = await this.getActiveEntityById(id);
     menu.active = false;
@@ -94,6 +115,9 @@ export class MenusService {
     this.logger.log(`Menu marked as inactive: id ${id}`);
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async restoreById(id: number): Promise<void> {
     const menu: Menu | null = await this.repository.findById(id);
 

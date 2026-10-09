@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Length, Matches, Min } from 'class-validator';
 
+/**
+   * Описывает структуру данных «MenuItemUpdateDto», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 export class MenuItemUpdateDto {
   @ApiProperty()
   @Length(2, 50)

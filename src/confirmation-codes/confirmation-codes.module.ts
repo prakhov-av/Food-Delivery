@@ -9,4 +9,7 @@ import { ConfirmationCodesService } from './confirmation-codes.service';
   providers: [ConfirmationCodesRepository, ConfirmationCodesService],
   exports: [ConfirmationCodesService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class ConfirmationCodesModule {}

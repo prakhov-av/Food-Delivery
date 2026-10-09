@@ -11,6 +11,9 @@ import {
 import { Role } from '../../users/enums/role.enum';
 import { DocumentType } from '../enums/document-type.enum';
 
+/**
+   * Описывает структуру данных «IngestDocumentDto», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 export class IngestDocumentDto {
   @IsEnum(DocumentType)
   documentType: DocumentType;

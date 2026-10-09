@@ -19,6 +19,7 @@ describe('EmailService', () => {
 
   const mockConfigService = {
     getOrThrow: jest.fn(),
+    get: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -54,8 +55,12 @@ describe('EmailService', () => {
           return 'localhost';
         case 'SERVER_PORT':
           return '3000';
+        default:
+          throw new Error(`Missing configuration key: ${key}`);
       }
     });
+
+    mockConfigService.get.mockReturnValue('test');
 
     mockMailerService.sendMail.mockResolvedValue(undefined);
   });

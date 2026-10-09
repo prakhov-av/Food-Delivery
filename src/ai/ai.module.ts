@@ -7,4 +7,7 @@ import { OpenAiClient } from './clients/openai.client';
   providers: [AiService, GeminiClient, OpenAiClient],
   exports: [AiService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class AiModule {}

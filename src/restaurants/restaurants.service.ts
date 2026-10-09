@@ -9,6 +9,9 @@ import { RestaurantUpdateDto } from './dto/restaurant.update-dto';
 import { EntitySaveException } from '../exceptions/types/entity-save.exception';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 
+/**
+   * Реализует операции управления ресторанами и связанные проверки предметной области.
+   */
 @Injectable()
 export class RestaurantsService {
   private readonly logger: Logger = new Logger(RestaurantsService.name);
@@ -19,6 +22,9 @@ export class RestaurantsService {
     // private readonly validator: RestaurantsValidator,
   ) {}
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async create(saveDto: RestaurantSaveDto): Promise<RestaurantDto> {
     if (await this.repository.isPhoneExists(saveDto.phone)) {
       throw new EntitySaveException(Restaurant.name, 'phone');
@@ -36,6 +42,9 @@ export class RestaurantsService {
     return this.mapper.mapEntityToDto(entity);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getAllActiveRestaurants(): Promise<RestaurantDto[]> {
     const restaurants: Restaurant[] = await this.repository.findAllActive();
 
@@ -46,11 +55,17 @@ export class RestaurantsService {
     return this.mapper.mapEntityListToDtoList(restaurants);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getActiveRestaurantById(id: number): Promise<RestaurantDto> {
     const restaurant: Restaurant = await this.getActiveEntityById(id);
     return this.mapper.mapEntityToDto(restaurant);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getActiveEntityById(id: number): Promise<Restaurant> {
     const restaurant: Restaurant | null = await this.repository.findById(id);
 
@@ -61,6 +76,9 @@ export class RestaurantsService {
     return restaurant;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async update(id: number, updateDto: RestaurantUpdateDto): Promise<void> {
     // this.validator.validateUpdateDto(updateDto);
     const foundRestaurant: Restaurant = await this.getActiveEntityById(id);
@@ -77,6 +95,9 @@ export class RestaurantsService {
     }
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async deleteById(id: number): Promise<void> {
     const restaurant: Restaurant = await this.getActiveEntityById(id);
     restaurant.active = false;
@@ -85,6 +106,9 @@ export class RestaurantsService {
     this.logger.log(`Restaurant marked as inactive: id ${id}`);
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async restoreById(id: number): Promise<void> {
     const restaurant: Restaurant | null = await this.repository.findById(id);
 

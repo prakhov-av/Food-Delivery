@@ -3,6 +3,9 @@ import { Menu } from '../menu.entity';
 import { MenuDto } from './menu.dto';
 import { MenuSaveDto } from './menu.save-dto';
 
+/**
+   * Описывает структуру данных «MenusMapper», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 @Injectable()
 export class MenusMapper {
   mapEntityToDto(entity: Menu): MenuDto {

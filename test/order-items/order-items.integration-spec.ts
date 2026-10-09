@@ -10,6 +10,7 @@ import { MenuItemsModule } from '../../src/menu-items/menu-items.module';
 import { OrdersModule } from '../../src/orders/orders.module';
 import { OrderItemsModule } from '../../src/order-items/order-items.module';
 import { User } from '../../src/users/user.entity';
+import { ConfirmationCode } from '../../src/confirmation-codes/confirmation-code.entity';
 import { Restaurant } from '../../src/restaurants/restaurant.entity';
 import { Menu } from '../../src/menus/menu.entity';
 import { MenuItem } from '../../src/menu-items/menu-item.entity';
@@ -50,6 +51,7 @@ describe('OrderItemsController (IT)', (): void => {
 
   let repository: Repository<OrderItem>;
   let usersRepository: Repository<User>;
+  let confirmationCodesRepository: Repository<ConfirmationCode>;
   let restaurantsRepository: Repository<Restaurant>;
   let menusRepository: Repository<Menu>;
   let menuItemsRepository: Repository<MenuItem>;
@@ -87,6 +89,9 @@ describe('OrderItemsController (IT)', (): void => {
 
     repository = module.get(getRepositoryToken(OrderItem));
     usersRepository = module.get(getRepositoryToken(User));
+    confirmationCodesRepository = module.get(
+      getRepositoryToken(ConfirmationCode),
+    );
     restaurantsRepository = module.get(getRepositoryToken(Restaurant));
     menusRepository = module.get(getRepositoryToken(Menu));
     menuItemsRepository = module.get(getRepositoryToken(MenuItem));
@@ -97,6 +102,7 @@ describe('OrderItemsController (IT)', (): void => {
     await menuItemsRepository.deleteAll();
     await menusRepository.deleteAll();
     await restaurantsRepository.deleteAll();
+    await confirmationCodesRepository.deleteAll();
     await usersRepository.deleteAll();
   });
 
@@ -182,6 +188,7 @@ describe('OrderItemsController (IT)', (): void => {
     await menuItemsRepository.deleteAll();
     await menusRepository.deleteAll();
     await restaurantsRepository.deleteAll();
+    await confirmationCodesRepository.deleteAll();
     await usersRepository.deleteAll();
   });
 

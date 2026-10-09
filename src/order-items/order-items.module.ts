@@ -24,4 +24,7 @@ import { OrderItemsValidator } from './validation/order-items.validator';
   ],
   exports: [OrderItemsService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class OrderItemsModule {}

@@ -3,6 +3,9 @@ import { Injectable } from '@nestjs/common';
 import { RestaurantSaveDto } from '../dto/restaurant.save-dto';
 import { RestaurantUpdateDto } from '../dto/restaurant.update-dto';
 
+/**
+   * Содержит проверки предметных правил для сценариев, связанных с restaurants.
+   */
 @Injectable()
 export class RestaurantsValidator {
   validateSaveDto(saveDto: RestaurantSaveDto): void {

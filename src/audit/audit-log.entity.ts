@@ -6,6 +6,9 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
+/**
+   * Представляет запись аудита о выполненной операции, её результате и связанных метаданных запроса.
+   */
 @Entity('audit_logs')
 @Index(['createdAt'])
 @Index(['actorId'])

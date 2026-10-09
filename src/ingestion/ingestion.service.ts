@@ -11,6 +11,9 @@ import { Repository } from 'typeorm';
 import { QuarantineDocument } from './quarantine-document.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 
+/**
+   * Управляет конвейером загрузки документов: извлекает текст, проверяет содержимое на безопасность, очищает и разбивает разрешённые документы на фрагменты, а небезопасные сохраняет в карантин.
+   */
 @Injectable()
 export class IngestionService {
   constructor(
@@ -24,6 +27,15 @@ export class IngestionService {
     @InjectRepository(QuarantineDocument)
     private readonly quarantineRepository: Repository<QuarantineDocument>,
   ) {}
+/**
+   * Выполняет полный конвейер загрузки документа: извлекает текст, запрашивает у модели оценку безопасности, очищает текст и разбивает его на фрагменты для индексации. Документ, не прошедший проверку, сохраняется в карантин, а операция завершается HTTP-ошибкой.
+   * @param file Загруженный файл, предоставленный Multer.
+   * @param ingestDocumentDto Метаданные документа, включая идентификатор, версию, тип, язык и разрешённые роли.
+   * @returns Promise, завершающийся после индексации документа.
+   * @throws UnprocessableEntityException Если документ не прошёл проверку безопасности.
+   * @throws UnsupportedFileFormatException Если формат файла не поддерживается экстракторами.
+   * @throws DocumentVersionConflictException Если версия документа конфликтует с уже сохранённой версией.
+   */
 
   async ingest(
     file: Express.Multer.File,

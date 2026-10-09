@@ -1,5 +1,8 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
+/**
+   * Хранит исходный текст документа, не прошедшего проверку безопасности, и причину помещения в карантин.
+   */
 @Entity('quarantine_documents')
 export class QuarantineDocument {
   @PrimaryGeneratedColumn({ name: 'id' })

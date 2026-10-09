@@ -7,6 +7,9 @@ import {
 } from 'typeorm';
 import { User } from '../users/user.entity';
 
+/**
+   * Представляет код, используемый для подтверждения регистрации пользователя.
+   */
 @Entity('confirmation_codes')
 export class ConfirmationCode {
   @PrimaryGeneratedColumn({ name: 'id' })

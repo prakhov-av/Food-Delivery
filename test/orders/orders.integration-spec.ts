@@ -11,6 +11,7 @@ import { OrderSaveDto } from '../../src/orders/dto/order.save-dto';
 import { OrderUpdateDto } from '../../src/orders/dto/order.update-dto';
 import { Status } from '../../src/orders/enums/status.enum';
 import { User } from '../../src/users/user.entity';
+import { ConfirmationCode } from '../../src/confirmation-codes/confirmation-code.entity';
 import { Role } from '../../src/users/enums/role.enum';
 import { Restaurant } from '../../src/restaurants/restaurant.entity';
 import { OrderItem } from '../../src/order-items/order-item.entity';
@@ -47,6 +48,7 @@ describe('OrdersController (IT)', (): void => {
 
   let repository: Repository<Order>;
   let usersRepository: Repository<User>;
+  let confirmationCodesRepository: Repository<ConfirmationCode>;
   let restaurantsRepository: Repository<Restaurant>;
   let orderItemsRepository: Repository<OrderItem>;
 
@@ -66,12 +68,16 @@ describe('OrdersController (IT)', (): void => {
 
     repository = module.get(getRepositoryToken(Order));
     usersRepository = module.get(getRepositoryToken(User));
+    confirmationCodesRepository = module.get(
+      getRepositoryToken(ConfirmationCode),
+    );
     restaurantsRepository = module.get(getRepositoryToken(Restaurant));
     orderItemsRepository = module.get(getRepositoryToken(OrderItem));
 
     await orderItemsRepository.deleteAll();
     await repository.deleteAll();
     await restaurantsRepository.deleteAll();
+    await confirmationCodesRepository.deleteAll();
     await usersRepository.deleteAll();
   });
 
@@ -189,6 +195,7 @@ describe('OrdersController (IT)', (): void => {
     await orderItemsRepository.deleteAll();
     await repository.deleteAll();
     await restaurantsRepository.deleteAll();
+    await confirmationCodesRepository.deleteAll();
     await usersRepository.deleteAll();
   });
 

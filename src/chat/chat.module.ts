@@ -21,4 +21,7 @@ import { PromptsModule } from '../prompts/prompts.module';
     PromptsModule,
   ],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class ChatModule {}

@@ -20,6 +20,9 @@ import type { AuthenticatedRequest } from './types/authenticated-request';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResult } from '../audit/audit.enums';
 
+/**
+   * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
+   */
 @Controller('/auth')
 export class AuthController {
   constructor(
@@ -29,6 +32,9 @@ export class AuthController {
 
   @Get('/me')
   @ApiOkResponse({ type: UserDto })
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   me(@Req() request: AuthenticatedRequest): UserDto {
     const { id, name, role, phone } = request.user;
     return { id, name, role, phone };
@@ -38,6 +44,9 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('/login')
   @HttpCode(HttpStatus.OK)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async login(
     @Body() loginDto: LoginRequestDto,
     @Req() request: express.Request,
@@ -77,6 +86,9 @@ export class AuthController {
   @Public()
   @Post('/refresh')
   @HttpCode(HttpStatus.OK)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async refresh(
     @Req() request: express.Request,
     @Res({ passthrough: true }) response: express.Response,
@@ -113,6 +125,9 @@ export class AuthController {
   @Public()
   @Post('/logout')
   @HttpCode(HttpStatus.OK)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   logout(
     @Req() request: express.Request,
     @Res({ passthrough: true }) response: express.Response,

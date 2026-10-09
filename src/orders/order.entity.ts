@@ -13,6 +13,9 @@ import { Restaurant } from '../restaurants/restaurant.entity';
 import { OrderItem } from '../order-items/order-item.entity';
 import { Status } from './enums/status.enum';
 
+/**
+   * Представляет заказ пользователя и его состояние в жизненном цикле обработки и доставки.
+   */
 @Entity('orders')
 export class Order {
   @PrimaryGeneratedColumn({ name: 'id' })

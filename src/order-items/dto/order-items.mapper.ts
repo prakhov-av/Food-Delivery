@@ -4,6 +4,9 @@ import { OrderItemDto } from './order-item.dto';
 import { OrderItemSaveDto } from './order-item.save-dto';
 import { MenuItemsMapper } from '../../menu-items/dto/menu-items.mapper';
 
+/**
+   * Описывает структуру данных «OrderItemsMapper», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 @Injectable()
 export class OrderItemsMapper {
   constructor(private readonly menuItemsMapper: MenuItemsMapper) {}

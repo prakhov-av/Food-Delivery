@@ -18,6 +18,9 @@ const INVALID_CREDENTIALS = 'Invalid email or password';
 // чтобы время ответа не выдавало, существует ли такой email.
 const DUMMY_HASH: string = bcrypt.hashSync('dummy-password', 10);
 
+/**
+   * Координирует сценарии входа, обновления токенов и выхода пользователя.
+   */
 @Injectable()
 export class AuthService {
   private readonly refreshStorage: Map<string, string> = new Map<
@@ -30,6 +33,9 @@ export class AuthService {
     private readonly tokensService: TokensService,
   ) {}
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getAuthenticatedUser(
     username: string,
     password: string,
@@ -59,6 +65,9 @@ export class AuthService {
     return user;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async login(loginDto: LoginRequestDto): Promise<TokenResponseDto> {
     const user: User = await this.getAuthenticatedUser(
       loginDto.email,
@@ -81,6 +90,9 @@ export class AuthService {
     return tokenDto;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async refreshAccessToken(cookies: string | undefined): Promise<string> {
     if (cookies === undefined) {
       throw new UnauthorizedException(
@@ -114,6 +126,9 @@ export class AuthService {
     return this.tokensService.generateAccessToken(user);
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   revokeRefreshToken(cookies: string | undefined): void {
     if (cookies === undefined) {
       return;

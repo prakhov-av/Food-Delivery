@@ -3,6 +3,9 @@ import { Restaurant } from '../restaurant.entity';
 import { RestaurantDto } from './restaurant.dto';
 import { RestaurantSaveDto } from './restaurant.save-dto';
 
+/**
+   * Описывает структуру данных «RestaurantsMapper», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 @Injectable()
 export class RestaurantsMapper {
   mapEntityToDto(entity: Restaurant): RestaurantDto {

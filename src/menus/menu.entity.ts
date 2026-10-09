@@ -10,6 +10,9 @@ import {
 import { Restaurant } from '../restaurants/restaurant.entity';
 import { MenuItem } from '../menu-items/menu-item.entity';
 
+/**
+   * Представляет меню ресторана, объединяющее доступные для заказа позиции.
+   */
 @Entity('menus')
 export class Menu {
   @PrimaryGeneratedColumn({ name: 'id' })

@@ -4,6 +4,9 @@ import { UserDto } from '../../users/dto/user.dto';
 import { RestaurantDto } from '../../restaurants/dto/restaurant.dto';
 import { IsEnum } from 'class-validator';
 
+/**
+   * Описывает структуру данных «OrderDto», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 export class OrderDto {
   @ApiProperty()
   id: number;

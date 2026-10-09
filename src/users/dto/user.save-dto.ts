@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, Length, Matches } from 'class-validator';
 
+/**
+   * Описывает структуру данных «UserSaveDto», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 export class UserSaveDto {
   @ApiProperty()
   @IsEmail()

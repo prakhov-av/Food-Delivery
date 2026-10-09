@@ -27,7 +27,6 @@ const toWords = (text: string): string[] =>
     .split(/\s+/)
     .filter(Boolean);
 
-
 const shingles = (words: string[]): Set<string> => {
   const result: Set<string> = new Set<string>();
 
@@ -52,6 +51,9 @@ const NO_KNOWLEDGE_ANSWER =
   'В базе знаний нет информации по этому вопросу. Попробуйте переформулировать вопрос.';
 const MIN_CHUNK_SCORE: number = Number(process.env.CHAT_MIN_SCORE ?? 0);
 
+/**
+   * Оркестрирует ответы чат-ассистента: классифицирует запрос, выбирает актуальные данные приложения или RAG-поиск, учитывает историю диалога и проверяет ответ на утечку системного промпта.
+   */
 @Injectable()
 export class ChatService {
   private readonly logger: Logger = new Logger(ChatService.name);
@@ -81,6 +83,14 @@ export class ChatService {
 
     return answer;
   }
+/**
+   * Генерирует ответ ассистента по вопросу пользователя, истории диалога и доступным источникам. Сначала классифицирует запрос; для запросов об актуальных данных использует сервис live-data, иначе выполняет поиск по векторной базе с фильтрацией доступа по роли. Если релевантный контекст не найден, возвращает сообщение об отсутствии знаний.
+   * @param request Текст вопроса пользователя.
+   * @param userId Идентификатор пользователя, используемый для истории диалога и получения его данных.
+   * @param userRole Роль пользователя, ограничивающая доступные документы и данные.
+   * @returns Текст ответа ассистента.
+   * @throws ConfigurationException Если используемая конфигурация или классификация приводит к соответствующей ошибке.
+   */
   async generateResponse(
     request: string,
     userId: number,
@@ -95,7 +105,9 @@ export class ChatService {
       .withQuestion(request)
       .build();
 
-    this.logPrompt('Classifier prompt', classifierPrompt);
+    this.logger.debug(
+      `AI classification request started: userId=${userId}, provider=configured, promptLength=${classifierPrompt.length}`,
+    );
 
     const classificationResponse: string =
       await this.aiService.generateResponse(classifierPrompt);
@@ -119,7 +131,9 @@ export class ChatService {
         .withQuestion(request)
         .build();
 
-      this.logPrompt('Chat prompt with live data', prompt);
+      this.logger.debug(
+        `AI chat request started: userId=${userId}, mode=live-data, promptLength=${prompt.length}`,
+      );
 
       const aiResponse: string = this.protectPrompt(
         await this.aiService.generateResponse(prompt),
@@ -179,7 +193,9 @@ export class ChatService {
       .withQuestion(request)
       .build();
 
-    this.logPrompt('Chat prompt', prompt);
+    this.logger.debug(
+      `AI chat request started: userId=${userId}, mode=knowledge-base, promptLength=${prompt.length}`,
+    );
 
     const aiResponse: string = this.protectPrompt(
       await this.aiService.generateResponse(prompt),
@@ -190,21 +206,11 @@ export class ChatService {
     return aiResponse;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   clearHistory(userId: number): void {
     this.chatHistory.delete(userId);
-  }
-
-  /**
-   * Промпты содержат персональные данные (имена, заказы, историю диалога),
-   * поэтому по умолчанию логируется только размер.
-   * Полный текст: CHAT_DEBUG_PROMPTS=true в .env (только для локальной отладки).
-   */
-  private logPrompt(title: string, prompt: string): void {
-    if (process.env.CHAT_DEBUG_PROMPTS === 'true') {
-      this.logger.debug(`${title}:\n${prompt}`);
-    } else {
-      this.logger.debug(`${title}: ${prompt.length} chars`);
-    }
   }
 
   private getChatHistoryByUserId(userId: number): ChatMessage[] {
@@ -235,9 +241,7 @@ export class ChatService {
       return this.parseClassification(value);
     } catch (error) {
       this.logger.warn(
-        `Classification failed, falling back to SYSTEM: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        'AI classification failed; falling back to SYSTEM classification',
       );
 
       return {
@@ -264,7 +268,7 @@ export class ChatService {
       parsed = JSON.parse(this.extractJson(value));
     } catch {
       throw new ConfigurationException(
-        `Invalid chat classification returned by AI: ${value}`,
+        'Invalid chat classification returned by AI',
       );
     }
 
@@ -275,7 +279,7 @@ export class ChatService {
       !('liveDataRequired' in parsed)
     ) {
       throw new ConfigurationException(
-        `Invalid chat classification returned by AI: ${value}`,
+        'Invalid chat classification returned by AI',
       );
     }
 
@@ -296,18 +300,12 @@ export class ChatService {
         normalizedDocumentType as DocumentType,
       )
     ) {
-      throw new ConfigurationException(
-        `Invalid document type returned by AI: ${String(
-          classification.documentType,
-        )}`,
-      );
+      throw new ConfigurationException('Invalid document type returned by AI');
     }
 
     if (typeof classification.liveDataRequired !== 'boolean') {
       throw new ConfigurationException(
-        `Invalid liveDataRequired returned by AI: ${String(
-          classification.liveDataRequired,
-        )}`,
+        'Invalid liveDataRequired returned by AI',
       );
     }
 

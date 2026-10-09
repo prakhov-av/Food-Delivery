@@ -5,10 +5,16 @@ import { randomUUID } from 'node:crypto';
 import { ConfirmationCode } from './confirmation-code.entity';
 import { RegistrationException } from '../exceptions/types/registration.exception';
 
+/**
+   * Управляет кодами подтверждения регистрации, включая создание, хранение и проверку актуального кода.
+   */
 @Injectable()
 export class ConfirmationCodesService {
   constructor(private readonly repository: ConfirmationCodesRepository) {}
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async generateConfirmationCode(user: User): Promise<string> {
     await this.repository.deleteByUser(user);
 
@@ -26,6 +32,9 @@ export class ConfirmationCodesService {
     return codeValue;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async validateCodeAndGetUser(codeValue: string): Promise<User> {
     const codeEntity: ConfirmationCode | null =
       await this.repository.findByValue(codeValue);

@@ -5,6 +5,9 @@ import { DocxExtractor } from './docx.extractor';
 import { UnsupportedFileFormatException } from '../../exceptions/types/unsupported-file-format.exception';
 import { PageTextResult } from 'pdf-parse';
 
+/**
+   * Определяет поддерживаемый формат загруженного файла и делегирует извлечение текста соответствующему экстрактору.
+   */
 @Injectable()
 export class MultiformatExtractor {
   constructor(
@@ -12,6 +15,12 @@ export class MultiformatExtractor {
     private readonly docxExtractor: DocxExtractor,
     private readonly pdfExtractor: PdfExtractor,
   ) {}
+/**
+   * Выбирает экстрактор по формату загруженного файла и возвращает извлечённый текст в постраничном представлении.
+   * @param file Загруженный файл.
+   * @returns Массив строк, каждая из которых соответствует извлечённой странице или текстовому блоку.
+   * @throws UnsupportedFileFormatException Если формат или MIME-тип не поддерживается.
+   */
 
   async extract(file: Express.Multer.File): Promise<string[]> {
     switch (file.mimetype) {

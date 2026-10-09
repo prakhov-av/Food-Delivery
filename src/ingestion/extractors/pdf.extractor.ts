@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PageTextResult, PDFParse, TextResult } from 'pdf-parse';
 
+/**
+   * Извлекает текст постранично из PDF-документов.
+   */
 @Injectable()
 export class PdfExtractor {
   async extract(content: Buffer): Promise<PageTextResult[]> {

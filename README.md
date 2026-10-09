@@ -548,3 +548,12 @@ The integration and API tests call the backend without a browser, so they send n
 | The assistant gives answers from a document that was replaced | The old version is in the archive collection, not in the active one. Check the version of the points in the active collection |
 | Confirmation email never arrives locally | Use `EMAIL_DRY_RUN=true` and copy the link from the backend log |
 | Login works but the session is lost | Auth cookies are `Secure`. Use Chrome on `localhost`, or HTTPS elsewhere |
+
+## Документация исходного кода
+
+В исходном коде используются комментарии JSDoc/TSDoc для описания ответственности ключевых компонентов, публичных операций и важных полей модели данных. Основное внимание уделено доменным сущностям, сервисам бизнес-логики, аутентификации и авторизации, обработке документов, RAG-контексту, эмбеддингам и интеграции с Qdrant.
+
+Комментарии к публичным методам по возможности фиксируют назначение операции, параметры, результат и существенные исключения. Они описывают контракт кода и не заменяют DTO-валидацию, Swagger-документацию REST API или тесты.
+
+При изменении бизнес-логики обновляйте соответствующие комментарии вместе с кодом. Не добавляйте комментарии к очевидным строкам: документируйте решения, ограничения доступа, побочные эффекты и неочевидные правила предметной области.
+

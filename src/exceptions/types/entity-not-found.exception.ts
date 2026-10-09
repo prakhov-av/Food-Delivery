@@ -1,5 +1,8 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
+/**
+   * Определяет типизированную структуру «EntityNotFoundException», используемую при обмене данными между компонентами.
+   */
 export class EntityNotFoundException extends HttpException {
   constructor(entityTitle: string, id?: number, email?: string) {
     if (id) {

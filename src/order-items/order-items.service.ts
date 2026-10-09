@@ -22,6 +22,9 @@ import {
   MAX_ORDER_TOTAL,
 } from '../orders/validation/order-limits';
 
+/**
+   * Реализует операции с позициями заказа и связанные проверки данных.
+   */
 @Injectable()
 export class OrderItemsService {
   private readonly logger: Logger = new Logger(OrderItemsService.name);
@@ -33,6 +36,9 @@ export class OrderItemsService {
     private readonly menuItemsService: MenuItemsService,
   ) {}
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async create(saveDto: OrderItemSaveDto, user: User): Promise<OrderItemDto> {
     const entity: OrderItem = this.mapper.mapDtoToEntity(saveDto);
 
@@ -88,6 +94,9 @@ export class OrderItemsService {
     return this.mapper.mapEntityToDto(entity);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getAllActiveOrderItems(user: User): Promise<OrderItemDto[]> {
     const orderItems: OrderItem[] = await this.repository.findAllActive();
 
@@ -113,6 +122,9 @@ export class OrderItemsService {
     return this.mapper.mapEntityListToDtoList(accessibleOrderItems);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getActiveOrderItemById(id: number, user: User): Promise<OrderItemDto> {
     const orderItem: OrderItem = await this.getActiveEntityById(id);
 
@@ -121,6 +133,9 @@ export class OrderItemsService {
     return this.mapper.mapEntityToDto(orderItem);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getActiveEntityById(id: number): Promise<OrderItem> {
     const orderItem: OrderItem | null = await this.repository.findById(id);
 
@@ -131,6 +146,9 @@ export class OrderItemsService {
     return orderItem;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async update(
     id: number,
     updateItemDto: OrderItemUpdateDto,
@@ -163,6 +181,9 @@ export class OrderItemsService {
     );
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async deleteById(id: number, user: User): Promise<void> {
     const orderItem: OrderItem = await this.getActiveEntityById(id);
 
@@ -178,6 +199,9 @@ export class OrderItemsService {
     this.logger.log(`Order item marked as inactive: id ${id}`);
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async restoreById(id: number, user: User): Promise<void> {
     const orderItem: OrderItem | null = await this.repository.findById(id);
 

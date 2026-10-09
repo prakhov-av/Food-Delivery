@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { UserSaveDto } from '../dto/user.save-dto';
 import { UserUpdateDto } from '../dto/user.update-dto';
 
+/**
+   * Содержит проверки предметных правил для сценариев, связанных с users.
+   */
 @Injectable()
 export class UsersValidator {
   validateSaveDto(saveDto: UserSaveDto): void {

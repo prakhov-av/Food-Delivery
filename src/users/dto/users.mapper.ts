@@ -3,6 +3,9 @@ import { User } from '../user.entity';
 import { UserDto } from './user.dto';
 import { UserSaveDto } from './user.save-dto';
 
+/**
+   * Описывает структуру данных «UsersMapper», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 @Injectable()
 export class UsersMapper {
   mapEntityToDto(entity: User): UserDto {

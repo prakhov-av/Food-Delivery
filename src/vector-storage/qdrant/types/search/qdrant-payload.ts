@@ -1,6 +1,9 @@
 import { Role } from '../../../../users/enums/role.enum';
 import { DocumentType } from '../../../../ingestion/enums/document-type.enum';
 
+/**
+   * Определяет типизированную структуру «QdrantPayload», используемую при обмене данными между компонентами.
+   */
 export class QdrantPayload {
   text: string;
   docTitle: string;

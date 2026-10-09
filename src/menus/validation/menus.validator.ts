@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { MenuSaveDto } from '../dto/menu.save-dto';
 import { MenuUpdateDto } from '../dto/menu.update-dto';
 
+/**
+   * Содержит проверки предметных правил для сценариев, связанных с menus.
+   */
 @Injectable()
 export class MenusValidator {
   validateSaveDto(saveDto: MenuSaveDto): void {

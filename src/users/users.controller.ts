@@ -27,6 +27,9 @@ import { Audit } from '../audit/audit.decorator';
 import { AuditAction } from '../audit/audit.enums';
 
 // localhost:3000/users
+/**
+   * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
+   */
 @Controller('users')
 export class UsersController {
   constructor(private readonly service: UsersService) {}
@@ -40,6 +43,9 @@ export class UsersController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOkResponse({ type: UserDto })
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async create(@Body() saveDto: UserSaveDto): Promise<UserDto> {
     return this.service.create(saveDto);
   }
@@ -47,6 +53,9 @@ export class UsersController {
   @Roles(Role.ADMIN, Role.MANAGER)
   @Get()
   @ApiOkResponse({ type: UserDto, isArray: true })
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getAll(
     @Req() request: AuthenticatedRequest,
     @Query('role', new ParseEnumPipe(Role, { optional: true })) role?: Role,
@@ -61,6 +70,9 @@ export class UsersController {
   @Roles(Role.ADMIN, Role.MANAGER)
   @Get(':id')
   @ApiOkResponse({ type: UserDto })
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getById(
     @Param('id', ParseIntPipe) id: number,
     @Req() request: AuthenticatedRequest,
@@ -78,6 +90,9 @@ export class UsersController {
   @Roles(Role.ADMIN)
   @Patch(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateDto: UserUpdateDto,
@@ -89,6 +104,9 @@ export class UsersController {
   @Roles(Role.ADMIN)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async deleteById(
     @Param('id', ParseIntPipe) id: number,
     @Req() request: AuthenticatedRequest,
@@ -100,6 +118,9 @@ export class UsersController {
   @Roles(Role.ADMIN)
   @Patch(':id/restore')
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async restoreById(@Param('id', ParseIntPipe) id: number): Promise<void> {
     await this.service.restoreById(id);
   }
@@ -109,6 +130,9 @@ export class UsersController {
   @Roles(Role.ADMIN)
   @Patch(':id/set-role/:role')
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async setRole(
     @Param('id', ParseIntPipe) id: number,
     @Param('role', new ParseEnumPipe(Role)) role: Role,
@@ -121,6 +145,9 @@ export class UsersController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('register')
   @HttpCode(HttpStatus.OK)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async register(@Body() registrationDto: UserSaveDto): Promise<string> {
     await this.service.register(registrationDto);
     return 'Registration complete. Check your email.';
@@ -128,6 +155,9 @@ export class UsersController {
 
   @Public()
   @Get('confirm/:codeValue')
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async confirmRegistration(
     @Param('codeValue') codeValue: string,
   ): Promise<string> {

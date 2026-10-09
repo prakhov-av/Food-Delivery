@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { OrderItemSaveDto } from '../dto/order-item.save-dto';
 import { OrderItemUpdateDto } from '../dto/order-item.update-dto';
 
+/**
+   * Содержит проверки предметных правил для сценариев, связанных с orderitems.
+   */
 @Injectable()
 export class OrderItemsValidator {
   validateSaveDto(saveDto: OrderItemSaveDto): void {

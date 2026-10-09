@@ -26,6 +26,9 @@ import { Role } from '../users/enums/role.enum';
 import { Audit } from '../audit/audit.decorator';
 import { AuditAction } from '../audit/audit.enums';
 
+/**
+   * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
+   */
 @Controller('order-items')
 export class OrderItemsController {
   constructor(private readonly service: OrderItemsService) {}
@@ -40,6 +43,9 @@ export class OrderItemsController {
   @ApiOkResponse({
     type: OrderItemDto,
   })
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async create(
     @Body() saveDto: OrderItemSaveDto,
     @Req() req: Request & { user: User },
@@ -56,6 +62,9 @@ export class OrderItemsController {
     type: OrderItemDto,
     isArray: true,
   })
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getAll(@Req() req: Request & { user: User }): Promise<OrderItemDto[]> {
     return this.service.getAllActiveOrderItems(req.user);
   }
@@ -64,6 +73,9 @@ export class OrderItemsController {
   @ApiOkResponse({
     type: OrderItemDto,
   })
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getById(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: Request & { user: User },
@@ -78,6 +90,9 @@ export class OrderItemsController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateDto: OrderItemUpdateDto,
@@ -93,6 +108,9 @@ export class OrderItemsController {
   @Delete(':id')
   @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async deleteById(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: Request & { user: User },
@@ -107,6 +125,9 @@ export class OrderItemsController {
   @Patch(':id/restore')
   @Roles(Role.ADMIN, Role.MANAGER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async restoreById(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: Request & { user: User },

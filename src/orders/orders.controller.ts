@@ -28,6 +28,9 @@ import { Roles } from '../auth/types/auth.decorators';
 import { Audit } from '../audit/audit.decorator';
 import { AuditAction } from '../audit/audit.enums';
 
+/**
+   * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
+   */
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly service: OrdersService) {}
@@ -40,6 +43,9 @@ export class OrdersController {
   @ApiOkResponse({
     type: OrderDto,
   })
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async create(
     @Body() saveDto: OrderSaveDto,
     @Req() req: Request & { user: User },
@@ -52,6 +58,9 @@ export class OrdersController {
     type: OrderDto,
     isArray: true,
   })
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getAll(@Req() req: Request & { user: User }): Promise<OrderDto[]> {
     return this.service.getAllOrders(req.user);
   }
@@ -60,6 +69,9 @@ export class OrdersController {
   @ApiOkResponse({
     type: OrderDto,
   })
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getById(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: Request & { user: User },
@@ -72,6 +84,9 @@ export class OrdersController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateDto: OrderUpdateDto,
@@ -83,6 +98,9 @@ export class OrdersController {
   @Patch(':id/set-status/:status')
   @Roles(Role.ADMIN, Role.MANAGER, Role.COURIER, Role.CUSTOMER)
   @HttpCode(HttpStatus.NO_CONTENT)
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async setStatus(
     @Param('id', ParseIntPipe) id: number,
     @Param('status', new ParseEnumPipe(Status))

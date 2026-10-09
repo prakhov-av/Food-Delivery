@@ -7,11 +7,14 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
-import { catchError, Observable, tap, throwError } from 'rxjs';
+import { catchError, from, map, mergeMap, Observable, throwError } from 'rxjs';
 import { AuditService } from './audit.service';
 import { AUDIT_KEY, AuditMeta } from './audit.decorator';
 import { AuditResult } from './audit.enums';
 
+/**
+   * Перехватывает выполнение запросов и записывает результат операции в аудит, включая неуспешное завершение.
+   */
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(
@@ -38,35 +41,37 @@ export class AuditInterceptor implements NestInterceptor {
         : { method: request.method, params, body: request.body };
 
     return next.handle().pipe(
-      tap((result: unknown): void => {
-        void this.audit.record({
-          action: meta.action,
-          entityType: meta.entityType,
-          entityId: Number.isInteger(paramId)
-            ? paramId
-            : this.idFromResult(result),
-          details,
-          request,
-        });
-      }),
-      catchError((error: unknown) => {
-        void this.audit.record({
-          action: meta.action,
-          entityType: meta.entityType,
-          entityId: Number.isInteger(paramId) ? paramId : null,
-          result:
-            error instanceof ForbiddenException
-              ? AuditResult.DENIED
-              : AuditResult.FAILED,
-          details: {
-            ...details,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          request,
-        });
-
-        return throwError(() => error);
-      }),
+      mergeMap((result: unknown) =>
+        from(
+          this.audit.record({
+            action: meta.action,
+            entityType: meta.entityType,
+            entityId: Number.isInteger(paramId)
+              ? paramId
+              : this.idFromResult(result),
+            details,
+            request,
+          }),
+        ).pipe(map(() => result)),
+      ),
+      catchError((error: unknown) =>
+        from(
+          this.audit.record({
+            action: meta.action,
+            entityType: meta.entityType,
+            entityId: Number.isInteger(paramId) ? paramId : null,
+            result:
+              error instanceof ForbiddenException
+                ? AuditResult.DENIED
+                : AuditResult.FAILED,
+            details: {
+              ...details,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            request,
+          }),
+        ).pipe(mergeMap(() => throwError(() => error))),
+      ),
     );
   }
 

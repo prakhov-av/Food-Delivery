@@ -10,4 +10,7 @@ import { AuthController } from './auth.controller';
   imports: [UsersModule],
   controllers: [AuthController],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class AuthModule {}

@@ -12,6 +12,9 @@ import { DocumentType } from '../../ingestion/enums/document-type.enum';
 import { QdrantScrollResponse } from './types/scroll/qdrant-scroll-response';
 import { ConfigurationException } from '../../exceptions/types/configuration.exception';
 
+/**
+   * Инкапсулирует HTTP-взаимодействие с Qdrant: сохранение, поиск, чтение и удаление точек векторной коллекции.
+   */
 @Injectable()
 export class QdrantClient {
   private readonly baseUrl: string;
@@ -44,6 +47,9 @@ export class QdrantClient {
     }
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   async onModuleInit(): Promise<void> {
     for (const url of [this.baseUrl, this.archiveUrl]) {
       try {
@@ -59,6 +65,9 @@ export class QdrantClient {
     }
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async save(points: QdrantPoint[], toArchive?: boolean): Promise<void> {
     const url: string = toArchive ? this.archiveUrl : this.baseUrl;
 
@@ -67,6 +76,9 @@ export class QdrantClient {
     });
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getRelevantChunksByAccess(
     embedding: number[],
     documentType: DocumentType | undefined,
@@ -119,6 +131,9 @@ export class QdrantClient {
     return filter;
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async findPointsByDocumentId(documentId: string): Promise<QdrantPoint[]> {
     const points: QdrantPoint[] = [];
     let offset: string | null = null;
@@ -155,6 +170,9 @@ export class QdrantClient {
     return filter;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async deletePointsByDocumentId(documentId: string): Promise<void> {
     const filter: SearchFilterAnd = this.createScrollFilter(documentId);
 

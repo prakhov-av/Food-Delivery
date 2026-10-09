@@ -1,10 +1,10 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": "..",
-  "testRegex": ".*\\.integration-spec\\.ts$",
+  "testRegex": "test[\\\\/]rest-api\\.e2e-spec\\.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "testEnvironment": "node",
-  "setupFiles": ["<rootDir>/test/setup-integration-env.ts", "dotenv/config"]
+  "setupFiles": ["dotenv/config"]
 }

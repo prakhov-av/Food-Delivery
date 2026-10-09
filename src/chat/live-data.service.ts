@@ -23,10 +23,16 @@ const STATUS_DESCRIPTIONS: Record<Status, string> = {
     'CANCELLED_STAFF — отменён менеджером или администратором',
 };
 
+/**
+   * Получает актуальные данные приложения для ответов чат-ассистента и ограничивает доступ к ресурсам с учётом пользователя и его роли.
+   */
 @Injectable()
 export class LiveDataService {
   constructor(private readonly ordersService: OrdersService) {}
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getLiveData(
     classification: ChatClassification,
     userId: number,

@@ -11,6 +11,9 @@ import {
 } from 'class-validator';
 import { AuditAction } from './audit.enums';
 
+/**
+   * Описывает структуру данных «AuditLogQueryDto», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+   */
 export class AuditLogQueryDto {
   @IsOptional()
   @Type(() => Number)

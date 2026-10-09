@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,6 +13,7 @@ import { Menu } from '../src/menus/menu.entity';
 import { MenuItem } from '../src/menu-items/menu-item.entity';
 import { Order } from '../src/orders/order.entity';
 import { OrderItem } from '../src/order-items/order-item.entity';
+import { GlobalExceptionHandler } from '../src/exceptions/global-exception-handler';
 
 interface TestUser {
   entity: User;
@@ -39,11 +40,23 @@ describe('Authorization (IT)', () => {
   const createdOrderItemIds: number[] = [];
 
   beforeAll(async () => {
+    // Allow requests without Origin in this integration-test environment.
+    // CsrfMiddleware explicitly supports this mode for tests and local tooling.
+    process.env.CSRF_ALLOW_NO_ORIGIN = 'true';
+
     const module: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
 
     app = module.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    );
+    app.useGlobalFilters(new GlobalExceptionHandler());
     await app.init();
 
     httpServer = app.getHttpServer();
@@ -97,6 +110,11 @@ describe('Authorization (IT)', () => {
   });
 
   async function login(testUser: TestUser): Promise<string[]> {
+    // Reuse the session cookie to avoid repeatedly hitting the login throttle.
+    if (testUser.cookies.length > 0) {
+      return testUser.cookies;
+    }
+
     const response = await request(httpServer)
       .post('/auth/login')
       .send({
@@ -150,8 +168,20 @@ describe('Authorization (IT)', () => {
   }
 
   describe('authentication boundary', () => {
-    it('returns 401 for an unauthenticated protected endpoint', async () => {
-      await request(httpServer).get('/restaurants').expect(401);
+    it('returns a consistent error body for an unauthenticated protected endpoint', async () => {
+      const response = await request(httpServer)
+        .get('/restaurants')
+        .expect(401);
+
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          timestamp: expect.any(String),
+          path: '/restaurants',
+          status: 401,
+          message: expect.any(String),
+        }),
+      );
+      expect(Number.isNaN(Date.parse(response.body.timestamp))).toBe(false);
     });
 
     it.each(Object.values(Role))(
@@ -174,8 +204,40 @@ describe('Authorization (IT)', () => {
       await authenticatedRequest(Role.ADMIN).get('/users').expect(200);
     });
 
-    it('rejects customer with 403', async () => {
-      await authenticatedRequest(Role.CUSTOMER).get('/users').expect(403);
+    it('returns a consistent error body when a customer is forbidden from reading users', async () => {
+      await login(user(Role.CUSTOMER));
+
+      const response = await authenticatedRequest(Role.CUSTOMER)
+        .get('/users')
+        .expect(403);
+
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          timestamp: expect.any(String),
+          path: '/users',
+          status: 403,
+          message: expect.any(String),
+        }),
+      );
+    });
+
+    it('returns a consistent error body for validation failures', async () => {
+      await login(user(Role.ADMIN));
+
+      const response = await authenticatedRequest(Role.ADMIN)
+        .post('/users')
+        .send({})
+        .expect(400);
+
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          timestamp: expect.any(String),
+          path: '/users',
+          status: 400,
+          message: expect.any(String),
+        }),
+      );
+      expect(response.body.message.trim().length).toBeGreaterThan(0);
     });
 
     it('rejects courier with 403', async () => {
@@ -188,7 +250,7 @@ describe('Authorization (IT)', () => {
       const response = await authenticatedRequest(Role.MANAGER)
         .post('/restaurants')
         .send({
-          name: `Auth Restaurant ${Date.now()}`,
+          name: 'Authorization Restaurant',
           address: 'Authorization Test Street 1',
           phone: `+49157${Math.floor(Math.random() * 9000000 + 1000000)}`,
           email: `restaurant-${Date.now()}@test.local`,
@@ -202,7 +264,7 @@ describe('Authorization (IT)', () => {
       const response = await authenticatedRequest(Role.ADMIN)
         .post('/restaurants')
         .send({
-          name: `Admin Restaurant ${Date.now()}`,
+          name: 'Administration Restaurant',
           address: 'Authorization Admin Street 1',
           phone: `+49157${Math.floor(Math.random() * 9000000 + 1000000)}`,
           email: `admin-restaurant-${Date.now()}@test.local`,
@@ -243,7 +305,7 @@ describe('Authorization (IT)', () => {
     it('allows manager to create a menu', async () => {
       const response = await authenticatedRequest(Role.MANAGER)
         .post('/menus')
-        .send({ name: `Fixture Menu ${Date.now()}`, restaurantId })
+        .send({ name: 'Fixture Menu', restaurantId })
         .expect(201);
 
       menuId = response.body.id;
@@ -333,7 +395,6 @@ describe('Authorization (IT)', () => {
         .post('/orders')
         .send({
           customerId: user(Role.CUSTOMER).entity.id,
-          courierId: user(Role.COURIER).entity.id,
           restaurantId,
         })
         .expect(201);
@@ -344,7 +405,7 @@ describe('Authorization (IT)', () => {
     it('rejects manager from creating an order with 403', async () => {
       await authenticatedRequest(Role.MANAGER)
         .post('/orders')
-        .send({ customerId: 1, courierId: 1, restaurantId })
+        .send({ customerId: user(Role.CUSTOMER).entity.id, restaurantId })
         .expect(403);
     });
 

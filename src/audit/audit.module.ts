@@ -16,4 +16,7 @@ import { AuditService } from './audit.service';
   ],
   exports: [AuditService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class AuditModule {}

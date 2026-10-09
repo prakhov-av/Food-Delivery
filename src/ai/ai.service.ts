@@ -10,6 +10,9 @@ import { ConfigService } from '@nestjs/config';
 import { OpenAiRequest } from './types/openai/openai-request';
 import { ConfigurationException } from '../exceptions/types/configuration.exception';
 
+/**
+   * Предоставляет единый интерфейс генерации текстовых ответов и эмбеддингов, скрывая детали выбранного AI-провайдера.
+   */
 @Injectable()
 export class AiService {
   constructor(
@@ -18,6 +21,9 @@ export class AiService {
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async generateResponse(prompt: string): Promise<string> {
     const generationAiProvider: string = this.configService.getOrThrow(
       'PRIMARY_GENERATION_AI_PROVIDER',
@@ -53,6 +59,9 @@ export class AiService {
     }
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async generateEmbeddings(texts: string[]): Promise<number[][]> {
     const embeddingsAiProvider: string = this.configService.getOrThrow(
       'PRIMARY_EMBEDDINGS_AI_PROVIDER',

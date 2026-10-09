@@ -9,6 +9,9 @@ import {
 import { Order } from '../orders/order.entity';
 import { MenuItem } from '../menu-items/menu-item.entity';
 
+/**
+   * Представляет отдельную позицию заказа и количество выбранного товара.
+   */
 @Entity('order_items')
 export class OrderItem {
   @PrimaryGeneratedColumn()

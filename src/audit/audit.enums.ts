@@ -1,3 +1,6 @@
+/**
+   * Задаёт допустимые значения для AuditAction, используемые в типизированных проверках и обмене данными.
+   */
 export enum AuditAction {
   AUTH_LOGIN = 'AUTH_LOGIN',
   USER_REGISTERED = 'USER_REGISTERED',
@@ -21,6 +24,9 @@ export enum AuditAction {
   RATE_LIMITED = 'RATE_LIMITED',
 }
 
+/**
+   * Задаёт допустимые значения для AuditResult, используемые в типизированных проверках и обмене данными.
+   */
 export enum AuditResult {
   SUCCESS = 'SUCCESS',
   DENIED = 'DENIED',

@@ -7,4 +7,7 @@ import { AiModule } from '../ai/ai.module';
   imports: [AiModule],
   exports: [EmbeddingsService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class EmbeddingsModule {}

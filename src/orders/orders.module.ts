@@ -15,4 +15,7 @@ import { OrdersValidator } from './validation/orders.validator';
   providers: [OrdersService, OrdersRepository, OrdersMapper, OrdersValidator],
   exports: [OrdersService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class OrdersModule {}

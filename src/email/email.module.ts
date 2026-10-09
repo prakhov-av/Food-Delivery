@@ -33,4 +33,7 @@ import { ConfirmationCodesModule } from '../confirmation-codes/confirmation-code
   ],
   exports: [EmailService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class EmailModule {}

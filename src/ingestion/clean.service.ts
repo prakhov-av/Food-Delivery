@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 
+/**
+   * Нормализует извлечённый текст перед индексацией, удаляя элементы, мешающие поиску и формированию контекста.
+   */
 @Injectable()
 export class CleanService {
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   cleanTexts(texts: string[]): string[] {
     return texts.map((t: string): string => this.cleanText(t));
   }

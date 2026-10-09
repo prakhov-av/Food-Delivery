@@ -15,4 +15,7 @@ import { MenusValidator } from './validation/menus.validator';
   providers: [MenusService, MenusRepository, MenusMapper, MenusValidator],
   exports: [MenusService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class MenusModule {}

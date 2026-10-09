@@ -13,6 +13,9 @@ import { AuditAction, AuditResult } from './audit.enums';
 import { AuditLogQueryDto } from './audit-log-query.dto';
 import { maskSensitive } from '../logging/request-logging.interceptor';
 
+/**
+   * Компонент модуля «audit», отвечающий за специализированную часть логики приложения.
+   */
 export interface AuditEntry {
   action: AuditAction;
   result?: AuditResult;
@@ -24,6 +27,9 @@ export interface AuditEntry {
   request?: Request;
 }
 
+/**
+   * Компонент модуля «audit», отвечающий за специализированную часть логики приложения.
+   */
 export interface AuditPage {
   items: AuditLog[];
   total: number;
@@ -33,6 +39,9 @@ export interface AuditPage {
 
 const MAX_DETAILS_LENGTH = 4000;
 
+/**
+   * Предоставляет операции чтения и сохранения записей аудита.
+   */
 @Injectable()
 export class AuditService {
   private readonly logger: Logger = new Logger(AuditService.name);
@@ -42,6 +51,9 @@ export class AuditService {
     private readonly repository: Repository<AuditLog>,
   ) {}
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   async record(entry: AuditEntry): Promise<void> {
     try {
       const requestUser = (
@@ -72,6 +84,9 @@ export class AuditService {
     }
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async findPage(query: AuditLogQueryDto): Promise<AuditPage> {
     const where: FindOptionsWhere<AuditLog> = {};
 

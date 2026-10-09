@@ -18,4 +18,7 @@ import { RestaurantsValidator } from './validation/restaurants.validator';
   ],
   exports: [RestaurantsService, RestaurantsMapper],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class RestaurantsModule {}

@@ -22,6 +22,9 @@ import { ConfirmationCodesService } from '../confirmation-codes/confirmation-cod
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit.enums';
 
+/**
+   * Реализует пользовательские сценарии: создание и изменение учётных записей, управление ролями, регистрацию, подтверждение и деактивацию пользователей.
+   */
 @Injectable()
 export class UsersService {
   private readonly logger: Logger = new Logger(UsersService.name);
@@ -34,6 +37,9 @@ export class UsersService {
     private readonly audit: AuditService,
   ) {}
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async create(saveDto: UserSaveDto): Promise<UserDto> {
     if (await this.repository.isEmailExists(saveDto.email)) {
       throw new EntitySaveException(User.name, 'email');
@@ -47,11 +53,14 @@ export class UsersService {
 
     await this.repository.save(entity);
 
-    this.logger.log(`User created: id ${entity.id}, email ${entity.email}`);
+    this.logger.log(`User created: id=${entity.id}`);
 
     return this.mapper.mapEntityToDto(entity);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getAllActiveUsers(role?: Role): Promise<UserDto[]> {
     const users: User[] = (await this.repository.findAllActive()).filter(
       (user: User): boolean => role === undefined || user.role === role,
@@ -64,12 +73,18 @@ export class UsersService {
     return this.mapper.mapEntityListToDtoList(users);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getActiveUserById(id: number): Promise<UserDto> {
     const user: User = await this.getActiveEntityById(id);
 
     return this.mapper.mapEntityToDto(user);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getActiveEntityById(id: number): Promise<User> {
     const user: User | null = await this.repository.findById(id);
 
@@ -80,6 +95,9 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async update(id: number, updateDto: UserUpdateDto): Promise<void> {
     const foundUser: User = await this.getActiveEntityById(id);
 
@@ -88,12 +106,15 @@ export class UsersService {
 
       await this.repository.save(foundUser);
 
-      this.logger.log(`User updated: id ${id}, new name ${foundUser.name}`);
+      this.logger.log(`User updated: id=${id}`);
     } else {
       throw new EntityNotFoundException(User.name, id);
     }
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async deleteById(id: number, actorId: number): Promise<void> {
     if (id === actorId) {
       throw new EntityUpdateException('You cannot deactivate your own account');
@@ -109,6 +130,9 @@ export class UsersService {
     this.logger.log(`User marked as inactive: id ${id}`);
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async restoreById(id: number): Promise<void> {
     const user: User | null = await this.repository.findById(id);
 
@@ -128,6 +152,9 @@ export class UsersService {
     this.logger.log(`User marked as active: id ${id}`);
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async setRole(id: number, role: Role, actorId: number): Promise<void> {
     if (id === actorId) {
       throw new EntityUpdateException('You cannot change your own role');
@@ -146,6 +173,9 @@ export class UsersService {
     this.logger.log(`User updated: ${id}, new role ${role}`);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async getConfirmedByEmail(email: string): Promise<User> {
     const user: User | null = await this.repository.findByEmail(email);
 
@@ -160,6 +190,9 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async register(registrationDto: UserSaveDto): Promise<void> {
     const email: string = registrationDto.email;
 
@@ -173,7 +206,6 @@ export class UsersService {
     } else if (user.active) {
       throw new RegistrationException(`Email ${email} already in use`);
     } else if (user.deletedAt) {
-
       throw new RegistrationException(`Email ${email} cannot be registered`);
     }
 
@@ -197,6 +229,9 @@ export class UsersService {
     await this.emailService.sendConfirmationEmail(user);
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async confirmRegistration(codeValue: string): Promise<void> {
     const user: User =
       await this.confirmationCodeService.validateCodeAndGetUser(codeValue);
@@ -218,8 +253,10 @@ export class UsersService {
     });
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async findAvailableCourier(): Promise<User | null> {
     return this.repository.findAvailableCourier();
   }
-
 }

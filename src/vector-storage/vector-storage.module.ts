@@ -8,4 +8,7 @@ import { EmbeddingsModule } from '../embeddings/embeddings.module';
   imports: [EmbeddingsModule],
   exports: [VectorStorageService],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class VectorStorageModule {}

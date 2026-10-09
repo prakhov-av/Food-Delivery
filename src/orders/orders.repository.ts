@@ -5,6 +5,9 @@ import { In, Repository } from 'typeorm';
 import { Status } from './enums/status.enum';
 import { OrderItem } from '../order-items/order-item.entity';
 
+/**
+   * Инкапсулирует операции доступа к данным соответствующего доменного ресурса.
+   */
 @Injectable()
 export class OrdersRepository {
   constructor(
@@ -12,14 +15,23 @@ export class OrdersRepository {
     private readonly repository: Repository<Order>,
   ) {}
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   async save(order: Order): Promise<Order> {
     return this.repository.save(order);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async findById(id: number): Promise<Order | null> {
     return this.repository.findOneBy({ id });
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async findByIdWithRelations(id: number): Promise<Order | null> {
     return this.repository.findOne({
       where: { id },
@@ -31,6 +43,9 @@ export class OrdersRepository {
     });
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async findActiveDraft(
     customerId: number,
     restaurantId: number,
@@ -50,6 +65,9 @@ export class OrdersRepository {
     });
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   async findAllActive(): Promise<Order[]> {
     return this.repository.find({
       where: { active: true },
@@ -61,12 +79,18 @@ export class OrdersRepository {
     });
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   async countActiveItems(orderId: number): Promise<number> {
     return this.repository.manager.count(OrderItem, {
       where: { order: { id: orderId }, active: true },
     });
   }
 
+  /**
+   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   */
   async countSubmittedByCustomerId(customerId: number): Promise<number> {
     return this.repository.count({
       where: {

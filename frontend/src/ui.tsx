@@ -67,12 +67,12 @@ export function RoleBadge({ role }: { role: Role }) {
 export function formatPrice(value: number | string): string {
   const num = typeof value === 'string' ? parseFloat(value) : value;
   if (Number.isNaN(num)) return '—';
-  return `${num.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽`;
+  return `${num.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`;
 }
 
 export function formatDate(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('ru-RU');
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('de-DE');
 }
 
 export function CollapsibleForm({

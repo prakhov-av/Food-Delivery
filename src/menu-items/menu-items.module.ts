@@ -19,4 +19,7 @@ import { MenuItemsValidator } from './validation/menu-items.validator';
   ],
   exports: [MenuItemsService, MenuItemsMapper],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class MenuItemsModule {}

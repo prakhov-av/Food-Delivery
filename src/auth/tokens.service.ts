@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { User } from '../users/user.entity';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 
+/**
+   * Создаёт, извлекает и проверяет токены аутентификации, включая обработку cookie и проверку срока действия токена.
+   */
 @Injectable()
 export class TokensService {
   private readonly accessSecret: string;
@@ -13,12 +16,18 @@ export class TokensService {
     this.refreshSecret = this.configService.getOrThrow('JWT_REFRESH_SECRET');
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   generateAccessToken(user: User): string {
     return jwt.sign({ email: user.email }, this.accessSecret, {
       expiresIn: '15m',
     });
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   generateRefreshToken(user: User): string {
     return jwt.sign({ email: user.email }, this.refreshSecret, {
       expiresIn: '12h',
@@ -46,14 +55,23 @@ export class TokensService {
     throw new UnauthorizedException('Token is invalid');
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   validateAccessTokenAndGetEmail(accessToken: string): string {
     return this.validateTokenAndGetEmail(accessToken, this.accessSecret);
   }
 
+  /**
+   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   */
   validateRefreshTokenAndGetEmail(refreshToken: string): string {
     return this.validateTokenAndGetEmail(refreshToken, this.refreshSecret);
   }
 
+  /**
+   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   */
   getTokenFromCookies(
     cookies: string | undefined,
     tokenTitle: string,

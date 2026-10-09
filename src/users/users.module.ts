@@ -19,4 +19,7 @@ import { ConfirmationCodesModule } from '../confirmation-codes/confirmation-code
   providers: [UsersService, UsersRepository, UsersMapper, UsersValidator],
   exports: [UsersService, UsersMapper],
 })
+/**
+   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+   */
 export class UsersModule {}

@@ -10,6 +10,9 @@ import {
 import { Menu } from '../menus/menu.entity';
 import { OrderItem } from '../order-items/order-item.entity';
 
+/**
+   * Представляет отдельную позицию меню с описанием, стоимостью и категорией.
+   */
 @Entity('menu_items')
 export class MenuItem {
   @PrimaryGeneratedColumn({ name: 'id' })
