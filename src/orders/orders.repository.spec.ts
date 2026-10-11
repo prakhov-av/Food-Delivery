@@ -5,6 +5,7 @@ import { OrdersRepository } from './orders.repository';
 import { Order } from './order.entity';
 import { Status } from './enums/status.enum';
 
+import { OrderItem } from '../order-items/order-item.entity';
 describe('OrdersRepository', (): void => {
   let repository: OrdersRepository;
   let typeOrmRepository: jest.Mocked<Repository<Order>>;
@@ -38,6 +39,9 @@ describe('OrdersRepository', (): void => {
             findOneBy: jest.fn(),
             findOne: jest.fn(),
             find: jest.fn(),
+            manager: {
+              find: jest.fn(),
+            },
           },
         },
       ],
@@ -48,6 +52,9 @@ describe('OrdersRepository', (): void => {
         findOneBy: jest.fn(),
         findOne: jest.fn(),
         find: jest.fn(),
+        manager: {
+          find: jest.fn(),
+        },
       })
       .compile();
 
@@ -303,6 +310,39 @@ describe('OrdersRepository', (): void => {
           restaurant: true,
         },
       });
+    });
+  });
+  describe('findActiveItemsByOrderId', (): void => {
+    it('should return active items of the order with their menu items', async (): Promise<void> => {
+      const items: OrderItem[] = [
+        { id: 1, quantity: 2, active: true } as OrderItem,
+      ];
+      const find: jest.Mock = typeOrmRepository.manager
+        .find as unknown as jest.Mock;
+
+      find.mockResolvedValue(items);
+
+      const result: OrderItem[] = await repository.findActiveItemsByOrderId(1);
+
+      expect(result).toBe(items);
+      expect(find).toHaveBeenCalledTimes(1);
+      expect(find).toHaveBeenCalledWith(OrderItem, {
+        where: { order: { id: 1 }, active: true },
+        relations: { menuItem: true },
+        order: { id: 'ASC' },
+      });
+    });
+
+    it('should propagate repository find error', async (): Promise<void> => {
+      const error: Error = new Error('Find items error');
+      const find: jest.Mock = typeOrmRepository.manager
+        .find as unknown as jest.Mock;
+
+      find.mockRejectedValue(error);
+
+      await expect(repository.findActiveItemsByOrderId(1)).rejects.toThrow(
+        'Find items error',
+      );
     });
   });
 });

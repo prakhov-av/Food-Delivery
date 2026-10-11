@@ -11,7 +11,9 @@ import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { LiveDataResource } from './enums/live-data-resource.enum';
 import { PromptBuilder } from '../prompts/prompt.builder';
 import { QdrantResult } from '../vector-storage/qdrant/types/search/qdrant-result';
-
+import { ChatLogService } from './chat-log.service';
+import { ChatLog } from './chat-log.entity';
+import { ChatLogKind } from './enums/chat-log-kind.enum';
 const createPromptBuilder = (prompt: string): PromptBuilder => {
   return new PromptBuilder(prompt);
 };
@@ -45,6 +47,7 @@ describe('ChatService', (): void => {
   let promptService: jest.Mocked<PromptService>;
   let liveDataService: jest.Mocked<LiveDataService>;
   let contextService: jest.Mocked<ContextService>;
+  let chatLogService: jest.Mocked<ChatLogService>;
 
   beforeEach(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
@@ -87,6 +90,15 @@ describe('ChatService', (): void => {
             generateContext: jest.fn(),
           },
         },
+        {
+          provide: ChatLogService,
+          useValue: {
+            record: jest.fn(),
+            getWindow: jest.fn(),
+            findRecent: jest.fn(),
+            deleteByUserId: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -97,7 +109,10 @@ describe('ChatService', (): void => {
     promptService = module.get(PromptService);
     liveDataService = module.get(LiveDataService);
     contextService = module.get(ContextService);
-
+    chatLogService = module.get(ChatLogService);
+    chatLogService.record.mockResolvedValue(undefined);
+    chatLogService.getWindow.mockResolvedValue([]);
+    chatLogService.deleteByUserId.mockResolvedValue(undefined);
     contextService.generateContext.mockReturnValue([]);
   });
 
@@ -219,9 +234,10 @@ describe('ChatService', (): void => {
       )
       .mockResolvedValueOnce('Заказ №123 сейчас готовится.');
 
-    liveDataService.getLiveData.mockResolvedValue(
-      'Заказ №123\nСтатус: COOKING',
-    );
+    liveDataService.getLiveData.mockResolvedValue({
+      context: 'Заказ №123\nСтатус: COOKING',
+      orderId: 123,
+    });
 
     const result: string = await service.generateResponse(
       'Какой статус заказа 123?',
@@ -275,9 +291,9 @@ describe('ChatService', (): void => {
       )
       .mockResolvedValueOnce('У вас два текущих заказа.');
 
-    liveDataService.getLiveData.mockResolvedValue(
-      'Заказ №1\nСтатус: ACCEPTED\n\nЗаказ №4\nСтатус: COOKING',
-    );
+    liveDataService.getLiveData.mockResolvedValue({
+      context: 'Заказ №1\nСтатус: ACCEPTED\n\nЗаказ №4\nСтатус: COOKING',
+    });
 
     const result: string = await service.generateResponse(
       'Какие у меня есть заказы?',
@@ -808,7 +824,6 @@ describe('ChatService', (): void => {
     expect(liveDataService.getLiveData).not.toHaveBeenCalled();
   });
 
-
   it('should return a fixed answer without calling the model when nothing was found', async (): Promise<void> => {
     promptService.buildPromptForDocumentType.mockReturnValue(
       createPromptBuilder('classifier'),
@@ -889,5 +904,403 @@ describe('ChatService', (): void => {
 
     expect(result).toBe(answer);
   });
+  describe('last order memory', (): void => {
+    const LIVE_ORDER: string =
+      '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":123}';
+    const LIVE_LIST: string =
+      '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER"}';
+    const KNOWLEDGE: string =
+      '{"documentType":"ORDER","liveDataRequired":false}';
+    const LAST_ORDER: string = 'Последний обсуждаемый заказ';
 
+    beforeEach((): void => {
+      promptService.buildPromptForDocumentType.mockImplementation(
+        (): PromptBuilder => createPromptBuilder('classifier'),
+      );
+      promptService.buildPromptForChat.mockImplementation((): PromptBuilder =>
+        createPromptBuilder('answer prompt'),
+      );
+      embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+        createQdrantResult('context text'),
+      ]);
+    });
+
+    it('should pass the order id of a live answer to the next classifier prompt', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(LIVE_ORDER)
+        .mockResolvedValueOnce('Заказ №123 готовится.')
+        .mockResolvedValueOnce(LIVE_ORDER)
+        .mockResolvedValueOnce('Статус: COOKING.');
+
+      liveDataService.getLiveData.mockResolvedValue({
+        context: 'Заказ №123\nСтатус: COOKING',
+        orderId: 123,
+      });
+
+      await service.generateResponse('Статус заказа 123?', 10, Role.CUSTOMER);
+      await service.generateResponse('А что с ним?', 10, Role.CUSTOMER);
+
+      expect(aiService.generateResponse.mock.calls[0][0]).not.toContain(
+        LAST_ORDER,
+      );
+      expect(aiService.generateResponse.mock.calls[2][0]).toContain(
+        `${LAST_ORDER}: №123`,
+      );
+      expect(aiService.generateResponse.mock.calls[3][0]).not.toContain(
+        LAST_ORDER,
+      );
+    });
+
+    it('should not remember an order when the live answer has no single order', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(LIVE_LIST)
+        .mockResolvedValueOnce('У вас два заказа.')
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('answer');
+
+      liveDataService.getLiveData.mockResolvedValue({
+        context: 'Заказ №1\n\nЗаказ №4',
+      });
+
+      await service.generateResponse('Какие у меня заказы?', 10, Role.CUSTOMER);
+      await service.generateResponse(
+        'Какие бывают статусы?',
+        10,
+        Role.CUSTOMER,
+      );
+
+      expect(aiService.generateResponse.mock.calls[2][0]).not.toContain(
+        LAST_ORDER,
+      );
+    });
+
+    it('should forget the order after clearHistory', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(LIVE_ORDER)
+        .mockResolvedValueOnce('Заказ №123 готовится.')
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('answer');
+
+      liveDataService.getLiveData.mockResolvedValue({
+        context: 'Заказ №123\nСтатус: COOKING',
+        orderId: 123,
+      });
+
+      await service.generateResponse('Статус заказа 123?', 10, Role.CUSTOMER);
+
+      service.clearHistory(10);
+
+      await service.generateResponse('А что с ним?', 10, Role.CUSTOMER);
+
+      expect(aiService.generateResponse.mock.calls[2][0]).not.toContain(
+        LAST_ORDER,
+      );
+    });
+
+    it('should drop the remembered order after a list with several orders', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(LIVE_ORDER)
+        .mockResolvedValueOnce('Заказ №123 готовится.')
+        .mockResolvedValueOnce(LIVE_LIST)
+        .mockResolvedValueOnce('У вас два заказа.')
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('answer');
+
+      liveDataService.getLiveData
+        .mockResolvedValueOnce({
+          context: 'Заказ №123\nСтатус: COOKING',
+          orderId: 123,
+        })
+        .mockResolvedValueOnce({ context: 'Заказ №1\n\nЗаказ №4' });
+
+      await service.generateResponse('Статус заказа 123?', 10, Role.CUSTOMER);
+      await service.generateResponse('Какие у меня заказы?', 10, Role.CUSTOMER);
+      await service.generateResponse('Как отменить заказ?', 10, Role.CUSTOMER);
+
+      expect(aiService.generateResponse.mock.calls[2][0]).toContain(
+        `${LAST_ORDER}: №123`,
+      );
+      expect(aiService.generateResponse.mock.calls[4][0]).not.toContain(
+        LAST_ORDER,
+      );
+    });
+  });
+  describe('chat log and stored history', (): void => {
+    const KNOWLEDGE: string =
+      '{"documentType":"ORDER","liveDataRequired":false}';
+    const LIVE_ORDER: string =
+      '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":123}';
+
+    beforeEach((): void => {
+      promptService.buildPromptForDocumentType.mockImplementation(
+        (): PromptBuilder => createPromptBuilder('classifier'),
+      );
+      promptService.buildPromptForChat.mockImplementation((): PromptBuilder =>
+        createPromptBuilder('answer prompt'),
+      );
+      embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+        createQdrantResult('context text'),
+      ]);
+    });
+
+    it('should log a knowledge answer with the number of chunks', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('final answer');
+
+      await service.generateResponse('question', 10, Role.CUSTOMER);
+
+      expect(chatLogService.record).toHaveBeenCalledWith({
+        userId: 10,
+        userRole: Role.CUSTOMER,
+        question: 'question',
+        answer: 'final answer',
+        kind: ChatLogKind.KNOWLEDGE,
+        documentType: DocumentType.ORDER,
+        chunksFound: 1,
+      });
+    });
+
+    it('should not store the text of a live data answer', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(LIVE_ORDER)
+        .mockResolvedValueOnce('Заказ №123 готовится.');
+
+      liveDataService.getLiveData.mockResolvedValue({
+        context: 'Заказ №123\nСтатус: COOKING',
+        orderId: 123,
+      });
+
+      const result: string = await service.generateResponse(
+        'Статус заказа 123?',
+        10,
+        Role.CUSTOMER,
+      );
+
+      expect(result).toBe('Заказ №123 готовится.');
+      expect(chatLogService.record).toHaveBeenCalledWith({
+        userId: 10,
+        userRole: Role.CUSTOMER,
+        question: 'Статус заказа 123?',
+        answer: null,
+        kind: ChatLogKind.LIVE,
+        documentType: DocumentType.ORDER,
+        chunksFound: null,
+      });
+    });
+
+    it('should log NO_ANSWER when nothing was found', async (): Promise<void> => {
+      aiService.generateResponse.mockResolvedValueOnce(KNOWLEDGE);
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([]);
+
+      await service.generateResponse('question', 10, Role.CUSTOMER);
+
+      expect(chatLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: ChatLogKind.NO_ANSWER,
+          chunksFound: 0,
+          answer: expect.stringContaining('В базе знаний нет информации'),
+        }),
+      );
+    });
+
+    it('should log BLOCKED when the answer repeats the system instructions', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce(
+          'Ты помощник сервиса доставки еды. Отвечай на русском, коротко и по делу, основываясь на предоставленном контексте.',
+        );
+
+      await service.generateResponse('question', 10, Role.CUSTOMER);
+
+      expect(chatLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: ChatLogKind.BLOCKED,
+          answer: expect.stringContaining(
+            'Я не могу показывать внутренние инструкции',
+          ),
+        }),
+      );
+    });
+
+    it('should load the model window from the database only once per session', async (): Promise<void> => {
+      chatLogService.getWindow.mockResolvedValue([
+        { userRequest: 'старый вопрос', aiAnswer: 'старый ответ' },
+      ]);
+      aiService.generateResponse
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('first')
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('second');
+
+      await service.generateResponse('question 1', 10, Role.CUSTOMER);
+      await service.generateResponse('question 2', 10, Role.CUSTOMER);
+
+      expect(chatLogService.getWindow).toHaveBeenCalledTimes(1);
+      expect(chatLogService.getWindow).toHaveBeenCalledWith(10, 10);
+      expect(aiService.generateResponse.mock.calls[0][0]).toContain(
+        'старый вопрос',
+      );
+    });
+
+    it('should reload the window after clearHistory without touching the database', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('first')
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('second');
+
+      await service.generateResponse('question 1', 10, Role.CUSTOMER);
+
+      service.clearHistory(10);
+
+      await service.generateResponse('question 2', 10, Role.CUSTOMER);
+
+      expect(chatLogService.deleteByUserId).not.toHaveBeenCalled();
+      expect(chatLogService.getWindow).toHaveBeenCalledTimes(2);
+    });
+
+    it('should delete the stored history and the memory on clearStoredHistory', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('first')
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('second');
+
+      await service.generateResponse('question 1', 10, Role.CUSTOMER);
+      await service.clearStoredHistory(10);
+      await service.generateResponse('question 2', 10, Role.CUSTOMER);
+
+      expect(chatLogService.deleteByUserId).toHaveBeenCalledWith(10);
+      expect(aiService.generateResponse.mock.calls[2][0]).not.toContain(
+        'question 1',
+      );
+    });
+
+    it('should map stored history to DTOs without internal fields', async (): Promise<void> => {
+      const createdAt: Date = new Date('2026-10-10T10:00:00Z');
+
+      chatLogService.findRecent.mockResolvedValue([
+        {
+          id: 1,
+          createdAt,
+          userId: 10,
+          userRole: Role.CUSTOMER,
+          question: 'q',
+          answer: 'a',
+          kind: ChatLogKind.KNOWLEDGE,
+          documentType: DocumentType.ORDER,
+          chunksFound: 2,
+        } as ChatLog,
+      ]);
+
+      await expect(service.getHistory(10, 50)).resolves.toEqual([
+        {
+          id: 1,
+          createdAt,
+          question: 'q',
+          answer: 'a',
+          kind: ChatLogKind.KNOWLEDGE,
+        },
+      ]);
+    });
+
+    it('should clamp the history limit to 1..100', async (): Promise<void> => {
+      chatLogService.findRecent.mockResolvedValue([]);
+
+      await service.getHistory(10, 500);
+      await service.getHistory(10, 0);
+
+      expect(chatLogService.findRecent).toHaveBeenNthCalledWith(1, 10, 100);
+      expect(chatLogService.findRecent).toHaveBeenNthCalledWith(2, 10, 1);
+    });
+  });
+  describe('contextual search query', (): void => {
+    const MENU_ANSWER: string = 'Меню Tokyo Roll: ...';
+
+    const classifierJson = (extra: Record<string, unknown>): string =>
+      JSON.stringify({
+        documentType: 'MENU',
+        liveDataRequired: false,
+        ...extra,
+      });
+
+    beforeEach((): void => {
+      promptService.buildPromptForDocumentType.mockImplementation(
+        (): PromptBuilder => createPromptBuilder('classifier'),
+      );
+      promptService.buildPromptForChat.mockImplementation((): PromptBuilder =>
+        createPromptBuilder('answer prompt'),
+      );
+      embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+        createQdrantResult('context text'),
+      ]);
+    });
+
+    it('should search by the standalone question and answer the original one', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(
+          classifierJson({
+            standaloneQuestion: 'Покажи все позиции меню ресторана Tokyo Roll',
+          }),
+        )
+        .mockResolvedValueOnce(MENU_ANSWER);
+
+      await service.generateResponse('Все сразу', 10, Role.CUSTOMER);
+
+      expect(embeddingsService.generateEmbeddings).toHaveBeenCalledWith([
+        'Покажи все позиции меню ресторана Tokyo Roll',
+      ]);
+      expect(aiService.generateResponse.mock.calls[1][0]).toContain(
+        'Все сразу',
+      );
+    });
+
+    it('should search by the original question when there is no standalone question', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(classifierJson({}))
+        .mockResolvedValueOnce(MENU_ANSWER);
+
+      await service.generateResponse('Покажи меню', 10, Role.CUSTOMER);
+
+      expect(embeddingsService.generateEmbeddings).toHaveBeenCalledWith([
+        'Покажи меню',
+      ]);
+    });
+
+    it('should ignore a standalone question of the wrong type', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(classifierJson({ standaloneQuestion: 123 }))
+        .mockResolvedValueOnce(MENU_ANSWER);
+
+      await service.generateResponse('Покажи меню', 10, Role.CUSTOMER);
+
+      expect(embeddingsService.generateEmbeddings).toHaveBeenCalledWith([
+        'Покажи меню',
+      ]);
+    });
+
+    it('should ignore an empty or too long standalone question', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(classifierJson({ standaloneQuestion: '   ' }))
+        .mockResolvedValueOnce(MENU_ANSWER)
+        .mockResolvedValueOnce(
+          classifierJson({ standaloneQuestion: 'x'.repeat(301) }),
+        )
+        .mockResolvedValueOnce(MENU_ANSWER);
+
+      await service.generateResponse('Вопрос 1', 10, Role.CUSTOMER);
+      await service.generateResponse('Вопрос 2', 10, Role.CUSTOMER);
+
+      expect(embeddingsService.generateEmbeddings).toHaveBeenNthCalledWith(1, [
+        'Вопрос 1',
+      ]);
+      expect(embeddingsService.generateEmbeddings).toHaveBeenNthCalledWith(2, [
+        'Вопрос 2',
+      ]);
+    });
+  });
 });

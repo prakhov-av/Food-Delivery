@@ -29,8 +29,8 @@ import { Audit } from '../audit/audit.decorator';
 import { AuditAction } from '../audit/audit.enums';
 
 /**
-   * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
-   */
+ * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
+ */
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly service: OrdersService) {}

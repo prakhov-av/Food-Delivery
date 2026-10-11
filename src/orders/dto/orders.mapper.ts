@@ -6,8 +6,8 @@ import { UsersMapper } from '../../users/dto/users.mapper';
 import { RestaurantsMapper } from '../../restaurants/dto/restaurants.mapper';
 
 /**
-   * Описывает структуру данных «OrdersMapper», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
-   */
+ * Описывает структуру данных «OrdersMapper», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
+ */
 @Injectable()
 export class OrdersMapper {
   constructor(

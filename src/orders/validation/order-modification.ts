@@ -14,7 +14,6 @@ export function checkOrderModificationAllowed(
     );
   }
 
-
   if (user.role === Role.CUSTOMER && order.status !== Status.NEW) {
     throw new BadRequestException(
       `Order id ${order.id} can be modified by a customer only while status is ${Status.NEW}`,

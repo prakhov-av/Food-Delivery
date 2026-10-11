@@ -17,9 +17,7 @@ describe('checkOrderAccess', (): void => {
   it.each([Role.ADMIN, Role.MANAGER])(
     'should allow %s to access any order',
     (role: Role): void => {
-      expect(() =>
-        checkOrderAccess(order, { id: 999, role }),
-      ).not.toThrow();
+      expect(() => checkOrderAccess(order, { id: 999, role })).not.toThrow();
     },
   );
 
@@ -44,7 +42,9 @@ describe('checkOrderAccess', (): void => {
   it('should reject courier accessing another courier order', (): void => {
     expect(() =>
       checkOrderAccess(order, { id: 21, role: Role.COURIER }),
-    ).toThrow(new ForbiddenException('Courier can only access assigned orders'));
+    ).toThrow(
+      new ForbiddenException('Courier can only access assigned orders'),
+    );
   });
 
   it('should reject courier accessing an unassigned order', (): void => {
@@ -52,6 +52,8 @@ describe('checkOrderAccess', (): void => {
 
     expect(() =>
       checkOrderAccess(unassignedOrder, { id: 20, role: Role.COURIER }),
-    ).toThrow(new ForbiddenException('Courier can only access assigned orders'));
+    ).toThrow(
+      new ForbiddenException('Courier can only access assigned orders'),
+    );
   });
 });

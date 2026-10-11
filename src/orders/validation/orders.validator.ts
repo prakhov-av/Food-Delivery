@@ -4,8 +4,8 @@ import { OrderSaveDto } from '../dto/order.save-dto';
 import { OrderUpdateDto } from '../dto/order.update-dto';
 
 /**
-   * Содержит проверки предметных правил для сценариев, связанных с orders.
-   */
+ * Содержит проверки предметных правил для сценариев, связанных с orders.
+ */
 @Injectable()
 export class OrdersValidator {
   validateSaveDto(saveDto: OrderSaveDto): void {
