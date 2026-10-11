@@ -29,9 +29,12 @@ import { checkOrderAccess } from './validation/order-access';
 
 import { MAX_SUBMITTED_ORDERS_PER_CUSTOMER } from './validation/order-limits';
 
+import { OrderItem } from '../order-items/order-item.entity';
+import { OrderItemLine, OrderWithItems } from './types/order-with-items';
+
 /**
-   * Реализует жизненный цикл заказов и применяет правила доступа, ограничения и допустимые переходы статусов.
-   */
+ * Реализует жизненный цикл заказов и применяет правила доступа, ограничения и допустимые переходы статусов.
+ */
 @Injectable()
 export class OrdersService {
   private readonly logger: Logger = new Logger(OrdersService.name);
@@ -199,6 +202,30 @@ export class OrdersService {
     return this.mapper.mapEntityToDto(order);
   }
 
+  async getOrderWithItemsByIdForUser(
+    id: number,
+    user: Pick<User, 'id' | 'role'>,
+  ): Promise<OrderWithItems> {
+    const order: Order | null = await this.repository.findByIdWithRelations(id);
+
+    if (!order || !order.active) {
+      throw new EntityNotFoundException(Order.name, id);
+    }
+
+    checkOrderAccess(order, user);
+
+    const items: OrderItem[] = await this.repository.findActiveItemsByOrderId(
+      order.id,
+    );
+
+    return {
+      order: this.mapper.mapEntityToDto(order),
+      items: items.map((item: OrderItem): OrderItemLine => ({
+        name: item.menuItem.name,
+        quantity: item.quantity,
+      })),
+    };
+  }
   /**
    * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
    */
@@ -310,11 +337,11 @@ export class OrdersService {
     checkOrderStatusChange(order.status, status, user.role);
 
     /**
-   * Выход из NEW в любой статус, кроме отмены
-   * (в том числе принудительно администратором).
-   * Заказ должен содержать хотя бы одну позицию,
-   * и у клиента не должно быть слишком много активных заказов.
-   */
+     * Выход из NEW в любой статус, кроме отмены
+     * (в том числе принудительно администратором).
+     * Заказ должен содержать хотя бы одну позицию,
+     * и у клиента не должно быть слишком много активных заказов.
+     */
     if (order.status === Status.NEW && !CANCELLED_STATUSES.includes(status)) {
       const activeItems: number = await this.repository.countActiveItems(
         order.id,
@@ -343,10 +370,10 @@ export class OrdersService {
     let autoAssignedCourierId: number | null = null;
 
     /**
-   * READY: автоматически назначаем свободного курьера.
-   * Если свободного курьера нет, заказ остаётся READY без курьера,
-   * менеджер или администратор назначает его вручную.
-   */
+     * READY: автоматически назначаем свободного курьера.
+     * Если свободного курьера нет, заказ остаётся READY без курьера,
+     * менеджер или администратор назначает его вручную.
+     */
     if (status === Status.READY && !order.courier) {
       this.logger.log(`Trying to find available courier for order id ${id}`);
 

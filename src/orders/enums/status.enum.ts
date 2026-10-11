@@ -1,6 +1,6 @@
 /**
-   * Задаёт допустимые значения для Status, используемые в типизированных проверках и обмене данными.
-   */
+ * Задаёт допустимые значения для Status, используемые в типизированных проверках и обмене данными.
+ */
 export enum Status {
   NEW = 'NEW',
   ACCEPTED = 'ACCEPTED',
@@ -18,7 +18,6 @@ export const CANCELLED_STATUSES: Status[] = [
   Status.CANCELLED_COURIER,
   Status.CANCELLED_STAFF,
 ];
-
 
 export const CLOSED_STATUSES: Status[] = [
   Status.COMPLETED,

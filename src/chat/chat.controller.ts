@@ -5,6 +5,10 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  DefaultValuePipe,
+  Get,
+  ParseIntPipe,
+  Query,
   Req,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -13,10 +17,10 @@ import { ChatService } from './chat.service';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { Audit } from '../audit/audit.decorator';
 import { AuditAction } from '../audit/audit.enums';
-
+import { ChatHistoryItemDto } from './dto/chat-history-item.dto';
 /**
-   * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
-   */
+ * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
+ */
 @Controller('chat')
 export class ChatController {
   constructor(private readonly service: ChatService) {}
@@ -52,5 +56,20 @@ export class ChatController {
    */
   clearHistory(@Req() request: AuthenticatedRequest): void {
     this.service.clearHistory(request.user.id);
+  }
+  @Get('history')
+  async getHistory(
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ChatHistoryItemDto[]> {
+    return this.service.getHistory(request.user.id, limit);
+  }
+
+  @Delete('history')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async clearStoredHistory(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.service.clearStoredHistory(request.user.id);
   }
 }

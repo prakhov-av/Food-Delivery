@@ -8,6 +8,12 @@ import { ChatClassification } from './types/chat-classification';
 import { LiveDataResource } from './enums/live-data-resource.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { Status } from '../orders/enums/status.enum';
+import { LiveDataResult } from './types/live-data-result';
+
+import {
+  OrderItemLine,
+  OrderWithItems,
+} from '../orders/types/order-with-items';
 
 const STATUS_DESCRIPTIONS: Record<Status, string> = {
   [Status.NEW]: 'NEW — новый заказ, ожидает подтверждения менеджера',
@@ -24,8 +30,8 @@ const STATUS_DESCRIPTIONS: Record<Status, string> = {
 };
 
 /**
-   * Получает актуальные данные приложения для ответов чат-ассистента и ограничивает доступ к ресурсам с учётом пользователя и его роли.
-   */
+ * Получает актуальные данные приложения для ответов чат-ассистента и ограничивает доступ к ресурсам с учётом пользователя и его роли.
+ */
 @Injectable()
 export class LiveDataService {
   constructor(private readonly ordersService: OrdersService) {}
@@ -37,12 +43,15 @@ export class LiveDataService {
     classification: ChatClassification,
     userId: number,
     userRole: Role,
-  ): Promise<string> {
+  ): Promise<LiveDataResult> {
     if (
       classification.documentType !== DocumentType.ORDER ||
       classification.resource !== LiveDataResource.ORDER
     ) {
-      return 'Для ответа на этот вопрос необходимы актуальные данные системы.';
+      return {
+        context:
+          'Для ответа на этот вопрос необходимы актуальные данные системы.',
+      };
     }
 
     const user: Pick<User, 'id' | 'role'> = {
@@ -61,13 +70,16 @@ export class LiveDataService {
         );
 
         if (visibleOrders.length === 0) {
-          return this.formatNoOrdersMessage(userRole);
+          return { context: this.formatNoOrdersMessage(userRole) };
         }
 
-        return this.formatOrdersData(visibleOrders);
+        return {
+          context: this.formatOrdersData(visibleOrders),
+          orderId: visibleOrders.length === 1 ? visibleOrders[0].id : undefined,
+        };
       } catch (error) {
         if (error instanceof EntityNotFoundException) {
-          return this.formatNoOrdersMessage(userRole);
+          return { context: this.formatNoOrdersMessage(userRole) };
         }
 
         throw error;
@@ -75,19 +87,27 @@ export class LiveDataService {
     }
 
     try {
-      const order: OrderDto =
-        await this.ordersService.getOrderByIdWithRelations(
+      const details: OrderWithItems =
+        await this.ordersService.getOrderWithItemsByIdForUser(
           classification.resourceId,
           user,
         );
 
-      return this.formatOrderData(order);
+      return {
+        context: this.formatOrderData(details.order, details.items),
+        orderId: details.order.id,
+      };
     } catch (error) {
       if (
         error instanceof EntityNotFoundException ||
         error instanceof ForbiddenException
       ) {
-        return this.formatNoOrdersMessage(userRole, classification.resourceId);
+        return {
+          context: this.formatNoOrdersMessage(
+            userRole,
+            classification.resourceId,
+          ),
+        };
       }
 
       throw error;
@@ -124,23 +144,38 @@ export class LiveDataService {
     return 'В системе нет доступных заказов.';
   }
 
-
   private isEmptyCart(order: OrderDto): boolean {
     return order.status === Status.NEW && Number(order.totalPrice) === 0;
   }
 
-  private formatOrderData(order: OrderDto): string {
+  private formatOrderData(order: OrderDto, items?: OrderItemLine[]): string {
+    const emptyCart: boolean = this.isEmptyCart(order);
+
     return [
       `Заказ №${order.id}`,
       `Статус: ${order.status ? STATUS_DESCRIPTIONS[order.status] : 'не указан'}`,
-      `Сумма: ${order.totalPrice}`,
+      `Сумма: ${order.totalPrice} €`,
       `Ресторан: ${order.restaurant.name}`,
       `Клиент: ${order.customer.name}`,
       `Курьер: ${order.courier?.name ?? 'не назначен'}`,
       `Создан: ${order.createdAt.toISOString()}`,
-      ...(this.isEmptyCart(order)
+      ...(emptyCart
         ? ['Это пустая корзина: блюд в заказе нет, такой заказ нельзя принять.']
         : []),
+      ...(items !== undefined && !emptyCart ? this.formatItems(items) : []),
     ].join('\n');
+  }
+
+  private formatItems(items: OrderItemLine[]): string[] {
+    if (items.length === 0) {
+      return ['Состав заказа: активных позиций нет.'];
+    }
+
+    return [
+      'Состав заказа:',
+      ...items.map(
+        (item: OrderItemLine): string => `- ${item.name} × ${item.quantity}`,
+      ),
+    ];
   }
 }

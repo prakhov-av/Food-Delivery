@@ -13,9 +13,7 @@ import {
   CLOSED_STATUSES,
   Status,
 } from './enums/status.enum';
-import {
-  MAX_SUBMITTED_ORDERS_PER_CUSTOMER,
-} from './validation/order-limits';
+import { MAX_SUBMITTED_ORDERS_PER_CUSTOMER } from './validation/order-limits';
 import { checkOrderStatusChange } from './validation/order-status-change';
 
 import { UsersService } from '../users/users.service';
@@ -31,6 +29,8 @@ import { AuditAction } from '../audit/audit.enums';
 import { EntityNotFoundException } from '../exceptions/types/entity-not-found.exception';
 import { EntityUpdateException } from '../exceptions/types/entity-update.exception';
 import { RoleMismatchException } from '../exceptions/types/role-mismatch.exception';
+
+import { OrderItem } from '../order-items/order-item.entity';
 
 describe('OrdersService', () => {
   const CUSTOMER = {
@@ -89,8 +89,7 @@ describe('OrdersService', () => {
       ...overrides,
     }) as Order;
 
-  const makeDto = (order: Order): OrderDto =>
-    order as unknown as OrderDto;
+  const makeDto = (order: Order): OrderDto => order as unknown as OrderDto;
 
   const saveDto: OrderSaveDto = {
     restaurantId: RESTAURANT.id,
@@ -113,6 +112,7 @@ describe('OrdersService', () => {
             findById: jest.fn(),
             findByIdWithRelations: jest.fn(),
             countActiveItems: jest.fn(),
+            findActiveItemsByOrderId: jest.fn(),
             countSubmittedByCustomerId: jest.fn(),
           },
         },
@@ -164,21 +164,17 @@ describe('OrdersService', () => {
     repository.countActiveItems.mockResolvedValue(1);
     repository.countSubmittedByCustomerId.mockResolvedValue(0);
 
-    mapper.mapDtoToEntity.mockImplementation(
-      (): Order => makeOrder(),
-    );
+    mapper.mapDtoToEntity.mockImplementation((): Order => makeOrder());
 
-    mapper.mapEntityToDto.mockImplementation(
-      (order: Order): OrderDto => makeDto(order),
+    mapper.mapEntityToDto.mockImplementation((order: Order): OrderDto =>
+      makeDto(order),
     );
 
     mapper.mapEntityListToDtoList.mockImplementation(
       (orders: Order[]): OrderDto[] => orders.map(makeDto),
     );
 
-    restaurantsService.getActiveEntityById.mockResolvedValue(
-      RESTAURANT,
-    );
+    restaurantsService.getActiveEntityById.mockResolvedValue(RESTAURANT);
 
     usersService.getActiveEntityById.mockImplementation(
       async (id: number): Promise<User> => {
@@ -207,21 +203,17 @@ describe('OrdersService', () => {
     repository.countActiveItems.mockResolvedValue(1);
     repository.countSubmittedByCustomerId.mockResolvedValue(0);
 
-    mapper.mapDtoToEntity.mockImplementation(
-      (): Order => makeOrder(),
-    );
+    mapper.mapDtoToEntity.mockImplementation((): Order => makeOrder());
 
-    mapper.mapEntityToDto.mockImplementation(
-      (order: Order): OrderDto => makeDto(order),
+    mapper.mapEntityToDto.mockImplementation((order: Order): OrderDto =>
+      makeDto(order),
     );
 
     mapper.mapEntityListToDtoList.mockImplementation(
       (orders: Order[]): OrderDto[] => orders.map(makeDto),
     );
 
-    restaurantsService.getActiveEntityById.mockResolvedValue(
-      RESTAURANT,
-    );
+    restaurantsService.getActiveEntityById.mockResolvedValue(RESTAURANT);
 
     usersService.getActiveEntityById.mockImplementation(
       async (id: number): Promise<User> => {
@@ -299,16 +291,11 @@ describe('OrdersService', () => {
     });
 
     it('should propagate restaurant lookup errors and not save', async () => {
-      const error = new EntityNotFoundException(
-        Restaurant.name,
-        RESTAURANT.id,
-      );
+      const error = new EntityNotFoundException(Restaurant.name, RESTAURANT.id);
 
       restaurantsService.getActiveEntityById.mockRejectedValue(error);
 
-      await expect(
-        service.create(saveDto, CUSTOMER),
-      ).rejects.toBe(error);
+      await expect(service.create(saveDto, CUSTOMER)).rejects.toBe(error);
 
       expect(repository.save).not.toHaveBeenCalled();
     });
@@ -316,35 +303,25 @@ describe('OrdersService', () => {
 
   describe('getAllOrders', () => {
     it('should return all active orders for admin', async () => {
-      const orders = [
-        makeOrder(),
-        makeOrder({ id: 2 }),
-      ];
+      const orders = [makeOrder(), makeOrder({ id: 2 })];
 
       repository.findAllActive.mockResolvedValue(orders);
 
       const result = await service.getAllOrders(ADMIN);
 
       expect(result).toHaveLength(2);
-      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith(
-        orders,
-      );
+      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith(orders);
     });
 
     it('should return all active orders for manager', async () => {
-      const orders = [
-        makeOrder(),
-        makeOrder({ id: 2 }),
-      ];
+      const orders = [makeOrder(), makeOrder({ id: 2 })];
 
       repository.findAllActive.mockResolvedValue(orders);
 
       const result = await service.getAllOrders(MANAGER);
 
       expect(result).toHaveLength(2);
-      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith(
-        orders,
-      );
+      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith(orders);
     });
 
     it('should return only customer-owned orders', async () => {
@@ -357,16 +334,11 @@ describe('OrdersService', () => {
         customer: OTHER_CUSTOMER,
       });
 
-      repository.findAllActive.mockResolvedValue([
-        ownOrder,
-        otherOrder,
-      ]);
+      repository.findAllActive.mockResolvedValue([ownOrder, otherOrder]);
 
       await service.getAllOrders(CUSTOMER);
 
-      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith([
-        ownOrder,
-      ]);
+      expect(mapper.mapEntityListToDtoList).toHaveBeenCalledWith([ownOrder]);
     });
 
     it('should return only assigned courier orders', async () => {
@@ -379,10 +351,7 @@ describe('OrdersService', () => {
         courier: OTHER_COURIER,
       });
 
-      repository.findAllActive.mockResolvedValue([
-        assignedOrder,
-        otherOrder,
-      ]);
+      repository.findAllActive.mockResolvedValue([assignedOrder, otherOrder]);
 
       await service.getAllOrders(COURIER);
 
@@ -394,9 +363,9 @@ describe('OrdersService', () => {
     it('should throw when there are no active orders', async () => {
       repository.findAllActive.mockResolvedValue([]);
 
-      await expect(
-        service.getAllOrders(ADMIN),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.getAllOrders(ADMIN)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
     });
 
     it('should throw when the user has no accessible orders', async () => {
@@ -406,15 +375,13 @@ describe('OrdersService', () => {
         }),
       ]);
 
-      await expect(
-        service.getAllOrders(CUSTOMER),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.getAllOrders(CUSTOMER)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
     });
 
     it('should throw when an unknown role has no accessible orders', async () => {
-      repository.findAllActive.mockResolvedValue([
-        makeOrder(),
-      ]);
+      repository.findAllActive.mockResolvedValue([makeOrder()]);
 
       await expect(
         service.getAllOrders({
@@ -431,9 +398,9 @@ describe('OrdersService', () => {
         }),
       ]);
 
-      await expect(
-        service.getAllOrders(COURIER),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.getAllOrders(COURIER)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
     });
   });
 
@@ -480,10 +447,7 @@ describe('OrdersService', () => {
         status: Status.CANCELLED_STAFF,
       });
 
-      repository.findAllActive.mockResolvedValue([
-        current,
-        cancelled,
-      ]);
+      repository.findAllActive.mockResolvedValue([current, cancelled]);
 
       const result = await service.getCurrentOrders(ADMIN);
 
@@ -505,9 +469,9 @@ describe('OrdersService', () => {
         }),
       ]);
 
-      await expect(
-        service.getCurrentOrders(ADMIN),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.getCurrentOrders(ADMIN)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
     });
   });
 
@@ -517,10 +481,7 @@ describe('OrdersService', () => {
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result = await service.getOrderById(
-        order.id,
-        ADMIN,
-      );
+      const result = await service.getOrderById(order.id, ADMIN);
 
       expect(result).toEqual(makeDto(order));
     });
@@ -532,10 +493,7 @@ describe('OrdersService', () => {
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result = await service.getOrderById(
-        order.id,
-        CUSTOMER,
-      );
+      const result = await service.getOrderById(order.id, CUSTOMER);
 
       expect(result).toEqual(makeDto(order));
     });
@@ -567,9 +525,9 @@ describe('OrdersService', () => {
     it('should throw when the order does not exist', async () => {
       repository.findByIdWithRelations.mockResolvedValue(null);
 
-      await expect(
-        service.getOrderById(999, ADMIN),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.getOrderById(999, ADMIN)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
     });
   });
 
@@ -579,17 +537,15 @@ describe('OrdersService', () => {
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      expect(
-        await service.getActiveEntityById(order.id),
-      ).toBe(order);
+      expect(await service.getActiveEntityById(order.id)).toBe(order);
     });
 
     it('should throw when the order is missing', async () => {
       repository.findByIdWithRelations.mockResolvedValue(null);
 
-      await expect(
-        service.getActiveEntityById(999),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.getActiveEntityById(999)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
     });
 
     it('should throw when the order is inactive', async () => {
@@ -599,9 +555,9 @@ describe('OrdersService', () => {
         }),
       );
 
-      await expect(
-        service.getActiveEntityById(1),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.getActiveEntityById(1)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
     });
   });
 
@@ -611,11 +567,9 @@ describe('OrdersService', () => {
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      expect(
-        await service.getActiveEntityByIdWithRelations(
-          order.id,
-        ),
-      ).toBe(order);
+      expect(await service.getActiveEntityByIdWithRelations(order.id)).toBe(
+        order,
+      );
     });
 
     it('should throw when the order is missing', async () => {
@@ -645,11 +599,7 @@ describe('OrdersService', () => {
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result =
-        await service.getOrderByIdWithRelations(
-          order.id,
-          ADMIN,
-        );
+      const result = await service.getOrderByIdWithRelations(order.id, ADMIN);
 
       expect(result).toEqual(makeDto(order));
     });
@@ -661,11 +611,10 @@ describe('OrdersService', () => {
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result =
-        await service.getOrderByIdWithRelations(
-          order.id,
-          CUSTOMER,
-        );
+      const result = await service.getOrderByIdWithRelations(
+        order.id,
+        CUSTOMER,
+      );
 
       expect(result).toEqual(makeDto(order));
     });
@@ -678,10 +627,7 @@ describe('OrdersService', () => {
       repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.getOrderByIdWithRelations(
-          order.id,
-          CUSTOMER,
-        ),
+        service.getOrderByIdWithRelations(order.id, CUSTOMER),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -689,10 +635,7 @@ describe('OrdersService', () => {
       repository.findByIdWithRelations.mockResolvedValue(null);
 
       await expect(
-        service.getOrderByIdWithRelations(
-          999,
-          ADMIN,
-        ),
+        service.getOrderByIdWithRelations(999, ADMIN),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
 
@@ -704,24 +647,99 @@ describe('OrdersService', () => {
       );
 
       await expect(
-        service.getOrderByIdWithRelations(
-          1,
-          ADMIN,
-        ),
+        service.getOrderByIdWithRelations(1, ADMIN),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
     });
   });
 
+  describe('getOrderWithItemsByIdForUser', () => {
+    const makeItem = (name: string, quantity: number): OrderItem =>
+      ({
+        id: 1,
+        quantity,
+        active: true,
+        menuItem: { id: 5, name },
+      }) as OrderItem;
+
+    it('should return the order with its active items for the owner', async () => {
+      const order = makeOrder({ customer: CUSTOMER });
+
+      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findActiveItemsByOrderId.mockResolvedValue([
+        makeItem('Margherita', 2),
+        makeItem('Cola', 1),
+      ]);
+
+      const result = await service.getOrderWithItemsByIdForUser(
+        order.id,
+        CUSTOMER,
+      );
+
+      expect(result.order).toEqual(makeDto(order));
+      expect(result.items).toEqual([
+        { name: 'Margherita', quantity: 2 },
+        { name: 'Cola', quantity: 1 },
+      ]);
+      expect(repository.findActiveItemsByOrderId).toHaveBeenCalledWith(
+        order.id,
+      );
+    });
+
+    it('should return an empty item list when the order has no active items', async () => {
+      const order = makeOrder();
+
+      repository.findByIdWithRelations.mockResolvedValue(order);
+      repository.findActiveItemsByOrderId.mockResolvedValue([]);
+
+      const result = await service.getOrderWithItemsByIdForUser(
+        order.id,
+        ADMIN,
+      );
+
+      expect(result.items).toEqual([]);
+    });
+
+    it('should not load items for a customer who does not own the order', async () => {
+      const order = makeOrder({ customer: OTHER_CUSTOMER });
+
+      repository.findByIdWithRelations.mockResolvedValue(order);
+
+      await expect(
+        service.getOrderWithItemsByIdForUser(order.id, CUSTOMER),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(repository.findActiveItemsByOrderId).not.toHaveBeenCalled();
+    });
+
+    it('should throw and not load items when the order is missing', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(null);
+
+      await expect(
+        service.getOrderWithItemsByIdForUser(999, ADMIN),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
+
+      expect(repository.findActiveItemsByOrderId).not.toHaveBeenCalled();
+    });
+
+    it('should throw and not load items when the order is inactive', async () => {
+      repository.findByIdWithRelations.mockResolvedValue(
+        makeOrder({ active: false }),
+      );
+
+      await expect(
+        service.getOrderWithItemsByIdForUser(1, ADMIN),
+      ).rejects.toBeInstanceOf(EntityNotFoundException);
+
+      expect(repository.findActiveItemsByOrderId).not.toHaveBeenCalled();
+    });
+  });
   describe('getActiveOrderByIdWithRelations', () => {
     it('should return an active order DTO', async () => {
       const order = makeOrder();
 
       repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const result =
-        await service.getActiveOrderByIdWithRelations(
-          order.id,
-        );
+      const result = await service.getActiveOrderByIdWithRelations(order.id);
 
       expect(result).toEqual(makeDto(order));
     });
@@ -748,12 +766,7 @@ describe('OrdersService', () => {
   });
 
   describe('update', () => {
-    it.each([
-      Status.NEW,
-      Status.ACCEPTED,
-      Status.COOKING,
-      Status.READY,
-    ])(
+    it.each([Status.NEW, Status.ACCEPTED, Status.COOKING, Status.READY])(
       'should assign a courier without changing %s status',
       async (status: Status) => {
         const order = makeOrder({
@@ -761,9 +774,7 @@ describe('OrdersService', () => {
           courier: null,
         });
 
-        repository.findByIdWithRelations.mockResolvedValue(
-          order,
-        );
+        repository.findByIdWithRelations.mockResolvedValue(order);
 
         await service.update(order.id, updateDto);
 
@@ -785,9 +796,7 @@ describe('OrdersService', () => {
           status,
         });
 
-        repository.findByIdWithRelations.mockResolvedValue(
-          order,
-        );
+        repository.findByIdWithRelations.mockResolvedValue(order);
 
         await expect(
           service.update(order.id, updateDto),
@@ -800,13 +809,11 @@ describe('OrdersService', () => {
     it('should throw when courierId is omitted', async () => {
       const order = makeOrder();
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await expect(
-        service.update(order.id, {}),
-      ).rejects.toBeInstanceOf(EntityUpdateException);
+      await expect(service.update(order.id, {})).rejects.toBeInstanceOf(
+        EntityUpdateException,
+      );
 
       expect(repository.save).not.toHaveBeenCalled();
     });
@@ -814,17 +821,13 @@ describe('OrdersService', () => {
     it('should throw when the selected user is not a courier', async () => {
       const order = makeOrder();
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      usersService.getActiveEntityById.mockResolvedValue(
-        CUSTOMER,
-      );
+      usersService.getActiveEntityById.mockResolvedValue(CUSTOMER);
 
-      await expect(
-        service.update(order.id, updateDto),
-      ).rejects.toBeInstanceOf(RoleMismatchException);
+      await expect(service.update(order.id, updateDto)).rejects.toBeInstanceOf(
+        RoleMismatchException,
+      );
 
       expect(repository.save).not.toHaveBeenCalled();
     });
@@ -832,18 +835,11 @@ describe('OrdersService', () => {
     it('should propagate courier lookup errors', async () => {
       const order = makeOrder();
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      const error = new EntityNotFoundException(
-        User.name,
-        999,
-      );
+      const error = new EntityNotFoundException(User.name, 999);
 
-      usersService.getActiveEntityById.mockRejectedValue(
-        error,
-      );
+      usersService.getActiveEntityById.mockRejectedValue(error);
 
       await expect(
         service.update(order.id, {
@@ -857,9 +853,9 @@ describe('OrdersService', () => {
     it('should throw when the order does not exist', async () => {
       repository.findByIdWithRelations.mockResolvedValue(null);
 
-      await expect(
-        service.update(999, updateDto),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.update(999, updateDto)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
 
       expect(repository.save).not.toHaveBeenCalled();
     });
@@ -871,9 +867,7 @@ describe('OrdersService', () => {
         active: true,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await service.deleteById(order.id);
 
@@ -884,9 +878,9 @@ describe('OrdersService', () => {
     it('should throw when the order does not exist', async () => {
       repository.findByIdWithRelations.mockResolvedValue(null);
 
-      await expect(
-        service.deleteById(999),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.deleteById(999)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
 
       expect(repository.save).not.toHaveBeenCalled();
     });
@@ -921,9 +915,9 @@ describe('OrdersService', () => {
     it('should throw when the order does not exist', async () => {
       repository.findById.mockResolvedValue(null);
 
-      await expect(
-        service.restoreById(999),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.restoreById(999)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
 
       expect(repository.save).not.toHaveBeenCalled();
     });
@@ -935,9 +929,7 @@ describe('OrdersService', () => {
         totalPrice: 100,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await service.updateTotalPrice(order.id, 250);
 
@@ -948,9 +940,9 @@ describe('OrdersService', () => {
     it('should throw when the order does not exist', async () => {
       repository.findByIdWithRelations.mockResolvedValue(null);
 
-      await expect(
-        service.updateTotalPrice(999, 250),
-      ).rejects.toBeInstanceOf(EntityNotFoundException);
+      await expect(service.updateTotalPrice(999, 250)).rejects.toBeInstanceOf(
+        EntityNotFoundException,
+      );
 
       expect(repository.save).not.toHaveBeenCalled();
     });
@@ -962,16 +954,10 @@ describe('OrdersService', () => {
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.NEW,
-          CUSTOMER,
-        ),
+        service.setStatus(order.id, Status.NEW, CUSTOMER),
       ).rejects.toBeInstanceOf(EntityUpdateException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -983,16 +969,10 @@ describe('OrdersService', () => {
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.ACCEPTED,
-          OTHER_CUSTOMER,
-        ),
+        service.setStatus(order.id, Status.ACCEPTED, OTHER_CUSTOMER),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1003,16 +983,10 @@ describe('OrdersService', () => {
         status: Status.COMPLETED,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.NEW,
-          CUSTOMER,
-        ),
+        service.setStatus(order.id, Status.NEW, CUSTOMER),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1023,18 +997,12 @@ describe('OrdersService', () => {
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       repository.countActiveItems.mockResolvedValue(0);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.ACCEPTED,
-          MANAGER,
-        ),
+        service.setStatus(order.id, Status.ACCEPTED, MANAGER),
       ).rejects.toBeInstanceOf(EntityUpdateException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1045,9 +1013,7 @@ describe('OrdersService', () => {
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       repository.countActiveItems.mockResolvedValue(1);
 
@@ -1056,11 +1022,7 @@ describe('OrdersService', () => {
       );
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.ACCEPTED,
-          MANAGER,
-        ),
+        service.setStatus(order.id, Status.ACCEPTED, MANAGER),
       ).rejects.toBeInstanceOf(EntityUpdateException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1072,15 +1034,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.ACCEPTED,
-        MANAGER,
-      );
+      await service.setStatus(order.id, Status.ACCEPTED, MANAGER);
 
       expect(order.status).toBe(Status.ACCEPTED);
       expect(order.courier).toBeNull();
@@ -1093,15 +1049,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.ACCEPTED,
-        ADMIN,
-      );
+      await service.setStatus(order.id, Status.ACCEPTED, ADMIN);
 
       expect(order.status).toBe(Status.ACCEPTED);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1113,15 +1063,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.COOKING,
-        MANAGER,
-      );
+      await service.setStatus(order.id, Status.COOKING, MANAGER);
 
       expect(order.status).toBe(Status.COOKING);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1133,19 +1077,11 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      usersService.findAvailableCourier.mockResolvedValue(
-        COURIER,
-      );
+      usersService.findAvailableCourier.mockResolvedValue(COURIER);
 
-      await service.setStatus(
-        order.id,
-        Status.READY,
-        MANAGER,
-      );
+      await service.setStatus(order.id, Status.READY, MANAGER);
 
       expect(order.status).toBe(Status.READY);
       expect(order.courier).toBe(COURIER);
@@ -1183,19 +1119,11 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      usersService.findAvailableCourier.mockResolvedValue(
-        null,
-      );
+      usersService.findAvailableCourier.mockResolvedValue(null);
 
-      await service.setStatus(
-        order.id,
-        Status.READY,
-        MANAGER,
-      );
+      await service.setStatus(order.id, Status.READY, MANAGER);
 
       expect(order.status).toBe(Status.READY);
       expect(order.courier).toBeNull();
@@ -1219,21 +1147,13 @@ describe('OrdersService', () => {
         courier: existingCourier,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.READY,
-        MANAGER,
-      );
+      await service.setStatus(order.id, Status.READY, MANAGER);
 
       expect(order.status).toBe(Status.READY);
       expect(order.courier).toBe(existingCourier);
-      expect(
-        usersService.findAvailableCourier,
-      ).not.toHaveBeenCalled();
+      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
     });
 
     it('should allow a manager to cancel a NEW order as staff', async () => {
@@ -1242,15 +1162,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_STAFF,
-        MANAGER,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_STAFF, MANAGER);
 
       expect(order.status).toBe(Status.CANCELLED_STAFF);
       expect(repository.countActiveItems).not.toHaveBeenCalled();
@@ -1262,15 +1176,9 @@ describe('OrdersService', () => {
         status: Status.READY,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_STAFF,
-        MANAGER,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_STAFF, MANAGER);
 
       expect(order.status).toBe(Status.CANCELLED_STAFF);
     });
@@ -1280,16 +1188,10 @@ describe('OrdersService', () => {
         status: Status.DELIVERING,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.CANCELLED_STAFF,
-          MANAGER,
-        ),
+        service.setStatus(order.id, Status.CANCELLED_STAFF, MANAGER),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1301,15 +1203,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_STAFF,
-        ADMIN,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_STAFF, ADMIN);
 
       expect(order.status).toBe(Status.CANCELLED_STAFF);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1322,16 +1218,10 @@ describe('OrdersService', () => {
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.CANCELLED_STAFF,
-          CUSTOMER,
-        ),
+        service.setStatus(order.id, Status.CANCELLED_STAFF, CUSTOMER),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -1341,16 +1231,10 @@ describe('OrdersService', () => {
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.CANCELLED_STAFF,
-          COURIER,
-        ),
+        service.setStatus(order.id, Status.CANCELLED_STAFF, COURIER),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -1360,15 +1244,9 @@ describe('OrdersService', () => {
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.DELIVERING,
-        COURIER,
-      );
+      await service.setStatus(order.id, Status.DELIVERING, COURIER);
 
       expect(order.status).toBe(Status.DELIVERING);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1380,15 +1258,9 @@ describe('OrdersService', () => {
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.COMPLETED,
-        COURIER,
-      );
+      await service.setStatus(order.id, Status.COMPLETED, COURIER);
 
       expect(order.status).toBe(Status.COMPLETED);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1400,15 +1272,9 @@ describe('OrdersService', () => {
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_COURIER,
-        COURIER,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_COURIER, COURIER);
 
       expect(order.status).toBe(Status.CANCELLED_COURIER);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1420,15 +1286,9 @@ describe('OrdersService', () => {
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_COURIER,
-        COURIER,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_COURIER, COURIER);
 
       expect(order.status).toBe(Status.CANCELLED_COURIER);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1440,15 +1300,9 @@ describe('OrdersService', () => {
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_CUSTOMER,
-        CUSTOMER,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_CUSTOMER, CUSTOMER);
 
       expect(order.status).toBe(Status.CANCELLED_CUSTOMER);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1460,15 +1314,9 @@ describe('OrdersService', () => {
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_CUSTOMER,
-        CUSTOMER,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_CUSTOMER, CUSTOMER);
 
       expect(order.status).toBe(Status.CANCELLED_CUSTOMER);
     });
@@ -1479,15 +1327,9 @@ describe('OrdersService', () => {
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_CUSTOMER,
-        CUSTOMER,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_CUSTOMER, CUSTOMER);
 
       expect(order.status).toBe(Status.CANCELLED_CUSTOMER);
     });
@@ -1498,16 +1340,10 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.DELIVERING,
-          COURIER,
-        ),
+        service.setStatus(order.id, Status.DELIVERING, COURIER),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1519,16 +1355,10 @@ describe('OrdersService', () => {
         courier: OTHER_COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.DELIVERING,
-          COURIER,
-        ),
+        service.setStatus(order.id, Status.DELIVERING, COURIER),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1540,16 +1370,10 @@ describe('OrdersService', () => {
         customer: CUSTOMER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.ACCEPTED,
-          CUSTOMER,
-        ),
+        service.setStatus(order.id, Status.ACCEPTED, CUSTOMER),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1560,16 +1384,10 @@ describe('OrdersService', () => {
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.ACCEPTED,
-          COURIER,
-        ),
+        service.setStatus(order.id, Status.ACCEPTED, COURIER),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1580,16 +1398,10 @@ describe('OrdersService', () => {
         status: Status.NEW,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.COOKING,
-          MANAGER,
-        ),
+        service.setStatus(order.id, Status.COOKING, MANAGER),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1600,16 +1412,10 @@ describe('OrdersService', () => {
         status: Status.ACCEPTED,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.READY,
-          MANAGER,
-        ),
+        service.setStatus(order.id, Status.READY, MANAGER),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1621,16 +1427,10 @@ describe('OrdersService', () => {
         courier: COURIER,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
       await expect(
-        service.setStatus(
-          order.id,
-          Status.COMPLETED,
-          COURIER,
-        ),
+        service.setStatus(order.id, Status.COMPLETED, COURIER),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1640,11 +1440,7 @@ describe('OrdersService', () => {
       repository.findByIdWithRelations.mockResolvedValue(null);
 
       await expect(
-        service.setStatus(
-          999,
-          Status.ACCEPTED,
-          ADMIN,
-        ),
+        service.setStatus(999, Status.ACCEPTED, ADMIN),
       ).rejects.toBeInstanceOf(EntityNotFoundException);
 
       expect(repository.save).not.toHaveBeenCalled();
@@ -1656,15 +1452,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.ACCEPTED,
-        ADMIN,
-      );
+      await service.setStatus(order.id, Status.ACCEPTED, ADMIN);
 
       expect(order.status).toBe(Status.ACCEPTED);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1676,15 +1466,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.COOKING,
-        ADMIN,
-      );
+      await service.setStatus(order.id, Status.COOKING, ADMIN);
 
       expect(order.status).toBe(Status.COOKING);
       expect(repository.save).toHaveBeenCalledWith(order);
@@ -1696,19 +1480,11 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      usersService.findAvailableCourier.mockResolvedValue(
-        COURIER,
-      );
+      usersService.findAvailableCourier.mockResolvedValue(COURIER);
 
-      await service.setStatus(
-        order.id,
-        Status.READY,
-        ADMIN,
-      );
+      await service.setStatus(order.id, Status.READY, ADMIN);
 
       expect(order.status).toBe(Status.READY);
       expect(order.courier).toBe(COURIER);
@@ -1722,21 +1498,13 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.ACCEPTED,
-        ADMIN,
-      );
+      await service.setStatus(order.id, Status.ACCEPTED, ADMIN);
 
       expect(order.status).toBe(Status.ACCEPTED);
       expect(order.courier).toBeNull();
-      expect(
-        usersService.findAvailableCourier,
-      ).not.toHaveBeenCalled();
+      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
     });
 
     it('should not replace an existing courier when admin moves COOKING to READY', async () => {
@@ -1750,21 +1518,13 @@ describe('OrdersService', () => {
         courier: existingCourier,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.READY,
-        ADMIN,
-      );
+      await service.setStatus(order.id, Status.READY, ADMIN);
 
       expect(order.status).toBe(Status.READY);
       expect(order.courier).toBe(existingCourier);
-      expect(
-        usersService.findAvailableCourier,
-      ).not.toHaveBeenCalled();
+      expect(usersService.findAvailableCourier).not.toHaveBeenCalled();
     });
 
     it('should not count active items for a NEW cancellation', async () => {
@@ -1773,15 +1533,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.CANCELLED_CUSTOMER,
-        CUSTOMER,
-      );
+      await service.setStatus(order.id, Status.CANCELLED_CUSTOMER, CUSTOMER);
 
       expect(repository.countActiveItems).not.toHaveBeenCalled();
       expect(order.status).toBe(Status.CANCELLED_CUSTOMER);
@@ -1793,15 +1547,9 @@ describe('OrdersService', () => {
         courier: null,
       });
 
-      repository.findByIdWithRelations.mockResolvedValue(
-        order,
-      );
+      repository.findByIdWithRelations.mockResolvedValue(order);
 
-      await service.setStatus(
-        order.id,
-        Status.COOKING,
-        MANAGER,
-      );
+      await service.setStatus(order.id, Status.COOKING, MANAGER);
 
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1822,31 +1570,19 @@ describe('OrdersService', () => {
   describe('status transition helper', () => {
     it('should allow an admin to use any status transition', () => {
       expect(() =>
-        checkOrderStatusChange(
-          Status.COMPLETED,
-          Status.NEW,
-          Role.ADMIN,
-        ),
+        checkOrderStatusChange(Status.COMPLETED, Status.NEW, Role.ADMIN),
       ).not.toThrow();
     });
 
     it('should reject an invalid manager transition', () => {
       expect(() =>
-        checkOrderStatusChange(
-          Status.NEW,
-          Status.COOKING,
-          Role.MANAGER,
-        ),
+        checkOrderStatusChange(Status.NEW, Status.COOKING, Role.MANAGER),
       ).toThrow(BadRequestException);
     });
 
     it('should allow a valid manager transition', () => {
       expect(() =>
-        checkOrderStatusChange(
-          Status.NEW,
-          Status.ACCEPTED,
-          Role.MANAGER,
-        ),
+        checkOrderStatusChange(Status.NEW, Status.ACCEPTED, Role.MANAGER),
       ).not.toThrow();
     });
   });

@@ -10,10 +10,21 @@ import { OrdersModule } from '../orders/orders.module';
 import { ContextService } from './context.service';
 import { PromptsModule } from '../prompts/prompts.module';
 
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ChatLog } from './chat-log.entity';
+import { ChatLogService } from './chat-log.service';
+
 @Module({
   controllers: [ChatController],
-  providers: [ChatService, PromptService, LiveDataService, ContextService],
+  providers: [
+    ChatService,
+    PromptService,
+    LiveDataService,
+    ContextService,
+    ChatLogService,
+  ],
   imports: [
+    TypeOrmModule.forFeature([ChatLog]),
     EmbeddingsModule,
     VectorStorageModule,
     AiModule,
@@ -22,6 +33,6 @@ import { PromptsModule } from '../prompts/prompts.module';
   ],
 })
 /**
-   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
-   */
+ * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+ */
 export class ChatModule {}

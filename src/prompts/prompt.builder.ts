@@ -2,8 +2,8 @@ import { Role } from '../users/enums/role.enum';
 import { ChatMessage } from '../chat/types/chat-message';
 
 /**
-   * Последовательно собирает промпт из системных инструкций, роли пользователя, истории диалога, контекста и текущего вопроса.
-   */
+ * Последовательно собирает промпт из системных инструкций, роли пользователя, истории диалога, контекста и текущего вопроса.
+ */
 export class PromptBuilder {
   private prompt: string;
 
@@ -59,6 +59,14 @@ ${this.mapChatHistoryToMultistring(chatHistory)}
       .join('\n\n');
   }
 
+  withLastOrder(orderId?: number): PromptBuilder {
+    if (orderId === undefined) {
+      return this;
+    }
+
+    this.prompt = `${this.prompt}\n\nПоследний обсуждаемый заказ: №${orderId}`;
+    return this;
+  }
   /**
    * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
    */

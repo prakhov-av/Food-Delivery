@@ -7,6 +7,26 @@ interface Message {
   text: string;
 }
 
+interface HistoryItem {
+  id: number;
+  question: string;
+  answer: string | null;
+}
+
+const GREETING: Message = {
+  role: 'assistant',
+  text: 'Здравствуйте! Выберите вопрос ниже или напишите свой.',
+};
+
+const LIVE_ANSWER_NOTE =
+  'Ответ с данными заказов не сохраняется. Задайте вопрос ещё раз, чтобы получить актуальные данные.';
+
+const toMessages = (items: HistoryItem[]): Message[] =>
+  items.flatMap((item: HistoryItem): Message[] => [
+    { role: 'user', text: item.question },
+    { role: 'assistant', text: item.answer ?? LIVE_ANSWER_NOTE },
+  ]);
+
 const ACCENT = 'rgb(1 61 182 / 0.65)';
 const BUBBLE = 'rgba(241, 239, 236, 0.62)';
 
@@ -16,27 +36,36 @@ const QUICK_QUESTIONS: Record<Role, string[]> = {
     'Какие у меня заказы?',
     'Как оформить заказ?',
     'Как отменить заказ?',
+    'Что ты умеешь?',
   ],
-  COURIER: ['Какие заказы мне назначены?', 'Как доставить заказ?'],
-  MANAGER: ['Какие заказы сейчас в работе?', 'Покажи все заказы'],
-  ADMIN: ['Какие заказы сейчас в работе?', 'Покажи все заказы'],
+  COURIER: [
+    'Какие заказы мне назначены?',
+    'Как доставить заказ?',
+    'Что ты умеешь?',
+  ],
+  MANAGER: [
+    'Какие заказы сейчас в работе?',
+    'Покажи все заказы',
+    'Что ты умеешь?',
+  ],
+  ADMIN: [
+    'Какие заказы сейчас в работе?',
+    'Покажи все заказы',
+    'Что ты умеешь?',
+  ],
 };
 
 export default function ChatWidget({ role }: { role: Role }) {
   const [open, setOpen] = useState(false);
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      text: 'Здравствуйте! Выберите вопрос ниже или напишите свой.',
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([GREETING]);
 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const historyLoaded = useRef(false);
 
   useEffect(() => {
     if (open) {
@@ -45,6 +74,23 @@ export default function ChatWidget({ role }: { role: Role }) {
       });
     }
   }, [messages, busy, open]);
+
+  // Прошлая переписка подгружается один раз, при первом открытии виджета.
+  useEffect(() => {
+    if (!open || historyLoaded.current) return;
+
+    historyLoaded.current = true;
+
+    api<HistoryItem[]>('/chat/history?limit=50')
+      .then((items) => {
+        if (!items || items.length === 0) return;
+
+        setMessages((m) => [m[0], ...toMessages(items), ...m.slice(1)]);
+      })
+      .catch(() => {
+        // история необязательна: чат работает и без неё
+      });
+  }, [open]);
 
   const ask = async (raw: string) => {
     const text = raw.trim();
@@ -88,6 +134,26 @@ export default function ChatWidget({ role }: { role: Role }) {
       }
     } finally {
       setBusy(false);
+    }
+  };
+
+  const clearHistory = async () => {
+    if (
+      busy ||
+      !window.confirm('Удалить всю историю переписки с помощником?')
+    ) {
+      return;
+    }
+
+    try {
+      await api('/chat/history', { method: 'DELETE' });
+
+      setMessages([GREETING]);
+      setError('');
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Не удалось очистить историю',
+      );
     }
   };
 
@@ -158,33 +224,61 @@ export default function ChatWidget({ role }: { role: Role }) {
           >
             <span>AI помощник</span>
 
-            <button
-              onClick={() => setOpen(false)}
-              aria-label="Закрыть чат"
-              style={{
-                width: 30,
-                height: 30,
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => void clearHistory()}
+                disabled={busy}
+                aria-label="Очистить историю переписки"
+                style={{
+                  height: 30,
+                  padding: '0 10px',
 
-                display: 'grid',
-                placeItems: 'center',
+                  background: 'rgba(255,255,255,.12)',
 
-                background: 'rgba(255,255,255,.12)',
+                  border: '1px solid rgba(255,255,255,.18)',
 
-                border: '1px solid rgba(255,255,255,.18)',
+                  borderRadius: 9,
 
-                borderRadius: 9,
+                  color: '#fff',
+                  fontSize: 12,
 
-                color: '#fff',
-                fontSize: 20,
+                  cursor: busy ? 'default' : 'pointer',
+                  opacity: busy ? 0.5 : 1,
 
-                cursor: 'pointer',
-                lineHeight: 1,
+                  transition: 'all .2s ease',
+                }}
+              >
+                Очистить
+              </button>
 
-                transition: 'all .2s ease',
-              }}
-            >
-              ×
-            </button>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Закрыть чат"
+                style={{
+                  width: 30,
+                  height: 30,
+
+                  display: 'grid',
+                  placeItems: 'center',
+
+                  background: 'rgba(255,255,255,.12)',
+
+                  border: '1px solid rgba(255,255,255,.18)',
+
+                  borderRadius: 9,
+
+                  color: '#fff',
+                  fontSize: 20,
+
+                  cursor: 'pointer',
+                  lineHeight: 1,
+
+                  transition: 'all .2s ease',
+                }}
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           {/* ================= MESSAGES ================= */}

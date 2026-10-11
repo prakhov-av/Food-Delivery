@@ -6,8 +6,8 @@ import { Status } from './enums/status.enum';
 import { OrderItem } from '../order-items/order-item.entity';
 
 /**
-   * Инкапсулирует операции доступа к данным соответствующего доменного ресурса.
-   */
+ * Инкапсулирует операции доступа к данным соответствующего доменного ресурса.
+ */
 @Injectable()
 export class OrdersRepository {
   constructor(
@@ -88,6 +88,13 @@ export class OrdersRepository {
     });
   }
 
+  async findActiveItemsByOrderId(orderId: number): Promise<OrderItem[]> {
+    return this.repository.manager.find(OrderItem, {
+      where: { order: { id: orderId }, active: true },
+      relations: { menuItem: true },
+      order: { id: 'ASC' },
+    });
+  }
   /**
    * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
    */
