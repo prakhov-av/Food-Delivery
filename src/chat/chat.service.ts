@@ -18,10 +18,20 @@ import { ChatLogService } from './chat-log.service';
 import { ChatLogKind } from './enums/chat-log-kind.enum';
 import { ChatHistoryItemDto } from './dto/chat-history-item.dto';
 
-import { BASE_PROMPT_FOR_AI_CHAT } from '../prompts/constants/prompt.constants';
+import {
+  BASE_PROMPT_FOR_AI_CHAT,
+  PUBLIC_PROMPT_PHRASES,
+} from '../prompts/constants/prompt.constants';
 
 const MAX_HISTORY_LIMIT = 100;
 const MAX_HISTORY_MESSAGES = 10;
+const CLASSIFIER_CACHE_TTL_MS = 10 * 60 * 1000;
+const CLASSIFIER_CACHE_LIMIT = 100;
+const EMBEDDING_CACHE_LIMIT = 200;
+interface CachedClassification {
+  raw: string;
+  expiresAt: number;
+}
 
 interface FinishParams {
   userId: number;
@@ -55,16 +65,149 @@ const shingles = (words: string[]): Set<string> => {
   return result;
 };
 
-const PROTECTED_PROMPT_TEXT: string = BASE_PROMPT_FOR_AI_CHAT.split(/\n\s*\n/)
-  .filter((paragraph: string): boolean => !/рестор/i.test(paragraph))
-  .join('\n');
+const PROMPT_WORDS: string[] = toWords(BASE_PROMPT_FOR_AI_CHAT);
 
-const PROMPT_SHINGLES: Set<string> = shingles(toWords(PROTECTED_PROMPT_TEXT));
+// Слова промпта, входящие в разрешённые для повтора фразы, не защищаем.
+const PUBLIC_WORD_MASK: boolean[] = PROMPT_WORDS.map((): boolean => false);
+
+for (const phrase of PUBLIC_PROMPT_PHRASES.map(toWords)) {
+  for (let i = 0; i + phrase.length <= PROMPT_WORDS.length; i++) {
+    if (
+      phrase.every(
+        (word: string, j: number): boolean => PROMPT_WORDS[i + j] === word,
+      )
+    ) {
+      phrase.forEach((_: string, j: number): void => {
+        PUBLIC_WORD_MASK[i + j] = true;
+      });
+    }
+  }
+}
+
+const PROMPT_SHINGLES: Set<string> = new Set<string>();
+
+for (let i = 0; i + LEAK_SHINGLE_SIZE <= PROMPT_WORDS.length; i++) {
+  if (!PUBLIC_WORD_MASK.slice(i, i + LEAK_SHINGLE_SIZE).some(Boolean)) {
+    PROMPT_SHINGLES.add(PROMPT_WORDS.slice(i, i + LEAK_SHINGLE_SIZE).join(' '));
+  }
+}
 
 const leaksPrompt = (answer: string): boolean =>
   [...shingles(toWords(answer))].some((s: string): boolean =>
     PROMPT_SHINGLES.has(s),
   );
+
+const INJECTION_PATTERNS: RegExp[] = [
+  /системн\p{L}*\s+(?:инструкци\p{L}*|промпт\p{L}*)/iu,
+  /(?:покажи|выведи|напиши|повтори|процитируй|раскрой|выдай|пришли|скажи|распечатай|перечисли)\p{L}*\s+(?:мне\s+)?(?:все\s+)?(?:свои|свой|твои|твой|ваши|ваш|внутренние|скрытые)\s+(?:инструкци\p{L}*|промпт\p{L}*)/iu,
+  /(?:игнорируй|проигнорируй|забудь|отмени)\p{L}*\s+(?:все\s+)?(?:предыдущ\p{L}*|прежн\p{L}*|прошл\p{L}*|свои|системн\p{L}*)\s+(?:инструкци\p{L}*|указани\p{L}*)/iu,
+  /(?:system|hidden|initial|internal)\s+(?:prompt|instructions?)/i,
+  /(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:the\s+|your\s+)?(?:previous|prior|above|earlier|system)\s+(?:instructions?|prompts?|rules)/i,
+  /(?:reveal|show|print|repeat|display|output)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+)?(?:prompt|instructions?)/i,
+];
+
+const isInjectionAttempt = (request: string): boolean =>
+  INJECTION_PATTERNS.some((pattern: RegExp): boolean => pattern.test(request));
+
+const CAPABILITIES_ANSWER =
+  'Я могу помочь с правилами сервиса (рестораны, меню, заказы и статусы, доставка, регистрация и вход) и вашими текущими заказами.';
+const GREETING_ANSWER = `Здравствуйте! ${CAPABILITIES_ANSWER}`;
+
+// Совпадение только полное, после нормализации (регистр, пунктуация):
+// «Привет, как отменить заказ?» идёт обычным путём через модель.
+const GREETINGS: Set<string> = new Set<string>([
+  'привет',
+  'приветствую',
+  'здравствуй',
+  'здравствуйте',
+  'добрый день',
+  'добрый вечер',
+  'доброе утро',
+  'hello',
+  'hi',
+  'hey',
+]);
+
+const CAPABILITY_QUESTIONS: Set<string> = new Set<string>([
+  'что ты умеешь',
+  'что вы умеете',
+  'что ты можешь',
+  'что вы можете',
+  'чем ты можешь помочь',
+  'чем вы можете помочь',
+  'чем можешь помочь',
+  'о чем можно спросить',
+  'о чём можно спросить',
+  'что можно спросить',
+  'what can you do',
+  'help',
+  'помощь',
+]);
+
+const cannedAnswer = (request: string): string | undefined => {
+  const normalized: string = toWords(request).join(' ');
+
+  if (GREETINGS.has(normalized)) {
+    return GREETING_ANSWER;
+  }
+
+  if (CAPABILITY_QUESTIONS.has(normalized)) {
+    return CAPABILITIES_ANSWER;
+  }
+
+  return undefined;
+};
+
+/**
+ * C4: запрос про конкретный заказ узнаём без LLM-классификатора.
+ *
+ * Нужны оба признака сразу: номер заказа в тексте и признак живых данных
+ * («что в», «статус», «когда доставят»). По одному номеру шаблон не срабатывает:
+ * «Как отменить заказ 195?» — это вопрос про правила, а не про данные заказа.
+ */
+const ORDER_NUMBER_PATTERN: RegExp =
+  /(?<![\p{L}\p{N}])заказ(?:а|е|у|ом)?\s*(?:№\s*)?(\d{1,9})(?![\p{L}\p{N}])/iu;
+
+const LIVE_ORDER_MARKERS: RegExp[] = [
+  /(?<![\p{L}])что\s+в(?![\p{L}])/iu,
+  /(?<![\p{L}])статус(?:а|е|у|ом)?(?![\p{L}])/iu,
+  /(?<![\p{L}])когда\s+достав/iu,
+];
+
+// Вопросы о правилах и процедурах («Как изменить статус заказа 195?»): маркер
+// «статус» и номер там есть, но данные заказа не нужны, нужна база знаний.
+const NOT_ABOUT_ORDER_DATA: RegExp =
+  /(?<![\p{L}])(?:как(?![\p{L}])|можно|нужно|надо|почему|зачем|правил\p{L}*|что\s+делать|что\s+значит|что\s+означает|измен\p{L}*|отмен\p{L}*|оформ\p{L}*|созда\p{L}*|оплат\p{L}*|верн\p{L}*|жалоб\p{L}*|принять|принима\p{L}*)/iu;
+
+/** Номер заказа из текста запроса, если это явно запрос про данные заказа. */
+const matchLiveOrderId = (request: string): number | undefined => {
+  const orderMatch: RegExpExecArray | null = ORDER_NUMBER_PATTERN.exec(request);
+
+  if (orderMatch === null) {
+    return undefined;
+  }
+
+  // Два числа и больше («заказ 195 за 2 часа», «заказы 195 и 196»): не гадаем.
+  if ((request.match(/(?<!\p{N})\d+(?!\p{N})/gu) ?? []).length !== 1) {
+    return undefined;
+  }
+
+  if (NOT_ABOUT_ORDER_DATA.test(request)) {
+    return undefined;
+  }
+
+  const hasLiveMarker: boolean = LIVE_ORDER_MARKERS.some(
+    (marker: RegExp): boolean => marker.test(request),
+  );
+
+  if (!hasLiveMarker) {
+    return undefined;
+  }
+
+  const orderId: number = Number(orderMatch[1]);
+
+  return Number.isInteger(orderId) && orderId > 0 ? orderId : undefined;
+};
 
 const NO_KNOWLEDGE_ANSWER =
   'В базе знаний нет информации по этому вопросу. Попробуйте переформулировать вопрос.';
@@ -90,6 +233,10 @@ export class ChatService {
     number
   >();
 
+  private readonly classificationCache: Map<string, CachedClassification> =
+    new Map();
+  private readonly embeddingCache: Map<string, Promise<number[]>> = new Map();
+
   constructor(
     private readonly embeddingsService: EmbeddingsService,
     private readonly vectorStorageService: VectorStorageService,
@@ -99,7 +246,89 @@ export class ChatService {
     private readonly contextService: ContextService,
     private readonly chatLogService: ChatLogService,
   ) {}
+  private shouldPrefetchEmbedding(request: string): boolean {
+    return !/заказ/i.test(request);
+  }
 
+  private embedQuery(text: string): Promise<number[]> {
+    const cached: Promise<number[]> | undefined = this.embeddingCache.get(text);
+
+    if (cached) {
+      return cached;
+    }
+
+    const pending: Promise<number[]> = this.embeddingsService
+      .generateEmbeddings([text])
+      .then((vectors: number[][]): number[] => vectors[0]);
+
+    this.embeddingCache.set(text, pending);
+
+    if (this.embeddingCache.size > EMBEDDING_CACHE_LIMIT) {
+      const oldest: string | undefined = this.embeddingCache
+        .keys()
+        .next().value;
+      if (oldest !== undefined) {
+        this.embeddingCache.delete(oldest);
+      }
+    }
+
+    pending.catch((): void => {
+      this.embeddingCache.delete(text);
+    });
+
+    return pending;
+  }
+
+  private classificationCacheKey(
+    userRole: Role,
+    request: string,
+    history: ChatMessage[],
+    lastOrderId: number | undefined,
+  ): string {
+    const tail: string = history
+      .slice(-2)
+      .map((message: ChatMessage): string => message.userRequest)
+      .join('|');
+
+    return `${userRole}|${lastOrderId ?? ''}|${tail}|${request}`;
+  }
+
+  private readClassificationCache(key: string): string | undefined {
+    const hit: CachedClassification | undefined =
+      this.classificationCache.get(key);
+
+    if (!hit) {
+      return undefined;
+    }
+
+    if (hit.expiresAt <= Date.now()) {
+      this.classificationCache.delete(key);
+      return undefined;
+    }
+
+    return hit.raw;
+  }
+
+  private rememberClassification(key: string, raw: string): void {
+    if (!raw.includes('"documentType"')) {
+      return;
+    }
+
+    this.classificationCache.set(key, {
+      raw,
+      expiresAt: Date.now() + CLASSIFIER_CACHE_TTL_MS,
+    });
+
+    if (this.classificationCache.size > CLASSIFIER_CACHE_LIMIT) {
+      const oldest: string | undefined = this.classificationCache
+        .keys()
+        .next().value;
+
+      if (oldest !== undefined) {
+        this.classificationCache.delete(oldest);
+      }
+    }
+  }
   private protectPrompt(answer: string): {
     answer: string;
     blocked: boolean;
@@ -123,6 +352,55 @@ export class ChatService {
     const chatHistory: ChatMessage[] =
       await this.getChatHistoryByUserId(userId);
 
+    // Фильтр стоит после загрузки истории: иначе finish() создаст в памяти
+    // окно из одной записи и сохранённая переписка не подтянется из БД.
+    if (isInjectionAttempt(request)) {
+      this.logger.warn(`Prompt injection pattern in request: userId=${userId}`);
+
+      return this.finish({
+        userId,
+        userRole,
+        request,
+        answer: PROMPT_LEAK_ANSWER,
+        kind: ChatLogKind.BLOCKED,
+        documentType: DocumentType.SYSTEM,
+      });
+    }
+
+    // Приветствия и «что ты умеешь» не требуют ни модели, ни поиска.
+    const canned: string | undefined = cannedAnswer(request);
+
+    if (canned !== undefined) {
+      return this.finish({
+        userId,
+        userRole,
+        request,
+        answer: canned,
+        kind: ChatLogKind.KNOWLEDGE,
+        documentType: DocumentType.SYSTEM,
+      });
+    }
+
+    // C4: запрос про конкретный заказ узнаём без LLM-классификатора.
+    const liveOrderId: number | undefined = matchLiveOrderId(request);
+
+    if (liveOrderId !== undefined) {
+      const classification: ChatClassification = {
+        documentType: DocumentType.ORDER,
+        liveDataRequired: true,
+        resource: LiveDataResource.ORDER,
+        resourceId: liveOrderId,
+      };
+
+      return this.answerLive(
+        classification,
+        request,
+        userId,
+        userRole,
+        chatHistory,
+      );
+    }
+
     const classifierPrompt: string = this.promptService
       .buildPromptForDocumentType()
       .withUserRole(userRole)
@@ -131,68 +409,64 @@ export class ChatService {
       .withQuestion(request)
       .build();
 
-    this.logger.debug(
-      `AI classification request started: userId=${userId}, provider=configured, promptLength=${classifierPrompt.length}`,
+    const classificationKey: string = this.classificationCacheKey(
+      userRole,
+      request,
+      chatHistory,
+      this.lastOrderIds.get(userId),
     );
 
-    const classificationResponse: string =
-      await this.aiService.generateResponse(classifierPrompt);
+    const cachedClassification: string | undefined =
+      this.readClassificationCache(classificationKey);
+
+    const prefetchedEmbedding: Promise<number[]> | undefined =
+      cachedClassification === undefined &&
+      this.shouldPrefetchEmbedding(request)
+        ? this.embedQuery(request)
+        : undefined;
+
+    let classificationResponse: string;
+
+    if (cachedClassification !== undefined) {
+      classificationResponse = cachedClassification;
+    } else {
+      this.logger.debug(
+        `AI classification request started: userId=${userId}, provider=configured, promptLength=${classifierPrompt.length}`,
+      );
+
+      classificationResponse = await this.aiService.generateResponse(
+        classifierPrompt,
+        { classification: true },
+      );
+
+      this.rememberClassification(classificationKey, classificationResponse);
+    }
 
     const classification: ChatClassification = this.classify(
       classificationResponse,
     );
 
     if (classification.liveDataRequired) {
-      const liveData: LiveDataResult = await this.liveDataService.getLiveData(
+      return this.answerLive(
         classification,
-        userId,
-        userRole,
-      );
-
-      if (liveData.orderId !== undefined) {
-        this.lastOrderIds.set(userId, liveData.orderId);
-      } else {
-        this.lastOrderIds.delete(userId);
-      }
-
-      const prompt: string = this.promptService
-        .buildPromptForChat()
-        .withUserRole(userRole)
-        .withContext([liveData.context])
-        .withChatHistory(chatHistory)
-        .withQuestion(request)
-        .build();
-
-      this.logger.debug(
-        `AI chat request started: userId=${userId}, mode=live-data, promptLength=${prompt.length}`,
-      );
-
-      const protectedAnswer: { answer: string; blocked: boolean } =
-        this.protectPrompt(await this.aiService.generateResponse(prompt));
-
-      return this.finish({
-        userId,
-        userRole,
         request,
-        answer: protectedAnswer.answer,
-        kind: protectedAnswer.blocked ? ChatLogKind.BLOCKED : ChatLogKind.LIVE,
-        documentType: classification.documentType,
-      });
+        userId,
+        userRole,
+        chatHistory,
+      );
     }
 
     const documentType: DocumentType = classification.documentType;
 
     const searchQuery: string = classification.standaloneQuestion ?? request;
 
-    if (searchQuery !== request) {
-      this.logger.debug(
-        `Search query rewritten from chat history: length=${searchQuery.length}`,
-      );
-    }
+    let embedding: number[];
 
-    const embedding: number[] = (
-      await this.embeddingsService.generateEmbeddings([searchQuery])
-    )[0];
+    if (prefetchedEmbedding && searchQuery === request) {
+      embedding = await prefetchedEmbedding;
+    } else {
+      embedding = await this.embedQuery(searchQuery);
+    }
 
     let relevantChunks: QdrantResult[] =
       await this.vectorStorageService.getRelevantChunkByAccess(
@@ -296,6 +570,54 @@ export class ChatService {
     }));
   }
 
+  /**
+   * Ответ по живым данным: контекст заказа уходит в модель, ответ сохраняется
+   * в лог без текста. Используется и после классификатора, и из fast-path C4.
+   */
+  private async answerLive(
+    classification: ChatClassification,
+    request: string,
+    userId: number,
+    userRole: Role,
+    chatHistory: ChatMessage[],
+  ): Promise<string> {
+    const liveData: LiveDataResult = await this.liveDataService.getLiveData(
+      classification,
+      userId,
+      userRole,
+    );
+
+    if (liveData.orderId !== undefined) {
+      this.lastOrderIds.set(userId, liveData.orderId);
+    } else {
+      this.lastOrderIds.delete(userId);
+    }
+
+    const prompt: string = this.promptService
+      .buildPromptForChat()
+      .withUserRole(userRole)
+      .withContext([liveData.context])
+      .withChatHistory(chatHistory)
+      .withQuestion(request)
+      .build();
+
+    this.logger.debug(
+      `AI chat request started: userId=${userId}, mode=live-data, promptLength=${prompt.length}`,
+    );
+
+    const protectedAnswer: { answer: string; blocked: boolean } =
+      this.protectPrompt(await this.aiService.generateResponse(prompt));
+
+    return this.finish({
+      userId,
+      userRole,
+      request,
+      answer: protectedAnswer.answer,
+      kind: protectedAnswer.blocked ? ChatLogKind.BLOCKED : ChatLogKind.LIVE,
+      documentType: classification.documentType,
+    });
+  }
+
   private async finish(params: FinishParams): Promise<string> {
     this.addChatHistoryByUserId(params.userId, params.request, params.answer);
 
@@ -322,7 +644,8 @@ export class ChatService {
         userId,
         MAX_HISTORY_MESSAGES,
       );
-      this.chatHistory.set(userId, history);
+      // Копия: массив принадлежит сервису логов, кэшировать его нельзя.
+      this.chatHistory.set(userId, [...history]);
     }
 
     return history.slice(-MAX_HISTORY_MESSAGES);

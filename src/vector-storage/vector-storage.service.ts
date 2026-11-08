@@ -11,15 +11,15 @@ import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { DocumentVersionConflictException } from '../exceptions/types/document-version-conflict.exception';
 
 /**
-   * Преобразует фрагменты документов в эмбеддинги и точки Qdrant, управляет версиями документов и выполняет поиск с учётом типа документа и роли пользователя.
-   */
+ * Преобразует фрагменты документов в эмбеддинги и точки Qdrant, управляет версиями документов и выполняет поиск с учётом типа документа и роли пользователя.
+ */
 @Injectable()
 export class VectorStorageService {
   constructor(
     private readonly embeddingsService: EmbeddingsService,
     private readonly client: QdrantClient,
   ) {}
-/**
+  /**
    * Создаёт эмбеддинги для фрагментов, формирует точки Qdrant с текстом и метаданными доступа и сохраняет их в векторное хранилище. При обновлении документа сначала проверяется версия и архивируется прежняя версия.
    * @param payloads Фрагменты текста с метаданными документа.
    * @param documentId Стабильный идентификатор документа между его версиями.
@@ -96,7 +96,7 @@ export class VectorStorageService {
     payload.index = chunk.index;
     return payload;
   }
-/**
+  /**
    * Ищет релевантные фрагменты по вектору запроса с учётом разрешений пользователя. Векторная база фильтрует результаты по роли и, если передан, по типу документа.
    * @param embedding Векторное представление пользовательского запроса.
    * @param documentType Тип документа для дополнительного ограничения поиска; undefined означает поиск по всем доступным типам.

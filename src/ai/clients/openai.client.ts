@@ -7,8 +7,8 @@ import { OpenAiEmbeddingsResponse } from '../types/openai/openai-embeddings-resp
 import { OpenAiEmbedding } from '../types/openai/openai-embedding';
 
 /**
-   * Адаптирует запросы к API OpenAI для генерации текста и эмбеддингов и преобразует ответы провайдера в типы приложения.
-   */
+ * Адаптирует запросы к API OpenAI для генерации текста и эмбеддингов и преобразует ответы провайдера в типы приложения.
+ */
 @Injectable()
 export class OpenAiClient {
   constructor(private readonly configService: ConfigService) {}

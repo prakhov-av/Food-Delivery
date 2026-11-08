@@ -6,15 +6,17 @@ import { GeminiChatResponse } from '../types/gemini/gemini-chat-response';
 import { GeminiEmbedRequest } from '../types/gemini/gemini-embed-request';
 import { GeminiEmbedResponse } from '../types/gemini/gemini-embed-response';
 
-/**
-   * Адаптирует запросы к API Google Gemini для генерации текста и эмбеддингов и преобразует ответы провайдера в типы приложения.
-   */
 @Injectable()
 export class GeminiClient {
   constructor(private readonly configService: ConfigService) {}
 
-  async generateContent(request: GeminiChatRequest): Promise<string> {
-    const baseUrl: string = this.configService.getOrThrow('GEMINI_API_URL');
+  async generateContent(
+    request: GeminiChatRequest,
+    classifierUrl?: string,
+  ): Promise<string> {
+    const baseUrl: string =
+      classifierUrl?.trim() || this.configService.getOrThrow('GEMINI_API_URL');
+
     const key: string = this.configService.getOrThrow('GEMINI_API_KEY');
     const url: string = baseUrl + key;
 
@@ -28,6 +30,7 @@ export class GeminiClient {
     const baseUrl: string = this.configService.getOrThrow(
       'GEMINI_EMBEDDING_URL',
     );
+
     const key: string = this.configService.getOrThrow('GEMINI_API_KEY');
     const url: string = baseUrl + key;
 

@@ -89,8 +89,8 @@ import { CsrfMiddleware } from './security/csrf.middleware';
   ],
 })
 /**
-   * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
-   */
+ * Объявляет модуль NestJS и связывает контроллеры, провайдеры и зависимости соответствующей функциональной области.
+ */
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     // Origin-проверка для всех маршрутов, меняющих состояние.

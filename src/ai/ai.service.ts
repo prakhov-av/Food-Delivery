@@ -11,8 +11,11 @@ import { OpenAiRequest } from './types/openai/openai-request';
 import { ConfigurationException } from '../exceptions/types/configuration.exception';
 
 /**
-   * Предоставляет единый интерфейс генерации текстовых ответов и эмбеддингов, скрывая детали выбранного AI-провайдера.
-   */
+ * Предоставляет единый интерфейс генерации текстовых ответов и эмбеддингов, скрывая детали выбранного AI-провайдера.
+ */
+export interface GenerateOptions {
+  classification?: boolean;
+}
 @Injectable()
 export class AiService {
   constructor(
@@ -24,7 +27,11 @@ export class AiService {
   /**
    * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
    */
-  async generateResponse(prompt: string): Promise<string> {
+
+  async generateResponse(
+    prompt: string,
+    options?: GenerateOptions,
+  ): Promise<string> {
     const generationAiProvider: string = this.configService.getOrThrow(
       'PRIMARY_GENERATION_AI_PROVIDER',
       'gemini',
@@ -34,14 +41,23 @@ export class AiService {
       case 'gemini': {
         const part: GeminiPart = new GeminiPart();
         part.text = prompt;
-
         const content: GeminiContent = new GeminiContent();
         content.parts = [part];
-
         const request: GeminiChatRequest = new GeminiChatRequest();
         request.contents = [content];
-
-        return this.geminiClient.generateContent(request);
+        let classifierUrl: string | undefined;
+        if (options?.classification) {
+          request.generationConfig = {
+            temperature: 0,
+            maxOutputTokens: 256,
+            responseMimeType: 'application/json',
+          };
+          const configured: string | undefined = this.configService.get(
+            'GEMINI_CLASSIFIER_API_URL',
+          );
+          classifierUrl = configured?.trim() ? configured : undefined;
+        }
+        return this.geminiClient.generateContent(request, classifierUrl);
       }
 
       case 'openai': {

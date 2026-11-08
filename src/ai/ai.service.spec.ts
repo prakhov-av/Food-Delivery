@@ -38,9 +38,7 @@ describe('AiService', (): void => {
     it('should generate response through Gemini by default', async (): Promise<void> => {
       configService.getOrThrow.mockImplementation(
         (key: string, defaultValue?: unknown): any =>
-          key === 'PRIMARY_GENERATION_AI_PROVIDER'
-            ? defaultValue
-            : undefined,
+          key === 'PRIMARY_GENERATION_AI_PROVIDER' ? defaultValue : undefined,
       );
       geminiClient.generateContent.mockResolvedValue('gemini answer');
 
@@ -105,9 +103,7 @@ describe('AiService', (): void => {
     it('should propagate an error from Gemini', async (): Promise<void> => {
       configService.getOrThrow.mockImplementation(
         (key: string, defaultValue?: unknown): any =>
-          key === 'PRIMARY_GENERATION_AI_PROVIDER'
-            ? defaultValue
-            : undefined,
+          key === 'PRIMARY_GENERATION_AI_PROVIDER' ? defaultValue : undefined,
       );
       const error: Error = new Error('Gemini failed');
       geminiClient.generateContent.mockRejectedValue(error);
@@ -120,9 +116,7 @@ describe('AiService', (): void => {
     it('should generate Gemini embeddings one text at a time', async (): Promise<void> => {
       configService.getOrThrow.mockImplementation(
         (key: string, defaultValue?: unknown): any =>
-          key === 'PRIMARY_EMBEDDINGS_AI_PROVIDER'
-            ? defaultValue
-            : undefined,
+          key === 'PRIMARY_EMBEDDINGS_AI_PROVIDER' ? defaultValue : undefined,
       );
       geminiClient.generateEmbedding
         .mockResolvedValueOnce([0.1, 0.2])
@@ -160,9 +154,7 @@ describe('AiService', (): void => {
     it('should return an empty array for empty Gemini input', async (): Promise<void> => {
       configService.getOrThrow.mockImplementation(
         (key: string, defaultValue?: unknown): any =>
-          key === 'PRIMARY_EMBEDDINGS_AI_PROVIDER'
-            ? defaultValue
-            : undefined,
+          key === 'PRIMARY_EMBEDDINGS_AI_PROVIDER' ? defaultValue : undefined,
       );
 
       const result: number[][] = await service.generateEmbeddings([]);
@@ -223,9 +215,7 @@ describe('AiService', (): void => {
     it('should propagate an error from Gemini embeddings', async (): Promise<void> => {
       configService.getOrThrow.mockImplementation(
         (key: string, defaultValue?: unknown): any =>
-          key === 'PRIMARY_EMBEDDINGS_AI_PROVIDER'
-            ? defaultValue
-            : undefined,
+          key === 'PRIMARY_EMBEDDINGS_AI_PROVIDER' ? defaultValue : undefined,
       );
       const error: Error = new Error('Embedding failed');
       geminiClient.generateEmbedding.mockRejectedValue(error);
