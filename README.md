@@ -2,99 +2,46 @@
 
 v1.0.12
 
-A food delivery service. Customers order from restaurants, managers confirm and cook, couriers deliver, admins keep an eye on everything. NestJS backend, React frontend, a RAG-based assistant that also knows about your live orders, and an audit log that records who did what.
+A food delivery service. Customers order from restaurants, managers confirm and cook, couriers deliver, admins keep an eye on everything. NestJS backend, React frontend, an assistant that answers from a knowledge base and knows your live orders, and an audit log of who did what.
 
-The project is deployed on DigitalOcean (backend and frontend on App Platform, PostgreSQL as a managed database, Qdrant on a Droplet). See [Deployment](#deployment-digitalocean).
+The project runs on DigitalOcean (backend and frontend on App Platform, PostgreSQL as a managed database, Qdrant on a Droplet). See [Deployment](#deployment-digitalocean).
 
 - Frontend: https://fds-frontend-app-v4kqn.ondigitalocean.app
 - Backend API: https://fds-app-cke6h.ondigitalocean.app
 
 This is an educational project. Demo accounts and demo data are for local development and presentations only.
 
-## Project structure
+## Stack and layout
+
+Backend: NestJS 11, TypeORM 1.1, PostgreSQL 15+, Qdrant over HTTP (optional API key), JWT in httpOnly cookies, `@nestjs/throttler` rate limiting, CSRF Origin check for state-changing requests, Swagger, Winston, Nodemailer, Mammoth for DOCX, `pdf-parse` for PDF, `class-validator`. Frontend: Vite 6, React 18, TypeScript, a native `fetch` client with cookie auth and automatic token refresh, and a dev-server proxy. Tests: Jest, ESLint and Prettier.
 
 ```text
-Food-Delivery/
-├── src/                    # Backend (NestJS + TypeORM)
-│   ├── ai/                 # AI: chat, embeddings, RAG
-│   ├── audit/              # Audit log: entity, service, interceptor, admin API
-│   ├── auth/               # Authentication, JWT, guards, roles
-│   ├── chat/               # RAG chat and live order data
-│   ├── confirmation-codes/ # Email confirmation
-│   ├── email/              # Email service
-│   ├── embeddings/         # Embeddings service
-│   ├── ingestion/          # TXT, PDF, DOCX processing, safety check, quarantine
-│   ├── exceptions/         # Global error handling
-│   ├── logging/            # Winston logging, secret masking
-│   ├── restaurants/        # Restaurants API
-│   ├── menus/              # Menus API
-│   ├── menu-items/         # Menu items API
-│   ├── orders/             # Orders API, status rules, limits (validation/)
-│   ├── order-items/        # Order items API
-│   ├── security/           # CSRF Origin check middleware
-│   ├── users/              # Users
-│   ├── vector-storage/     # Qdrant client and storage
-│   ├── prompts/            # AI prompts
-│   └── main.ts             # Entry point
-├── frontend/               # React SPA
-│   ├── src/
-│   │   ├── views/          # UI by role: restaurants, menus, dishes, orders, users, audit, upload, auth
-│   │   ├── ChatWidget.tsx  # Floating assistant
-│   │   ├── api.ts          # HTTP client: cookies, automatic token refresh, JSON and multipart
-│   │   ├── config.ts       # UI constants and order limits
-│   │   ├── types.ts        # DTOs, role permissions, status transitions
-│   │   ├── ui.tsx          # Shared components and labels
-│   │   ├── App.tsx         # Main component
-│   │   └── styles.css
-│   └── vite.config.ts      # Dev-server proxy
-├── test/                   # Integration / API tests
-├── docs/
-│   └── knowledge-base/     # Starter documents for the assistant (+ demo/ for the safety check)
-└── database-demo/          # Demo data for local DB
+src/                    # Backend (NestJS + TypeORM)
+├── ai/                 # AI provider clients, generation, embeddings
+├── audit/              # Audit log: entity, service, interceptor, admin API
+├── auth/               # Authentication, JWT, guards, roles
+├── chat/               # The assistant: classification, RAG, live order data
+├── confirmation-codes/ # Email confirmation
+├── embeddings/         # Embeddings service
+├── ingestion/          # TXT, PDF, DOCX processing, safety check, quarantine
+├── logging/            # Winston logging, secret masking
+├── orders/             # Orders API, status rules, limits (validation/)
+├── restaurants/ menus/ menu-items/ order-items/ users/   # Catalog and people
+├── security/           # CSRF Origin check middleware
+├── vector-storage/     # Qdrant client and storage
+├── prompts/            # AI prompts
+└── main.ts             # Entry point
+frontend/               # React SPA (views per role, ChatWidget, api client)
+test/                   # Integration / API tests
+docs/knowledge-base/    # Starter documents for the assistant (+ demo/ for the safety check)
+database-demo/          # Demo data for local DB
 ```
 
-## Tech stack
+## What it does
 
-### Backend
+### Roles
 
-- NestJS 11
-- TypeORM 1.1
-- PostgreSQL 15+ (managed PostgreSQL 18 in production)
-- Qdrant over HTTP (optional API key)
-- JWT + httpOnly cookies
-- Rate limiting (`@nestjs/throttler`)
-- CSRF Origin check for state-changing requests
-- Swagger
-- Winston
-- Nodemailer + `@nestjs-modules/mailer`
-- Mammoth for DOCX
-- `pdf-parse` for PDF
-- `class-validator` + `class-transformer`
-
-### Frontend
-
-- Vite 6
-- React 18
-- TypeScript
-- Native `fetch` client with cookie auth and automatic token refresh
-- Vite dev-server proxy
-
-### Development
-
-- Jest
-- ESLint + Prettier
-- ts-node for seed scripts
-
-## What's included
-
-### Authentication and roles
-
-- Registration with email confirmation: the email contains a link with a one-time code
-- JWT in httpOnly cookies (access token 15 minutes, refresh token 12 hours)
-- Refresh token endpoint
-- `GET /auth/me`: the frontend takes the current user and role from the server, nothing is stored in `localStorage`
-- 4 roles: `ADMIN`, `MANAGER`, `CUSTOMER`, `COURIER`
-- Role-based access control on the backend. The frontend only hides what the backend would reject anyway
+Four roles: `ADMIN`, `MANAGER`, `CUSTOMER`, `COURIER`. Access is enforced on the backend; the frontend only hides what the backend would reject anyway.
 
 | Capability | Customer | Courier | Manager | Admin |
 | --- | :---: | :---: | :---: | :---: |
@@ -111,22 +58,9 @@ Food-Delivery/
 | Upload documents to the knowledge base | no | no | no | yes |
 | Ask the assistant | yes | yes | yes | yes |
 
-### Core API
+### API
 
-Currently there are 46 API endpoints covering:
-
-- Auth (login, refresh, logout, current user)
-- Users
-- Restaurants
-- Menus (with `?restaurantId=` filter)
-- Menu items (with `?menuId=` filter)
-- Orders
-- Order items
-- Chat
-- Ingestion
-- Audit log
-
-Swagger documentation is available at `/swagger`.
+Swagger is available at `/swagger`. The API covers auth (login, refresh, logout, current user), users, restaurants, menus (`?restaurantId=`), menu items (`?menuId=`), orders, order items, chat, ingestion and the audit log.
 
 ### Orders
 
@@ -140,42 +74,19 @@ NEW ──► ACCEPTED ──► COOKING ──► READY ──► DELIVERING �
                                   └──────► CANCELLED_COURIER  (courier, from READY or DELIVERING)
 ```
 
-| Status | Meaning | Who moves it forward |
-| --- | --- | --- |
-| `NEW` | The customer's order, waiting for confirmation | Manager or admin accepts |
-| `ACCEPTED` | Confirmed by the manager | Manager or admin |
-| `COOKING` | Being prepared | Manager or admin |
-| `READY` | Ready, a courier is assigned here | Courier |
-| `DELIVERING` | With the courier | Courier |
-| `COMPLETED` | Delivered | |
-| `CANCELLED_CUSTOMER` | Cancelled by the customer | |
-| `CANCELLED_STAFF` | Cancelled by a manager or an admin | |
-| `CANCELLED_COURIER` | Courier refused the order | |
-
 An admin can force any status. The rules live in `src/orders/validation/order-status-change.ts` and are mirrored in `frontend/src/types.ts`.
 
 **Couriers.** When an order reaches `READY`, the system assigns a free courier automatically: an active courier who has no order in `READY` or `DELIVERING`. If nobody is free, the order stays unassigned and a manager or admin picks a courier by hand (`PATCH /orders/:id`). Manual assignment works until the order is closed.
 
-**Cart behaviour.**
+**Cart behaviour.** A customer has one open order per restaurant, and another dish from the same restaurant goes into it. Dishes must belong to the restaurant of the order, an empty order cannot be accepted, the total is recalculated on the server whenever an item changes, and closed orders cannot be modified.
 
-- A customer has one open order per restaurant. Adding another dish from the same restaurant goes into it
-- Dishes must belong to the restaurant of the order
-- An empty order cannot be accepted
-- The order total is recalculated on the server whenever an item is added, changed, removed or restored
-- Closed orders (completed or cancelled) cannot be modified
-
-**Limits** (defined in `src/orders/validation/order-limits.ts`, defaults at the time of writing):
-
-- 20 units of one dish
-- 20 different items per order
-- 500 order total
-- 5 active orders per customer
+**Limits** (`src/orders/validation/order-limits.ts`): 20 units of one dish, 20 different items per order, 500 order total, 5 active orders per customer.
 
 ### Audit log
 
 Every important action is written to the append-only `audit_logs` table: who (user id and role), what, on which object, the result (`SUCCESS`, `DENIED`, `FAILED`), IP, user agent and sanitized details. Passwords and tokens never reach the log.
 
-Recorded events include logins (successful and failed), registration and confirmation, user management, catalog changes, orders (creation, every status change with `from` and `to`, courier assignment, automatic or manual), order item changes, knowledge base uploads (`KNOWLEDGE_UPLOADED`, including failed and quarantined ones) and assistant queries (metadata only, never the text).
+Recorded events include logins (successful and failed), registration and confirmation, user management, catalog changes, orders (creation, every status change with `from` and `to`, courier assignment, automatic or manual), order item changes, knowledge base uploads (including failed and quarantined ones) and assistant queries (metadata only, never the text).
 
 - `GET /audit-logs` is admin-only, paginated (`page`, `pageSize` up to 100) and filterable by `actorId`, `action`, `entityType`, `entityId`, `from` and `to`
 - The admin UI has a **Journal** tab with filters and expandable details
@@ -213,7 +124,7 @@ The assistant answers general questions from documents stored in Qdrant. Admins 
 
 **Safety check and quarantine.** Before indexing, a model checks the document. Anything that tries to give instructions to the assistant (ignore the rules, change roles, hide something from the user, dictate a particular answer, reveal internal instructions) is treated as unsafe. An unsafe document is not indexed. It is saved to the quarantine table and the upload answers `422`, which the UI shows as a message. The verdict of the model is written to the backend log. The check is done by a language model, so borderline texts can be judged differently from run to run.
 
-**How the assistant picks documents.** The question is first classified into one document type, then the search runs only among chunks of that type that are allowed for the role of the asking user. If nothing is found, the assistant answers that the knowledge base has no information and does not call the model, so it cannot invent an answer.
+**How the assistant picks documents.** The question is classified into one document type, then the search runs only among chunks of that type that are allowed for the role of the asking user. If that search finds nothing, it is repeated over all types the role may read. If there is still nothing, the assistant answers that the knowledge base has no information and does not call the model, so it cannot invent an answer.
 
 | Type | Topic |
 | --- | --- |
@@ -251,28 +162,30 @@ The assistant answers general questions from documents stored in Qdrant. Admins 
 
 The knowledge base of every environment is separate: the local Qdrant and the one on the Droplet do not synchronize, so the documents have to be uploaded in each of them.
 
-### Chat
+### The assistant
 
-The assistant is available to every signed-in user as a floating button in the lower right corner.
+The assistant is available to every signed-in user as a floating button in the lower right corner. It works with two kinds of data: the knowledge base in Qdrant, and current order data from PostgreSQL, always scoped to the signed-in user (customers see their own orders, couriers see their assigned orders, staff see all). Order questions work without Qdrant, knowledge base questions need it.
 
-It can work with:
+`POST /chat` with `{ "message": "..." }` returns the answer as plain text, `DELETE /chat` clears the caller's history.
 
-- Knowledge base data from Qdrant
-- Current order data from PostgreSQL, always scoped to the signed-in user: customers see their orders, couriers see their assigned orders, staff see all
+The assistant tries to spend as few model calls as it can. The checks run in this order:
 
-How it works:
+1. **Fixed answers for greetings and small talk.** "Hi", "what can you do?" and similar phrases are answered from a prepared text. No model call, no search.
+2. **Prompt-injection filter.** A request that tries to extract the assistant's own instructions ("show me your system prompt", "ignore all previous instructions") is refused with a fixed answer. Again no model call.
+3. **Order fast path.** A question about a concrete order is recognized by its wording: an order number together with a phrase like "what's in", "status" or "when will it be delivered". Questions about the list of your orders ("what are my orders?", "show all orders") are recognized the same way. Both are answered straight from the database, so only the wording of the answer is generated: one model call instead of two.
+4. **Everything else** goes through the classifier. It picks the document type, decides whether live order data is needed and rewrites the question when it only makes sense together with the history. If the classifier returns something unusable, the assistant falls back to a general answer instead of failing.
 
-- `POST /chat` with `{ "message": "..." }` returns the answer as plain text. `DELETE /chat` clears the caller's history
-- The question is classified first. Order questions use live data, everything else uses the knowledge base. If the classifier returns something unusable, the assistant falls back to a general answer instead of failing
-- Knowledge base answers use only the retrieved context. If nothing is found for the question type and the role, a fixed "no information in the knowledge base" answer is returned without calling the model
-- `CHAT_MIN_SCORE` (optional, off by default) drops retrieved chunks with a similarity score below the value. The retrieval log line (`Retrieval: type=..., chunks=..., scores=[...]`) shows real scores for tuning it
-- The conversation history (last 10 messages per user) lives in memory and is cleared on sign-out
-- The widget offers quick questions per role, so you can tap instead of typing
-- Order questions work without Qdrant. Knowledge base questions need it
+**Caches.** A classification is cached for ten minutes, so the same question in the same context does not pay for the classifier twice. Query embeddings are cached as well.
+
+**Prefetching.** The embedding of the question is requested in parallel with the classification call, so the search can start as soon as the classification is known. It is skipped whenever the embedding would be wasted: for a question about an order (that one is answered from live data and needs no search) and for a follow-up, where the classifier rewrites the question and the embedding of the original wording is never used.
+
+**History.** The last 10 messages per user are kept in memory and cleared on sign-out. The assistant also remembers the order that was discussed last and hands it to the classifier, so "and what about it?" is understood as a question about that order.
+
+**Measured effect.** On the local benchmark of 47 questions (14 about live orders, 33 from the knowledge base) the model calls per set went from 94 to 77. Greetings and injection attempts cost nothing at all, a live order question needs one call instead of two (median 2.3 s → 1.3 s), and a follow-up about an order still needs two calls, because the classifier has to resolve the reference to the last discussed order.
 
 ### Frontend
 
-The frontend UI is role-based and currently includes:
+The frontend UI is role-based:
 
 - Restaurants, then menus, then dishes. Clicking a restaurant opens only its menus, clicking a menu opens only its dishes, with back buttons
 - Restaurant, menu and dish management for managers and admins. Customers and couriers never see management controls
@@ -290,19 +203,11 @@ The user role comes from `GET /auth/me`. The session is restored on page load an
 
 ### Backend
 
-Install dependencies:
-
 ```bash
 npm ci
 ```
 
-Create your `.env` file from the provided example:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-The example environment variables are already available in `.env.example`. The ones you will touch most often:
+Create your `.env` from the provided example (`Copy-Item .env.example .env` in PowerShell, `cp .env.example .env` otherwise). The variables you will touch most often:
 
 | Variable | Purpose |
 | --- | --- |
@@ -311,37 +216,26 @@ The example environment variables are already available in `.env.example`. The o
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Token signing secrets |
 | `QDRANT_URL` | **One** Qdrant address, for example `http://localhost:6333`. No commas, no `/dashboard` |
 | `QDRANT_API_KEY` | Optional. Sent as the `api-key` header when set. Leave it empty for a local Qdrant without protection |
-| `KNOWLEDGE_DB_COLLECTION_NAME`, `ARCHIVE_DB_COLLECTION_NAME` | Qdrant collections for active and archived document versions, for example `food_delivery` and `food_delivery-archive` |
+| `KNOWLEDGE_DB_COLLECTION_NAME`, `ARCHIVE_DB_COLLECTION_NAME` | Qdrant collections for active and archived document versions |
 | `CHUNK_SIZE`, `CHUNK_OVERLAP` | Chunking of documents, in words. The overlap must be smaller than the size |
 | `CORS_ORIGINS` | Addresses of the frontend, comma separated, for example `http://localhost:5173`. Also used by the CSRF check |
 | `CSRF_ALLOW_NO_ORIGIN` | `true` lets requests without an `Origin` header through (Postman, curl, tests). Local use only, never in production |
-| `CHAT_MIN_SCORE` | Optional minimum similarity score of retrieved chunks, `0` (off) by default |
+| `CHAT_MIN_SCORE` | Optional minimum similarity score of retrieved chunks, `0` (off) by default. See [Known limitations](#known-limitations) before setting it |
 | `SERVER_HOST`, `SERVER_PORT` | Used to build the link in the confirmation email |
 | `EMAIL_DRY_RUN` | `true` logs the confirmation link instead of sending an email |
 | `CHAT_DEBUG_PROMPTS` | `true` logs full assistant prompts (local debugging only) |
 | `PORT` | Backend port, `3000` by default |
 
-PostgreSQL has to be running before the backend starts (a Docker container is the easiest way). The AI provider and mail settings are listed in `.env.example`.
+The AI provider and mail settings are listed in `.env.example`.
 
-Start the backend:
-
-```bash
-npm run start:dev
-```
-
-Backend will be available at:
-
-```text
-http://localhost:3000
-```
-
-To populate the database with demo data:
+PostgreSQL has to be running before the backend starts (a Docker container is the easiest way). Then:
 
 ```bash
-npm run seed
+npm run start:dev      # http://localhost:3000
+npm run seed           # demo data, accounts come from the seed
 ```
 
-Demo accounts come from the seed data. Never reuse them outside local development.
+Never reuse the demo accounts outside local development.
 
 #### Qdrant (only for knowledge base answers)
 
@@ -368,13 +262,7 @@ Set `EMAIL_DRY_RUN=true`. After registration, take the code from the end of the 
 ```bash
 cd frontend
 npm install
-npm run dev
-```
-
-Frontend will be available at:
-
-```text
-http://localhost:5173
+npm run dev            # http://localhost:5173
 ```
 
 In development the browser talks to Vite, and Vite proxies API calls to the backend (`http://localhost:3000` by default). Useful variables:
@@ -386,88 +274,23 @@ In development the browser talks to Vite, and Vite proxies API calls to the back
 
 The proxied paths are listed in `frontend/vite.config.ts`. **When you add a new top-level backend route, add it there too**, otherwise Vite answers `404`.
 
-## Deployment (DigitalOcean)
+## Local benchmark (not part of the repository)
 
-The project runs in one DigitalOcean project with four resources:
+The benchmark harness lives in `src/chat/benchmark/` and `scripts/`, and both are listed in `.gitignore`. It is a private tool: nothing in the project depends on it, and it stays out of version control on purpose.
 
-| Component | DigitalOcean service | Notes |
-| --- | --- | --- |
-| Backend | App Platform app `fds-app` | NestJS API |
-| Frontend | App Platform app `fds-frontend-app` | The built React SPA |
-| Database | Managed PostgreSQL 18 (FRA1, 1 GB RAM) | `DB_SSL=true` |
-| Vector database | Droplet (FRA1, 512 MB RAM) | Qdrant in Docker, protected with an API key |
+It runs a fixed set of 47 questions against the real models and the real Qdrant and records, per question, how many calls each part of the assistant needed (model, embeddings, Qdrant), how long the question took and what kind of answer came back.
 
-```text
-Browser ──► fds-frontend-app (static SPA)
-   │
-   └─ fetch with cookies (VITE_API_URL) ──► fds-app (NestJS)
-                                              ├──► Managed PostgreSQL
-                                              ├──► AI provider (answers, embeddings)
-                                              └──► Qdrant on the Droplet (:6333, api-key)
+```powershell
+$env:BENCH='1'; $env:BENCH_VERSION='c7'; $env:BENCH_RUNS='1'; $env:BENCH_ALLOW_REMOTE='1'
+npx jest src/chat/benchmark --runInBand
 ```
 
-### 1. Database
+- `BENCH=1` switches the suite on, `BENCH_VERSION` names the run, `BENCH_RUNS` sets the number of passes (2 by default)
+- `BENCH_ALLOW_REMOTE=1` is required when `QDRANT_URL` points at a remote instance, the run refuses to start otherwise. Writes to Qdrant are blocked during a run
+- `--runInBand` is required, the scenarios share state and have to keep their order
+- Every run writes `benchmark-results/chat-<version>-<timestamp>.csv`. `scripts/bench-peek.mjs` prints it, `scripts/bench-status-diff.mjs` compares two runs, `scripts/bench-compare.mjs` summarizes all of them
 
-Create the managed PostgreSQL cluster and put its host, port, user, password and database name into the backend variables. Set `DB_SSL=true`. If the cluster restricts incoming connections, add the backend app as a trusted source. The schema is created by TypeORM (`synchronize: true`).
-
-### 2. Qdrant on the Droplet
-
-On the Droplet (with Docker installed), generate a key and start Qdrant with it. Run the two lines in one SSH session, and save the key in a password manager:
-
-```bash
-KEY=$(openssl rand -hex 32); echo $KEY
-docker run -d --name qdrant --restart unless-stopped -p 6333:6333 -v qdrant_storage:/qdrant/storage -e QDRANT__SERVICE__API_KEY=$KEY qdrant/qdrant
-```
-
-The volume keeps the data when the container is recreated, `--restart unless-stopped` brings Qdrant back after a reboot. Check that the protection works:
-
-```bash
-curl -i http://localhost:6333/collections                         # 401 without the key
-curl -i -H "api-key: <your key>" http://localhost:6333/collections   # 200 with the key
-```
-
-Open port 6333 in the DigitalOcean firewall of the Droplet. The dashboard (`http://<droplet-ip>:6333/dashboard`) asks for the key.
-
-### 3. Backend (`fds-app`)
-
-Set these environment variables in the app settings. Mark secrets as encrypted.
-
-| Variable | Value |
-| --- | --- |
-| `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE` | From the managed database |
-| `DB_SSL` | `true` |
-| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Long random strings (encrypted) |
-| `QDRANT_URL` | `http://<droplet-ip>:6333` |
-| `QDRANT_API_KEY` | The key from step 2 (encrypted) |
-| `KNOWLEDGE_DB_COLLECTION_NAME`, `ARCHIVE_DB_COLLECTION_NAME` | The collection names |
-| `CHUNK_SIZE`, `CHUNK_OVERLAP` | Chunking settings |
-| `CORS_ORIGINS` | The public address of the frontend app, without a trailing slash |
-| `SERVER_HOST`, `SERVER_PORT` | Public address of the backend, used in the confirmation email link |
-| AI provider and mail settings | As in `.env.example` |
-
-Do not set `CSRF_ALLOW_NO_ORIGIN` and `CHAT_DEBUG_PROMPTS` in production. If `CORS_ORIGINS` is empty, every state-changing request, login included, is rejected with `403`.
-
-When the backend starts it creates the two Qdrant collections if they do not exist. A wrong `QDRANT_URL` or `QDRANT_API_KEY` is not fatal at startup, it shows up later as errors in the chat and in uploads, so check the logs after the first deployment.
-
-### 4. Frontend (`fds-frontend-app`)
-
-Set `VITE_API_URL` to the public address of the backend. Vite reads it **at build time**, so changing it requires a new build of the frontend. The auth cookies are `Secure` and `SameSite=None`, which works because both apps are served over HTTPS.
-
-### 5. Fill the knowledge base
-
-Sign in as admin on the deployed frontend and upload the documents from `docs/knowledge-base/` in the **Upload document** tab. Then check:
-
-- the number of points of the active collection grew in the Qdrant dashboard
-- the assistant answers a question from each role's documents, and says that it has no information for questions outside the role
-
-### Deployment checklist
-
-1. Database created, backend variables set
-2. Qdrant running with an API key, port open
-3. Backend deployed, logs show no Qdrant errors
-4. Frontend built with the right `VITE_API_URL`
-5. `CORS_ORIGINS` contains the frontend address
-6. Knowledge base uploaded, chat checked under every role
+The history for the follow-up questions is prepared once before the run, so a scenario costs exactly what the question costs. Set `BENCH_INLINE_SETUP=1` to get the old behaviour, where the setup turns are part of the scenario time.
 
 ## Commands
 
@@ -504,6 +327,52 @@ Services that write to the audit log receive a mock `AuditService` (`{ record: j
 
 The integration and API tests call the backend without a browser, so they send no `Origin` header. They need `CSRF_ALLOW_NO_ORIGIN=true` or an explicit `Origin` header.
 
+## Deployment (DigitalOcean)
+
+One DigitalOcean project with four resources:
+
+| Component | DigitalOcean service | Notes |
+| --- | --- | --- |
+| Backend | App Platform app `fds-app` | NestJS API |
+| Frontend | App Platform app `fds-frontend-app` | The built React SPA |
+| Database | Managed PostgreSQL 18 (FRA1, 1 GB RAM) | `DB_SSL=true` |
+| Vector database | Droplet (FRA1, 512 MB RAM) | Qdrant in Docker, protected with an API key |
+
+```text
+Browser ──► fds-frontend-app (static SPA)
+   │
+   └─ fetch with cookies (VITE_API_URL) ──► fds-app (NestJS)
+                                              ├──► Managed PostgreSQL
+                                              ├──► AI provider (answers, embeddings)
+                                              └──► Qdrant on the Droplet (:6333, api-key)
+```
+
+**1. Database.** Create the managed PostgreSQL cluster and put its host, port, user, password and database name into the backend variables. Set `DB_SSL=true` and add the backend app as a trusted source if the cluster restricts incoming connections. The schema is created by TypeORM (`synchronize: true`).
+
+**2. Qdrant on the Droplet.** With Docker installed, generate a key and start Qdrant with it. Run both lines in one SSH session and save the key in a password manager:
+
+```bash
+KEY=$(openssl rand -hex 32); echo $KEY
+docker run -d --name qdrant --restart unless-stopped -p 6333:6333 -v qdrant_storage:/qdrant/storage -e QDRANT__SERVICE__API_KEY=$KEY qdrant/qdrant
+```
+
+The volume keeps the data when the container is recreated, `--restart unless-stopped` brings Qdrant back after a reboot. Open port 6333 in the Droplet firewall; the dashboard (`http://<droplet-ip>:6333/dashboard`) asks for the key.
+
+**3. Backend (`fds-app`).** Set the variables from the table above plus the AI provider and mail settings, and mark the secrets as encrypted. Do not set `CSRF_ALLOW_NO_ORIGIN` and `CHAT_DEBUG_PROMPTS` in production. If `CORS_ORIGINS` is empty, every state-changing request, login included, is rejected with `403`. A wrong `QDRANT_URL` or `QDRANT_API_KEY` is not fatal at startup, it shows up later as errors in the chat and in uploads, so check the logs after the first deployment.
+
+**4. Frontend (`fds-frontend-app`).** Set `VITE_API_URL` to the public address of the backend. Vite reads it **at build time**, so changing it requires a new build. The auth cookies are `Secure` and `SameSite=None`, which works because both apps are served over HTTPS.
+
+**5. Fill the knowledge base.** Sign in as admin on the deployed frontend and upload the documents from `docs/knowledge-base/`. Then check that the number of points of the active collection grew in the Qdrant dashboard, that the assistant answers a question from each role's documents, and that it says it has no information for questions outside the role.
+
+### Deployment checklist
+
+1. Database created, backend variables set
+2. Qdrant running with an API key, port open
+3. Backend deployed, logs show no Qdrant errors
+4. Frontend built with the right `VITE_API_URL`
+5. `CORS_ORIGINS` contains the frontend address
+6. Knowledge base uploaded, chat checked under every role
+
 ## Known limitations
 
 - `NEW` is both the cart and the request waiting for the manager, so a manager can accept an order while the customer is still adding dishes
@@ -517,8 +386,9 @@ The integration and API tests call the backend without a browser, so they send n
 - The Droplet has 512 MB of RAM, which is enough for a small knowledge base but not for a large one
 - The knowledge base of the local Qdrant and the one on the Droplet are separate and have to be filled separately
 - The document safety check is done by a language model and can give false positives or negatives. A quarantined document is stored without the model's reasoning, only a fixed reason, the verdict is in the backend log
-- The search returns the nearest chunks of the right type and role even if they are only loosely related, unless `CHAT_MIN_SCORE` is set
 - Document access is exactly the roles ticked in the upload form: Admin is not included automatically
+- **The search returns the nearest chunks of the right type and role even if they are only loosely related.** `CHAT_MIN_SCORE` can drop weak chunks, but there is no value that separates the useful chunks from the useless ones: in the local benchmark the best chunk of a relevant question scored as low as 0.31, while a question with no answer in the knowledge base scored up to 0.45 (a question about changing a password matches the document about signing in). A global threshold therefore costs more relevant answers than it saves, and the threshold is left off. The open question is a per-document-type calibration, not a single number
+- A question with no answer in the knowledge base is reported by the model itself ("I have no information about this"), so the exact wording, and with it the log kind, depends on the model. The answer could be normalized to a fixed text to make that deterministic
 
 ## Roadmap
 
@@ -529,6 +399,7 @@ The integration and API tests call the backend without a browser, so they send n
 - Migrations and a CI pipeline
 - Deployment hardening (swap, log rotation, connection pool, audit retention)
 - Reason of a quarantine verdict stored with the document, a list of quarantined documents in the admin UI
+- Retrieval calibrated per document type, so that a question without an answer is caught without a model call
 
 ## Troubleshooting
 
@@ -549,11 +420,10 @@ The integration and API tests call the backend without a browser, so they send n
 | Confirmation email never arrives locally | Use `EMAIL_DRY_RUN=true` and copy the link from the backend log |
 | Login works but the session is lost | Auth cookies are `Secure`. Use Chrome on `localhost`, or HTTPS elsewhere |
 
-## Документация исходного кода
+## Source code conventions
 
-В исходном коде используются комментарии JSDoc/TSDoc для описания ответственности ключевых компонентов, публичных операций и важных полей модели данных. Основное внимание уделено доменным сущностям, сервисам бизнес-логики, аутентификации и авторизации, обработке документов, RAG-контексту, эмбеддингам и интеграции с Qdrant.
+Public methods carry JSDoc/TSDoc comments that describe what the operation is for, its parameters, its result and the exceptions that matter. The focus is on the domain entities, the business logic, authentication and authorization, document processing, the RAG context, the embeddings and the Qdrant integration.
 
-Комментарии к публичным методам по возможности фиксируют назначение операции, параметры, результат и существенные исключения. Они описывают контракт кода и не заменяют DTO-валидацию, Swagger-документацию REST API или тесты.
+The comments describe the contract of the code. They do not replace DTO validation, the Swagger documentation of the REST API or the tests.
 
-При изменении бизнес-логики обновляйте соответствующие комментарии вместе с кодом. Не добавляйте комментарии к очевидным строкам: документируйте решения, ограничения доступа, побочные эффекты и неочевидные правила предметной области.
-
+When the business logic changes, update the matching comments with it. Do not comment the obvious lines: document the decisions, the access rules, the side effects and the rules of the domain that are not obvious from the code.

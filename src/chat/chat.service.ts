@@ -177,7 +177,7 @@ const LIVE_ORDER_MARKERS: RegExp[] = [
 // Вопросы о правилах и процедурах («Как изменить статус заказа 195?»): маркер
 // «статус» и номер там есть, но данные заказа не нужны, нужна база знаний.
 const NOT_ABOUT_ORDER_DATA: RegExp =
-  /(?<![\p{L}])(?:как(?![\p{L}])|можно|нужно|надо|почему|зачем|правил\p{L}*|что\s+делать|что\s+значит|что\s+означает|измен\p{L}*|отмен\p{L}*|оформ\p{L}*|созда\p{L}*|оплат\p{L}*|верн\p{L}*|жалоб\p{L}*|принять|принима\p{L}*)/iu;
+  /(?<![\p{L}])(?:как(?![\p{L}])|можно|нельзя|нужно|надо|должен|должна|должно|следует|выгодно|запрещ\p{L}*|почему|зачем|правил\p{L}*|что\s+делать|что\s+значит|что\s+означает|измен\p{L}*|отмен\p{L}*|оформ\p{L}*|созда\p{L}*|оплат\p{L}*|верн\p{L}*|жалоб\p{L}*|принять|принима\p{L}*)/iu;
 
 /** Номер заказа из текста запроса, если это явно запрос про данные заказа. */
 const matchLiveOrderId = (request: string): number | undefined => {
@@ -208,6 +208,48 @@ const matchLiveOrderId = (request: string): number | undefined => {
 
   return Number.isInteger(orderId) && orderId > 0 ? orderId : undefined;
 };
+
+/**
+ * C5: списочный запрос про заказы («какие у меня заказы», «все заказы»).
+ *
+ * Классификатор для таких фраз всегда отвечает одинаково: ORDER, живые данные,
+ * resourceId не указывается (список доступных заказов). Поэтому маркеров
+ * достаточно, чтобы собрать ту же классификацию без вызова модели.
+ */
+const ORDER_LIST_PATTERNS: RegExp[] = [
+  /(?<![\p{L}])какие\s+(?:у\s+меня\s+)?заказы(?![\p{L}])/iu,
+  /(?<![\p{L}])все\s+заказы(?![\p{L}])/iu,
+  /(?<![\p{L}])мои\s+заказы(?![\p{L}])/iu,
+  /(?<![\p{L}])моих\s+заказов(?![\p{L}])/iu,
+  /(?<![\p{L}])заказы\s+(?:сейчас\s+)?в\s+работе(?![\p{L}])/iu,
+  /(?<![\p{L}])заказы\s+мне\s+назначены(?![\p{L}])/iu,
+];
+
+/**
+ * «Мой заказ» — заказ один. Отвечаем про последний обсуждаемый: без него
+ * запрос остаётся за классификатором, который и решает, о каком заказе речь.
+ */
+const SINGLE_ORDER_POSSESSIVE: RegExp =
+  /(?<![\p{L}])мо(?:й|его|ю|я)\s+заказ(?![\p{L}])/iu;
+
+/**
+ * Признаки вопроса, который опирается на предыдущие реплики: местоимение,
+ * указывающее на уже названный объект, или союз в начале фразы.
+ */
+const FOLLOW_UP_PRONOUNS: RegExp =
+  /(?<![\p{L}])(?:его|её|ею|им|ими|нём|нему|него|неё|ней|из\s+них|у\s+них|у\s+него|у\s+неё)(?![\p{L}])/iu;
+
+const FOLLOW_UP_START: RegExp = /^\s*(?:а|и|итак|тоже|ну)(?![\p{L}])/iu;
+
+/**
+ * Название ресторана или блюда в середине фразы: первое слово пропускаем,
+ * иначе обычное начало предложения считалось бы именем собственным.
+ */
+const hasProperNoun = (text: string): boolean =>
+  text
+    .split(/\s+/)
+    .slice(1)
+    .some((word: string): boolean => /^[А-ЯЁA-Z][а-яёa-z]+$/.test(word));
 
 const NO_KNOWLEDGE_ANSWER =
   'В базе знаний нет информации по этому вопросу. Попробуйте переформулировать вопрос.';
@@ -246,8 +288,41 @@ export class ChatService {
     private readonly contextService: ContextService,
     private readonly chatLogService: ChatLogService,
   ) {}
-  private shouldPrefetchEmbedding(request: string): boolean {
-    return !/заказ/i.test(request);
+  /**
+   * Предзагружать эмбеддинг стоит только тогда, когда классификатор не станет
+   * переписывать вопрос: для уточняющих реплик он вернёт standaloneQuestion,
+   * и эмбеддинг исходной фразы уйдёт в пустоту (лишний вызов embeddings).
+   *
+   * Вопрос про заказы почти всегда уходит в live-ветку, где поиск не нужен.
+   */
+  private shouldPrefetchEmbedding(
+    request: string,
+    chatHistory: ChatMessage[],
+  ): boolean {
+    if (/заказ/i.test(request)) {
+      return false;
+    }
+
+    // Без истории классификатору нечего переписывать: поиск пойдёт по фразе
+    // пользователя, и предзагрузка точно пригодится.
+    if (chatHistory.length === 0) {
+      return true;
+    }
+
+    if (FOLLOW_UP_PRONOUNS.test(request) || FOLLOW_UP_START.test(request)) {
+      return false;
+    }
+
+    // Предыдущий вопрос был про конкретный ресторан или блюдо, а текущий
+    // их не повторяет: скорее всего, это уточняющая реплика.
+    const lastRequest: string =
+      chatHistory[chatHistory.length - 1]?.userRequest ?? '';
+
+    if (hasProperNoun(lastRequest) && !hasProperNoun(request)) {
+      return false;
+    }
+
+    return true;
   }
 
   private embedQuery(text: string): Promise<number[]> {
@@ -381,19 +456,13 @@ export class ChatService {
       });
     }
 
-    // C4: запрос про конкретный заказ узнаём без LLM-классификатора.
-    const liveOrderId: number | undefined = matchLiveOrderId(request);
+    // C4/C5/C6: запросы про заказы узнаём по словам, без LLM-классификатора.
+    const fastLiveClassification: ChatClassification | undefined =
+      this.matchLiveClassification(request, userId);
 
-    if (liveOrderId !== undefined) {
-      const classification: ChatClassification = {
-        documentType: DocumentType.ORDER,
-        liveDataRequired: true,
-        resource: LiveDataResource.ORDER,
-        resourceId: liveOrderId,
-      };
-
+    if (fastLiveClassification !== undefined) {
       return this.answerLive(
-        classification,
+        fastLiveClassification,
         request,
         userId,
         userRole,
@@ -421,7 +490,7 @@ export class ChatService {
 
     const prefetchedEmbedding: Promise<number[]> | undefined =
       cachedClassification === undefined &&
-      this.shouldPrefetchEmbedding(request)
+      this.shouldPrefetchEmbedding(request, chatHistory)
         ? this.embedQuery(request)
         : undefined;
 
@@ -568,6 +637,61 @@ export class ChatService {
       answer: log.answer,
       kind: log.kind,
     }));
+  }
+
+  /**
+   * Собирает классификацию живых данных по словам запроса, без вызова модели.
+   *
+   * Возвращает undefined, если по тексту нельзя однозначно понять, что нужны
+   * живые данные: тогда запрос идёт обычным путём, через классификатор.
+   */
+  private matchLiveClassification(
+    request: string,
+    userId: number,
+  ): ChatClassification | undefined {
+    const explicitOrderId: number | undefined = matchLiveOrderId(request);
+
+    if (explicitOrderId !== undefined) {
+      return {
+        documentType: DocumentType.ORDER,
+        liveDataRequired: true,
+        resource: LiveDataResource.ORDER,
+        resourceId: explicitOrderId,
+      };
+    }
+
+    // Вопросы о правилах («Как отменить все заказы?») — это база знаний.
+    if (NOT_ABOUT_ORDER_DATA.test(request)) {
+      return undefined;
+    }
+
+    const lastOrderId: number | undefined = this.lastOrderIds.get(userId);
+
+    // Список заказов пользователя.
+    if (
+      ORDER_LIST_PATTERNS.some((pattern: RegExp): boolean =>
+        pattern.test(request),
+      )
+    ) {
+      return {
+        documentType: DocumentType.ORDER,
+        liveDataRequired: true,
+        resource: LiveDataResource.ORDER,
+      };
+    }
+
+    // «Мой заказ»: последний обсуждаемый. Без него решение остаётся
+    // за классификатором: непонятно, о каком именно заказе речь.
+    if (lastOrderId !== undefined && SINGLE_ORDER_POSSESSIVE.test(request)) {
+      return {
+        documentType: DocumentType.ORDER,
+        liveDataRequired: true,
+        resource: LiveDataResource.ORDER,
+        resourceId: lastOrderId,
+      };
+    }
+
+    return undefined;
   }
 
   /**

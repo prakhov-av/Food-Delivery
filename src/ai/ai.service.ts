@@ -45,19 +45,27 @@ export class AiService {
         content.parts = [part];
         const request: GeminiChatRequest = new GeminiChatRequest();
         request.contents = [content];
-        let classifierUrl: string | undefined;
-        if (options?.classification) {
-          request.generationConfig = {
-            temperature: 0,
-            maxOutputTokens: 256,
-            responseMimeType: 'application/json',
-          };
-          const configured: string | undefined = this.configService.get(
-            'GEMINI_CLASSIFIER_API_URL',
-          );
-          classifierUrl = configured?.trim() ? configured : undefined;
+
+        if (!options?.classification) {
+          return this.geminiClient.generateContent(request);
         }
-        return this.geminiClient.generateContent(request, classifierUrl);
+
+        // Классификатору нужен строгий JSON и короткий ответ.
+        request.generationConfig = {
+          temperature: 0,
+          maxOutputTokens: 256,
+          responseMimeType: 'application/json',
+        };
+
+        const configured: string | undefined = this.configService.get(
+          'GEMINI_CLASSIFIER_API_URL',
+        );
+        const trimmed: string | undefined = configured?.trim();
+        const classifierUrl: string | undefined = trimmed ? trimmed : undefined;
+
+        return classifierUrl === undefined
+          ? this.geminiClient.generateContent(request)
+          : this.geminiClient.generateContent(request, classifierUrl);
       }
 
       case 'openai': {

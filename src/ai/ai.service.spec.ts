@@ -29,6 +29,7 @@ describe('AiService', (): void => {
 
     configService = {
       getOrThrow: jest.fn(),
+      get: jest.fn(),
     } as unknown as jest.Mocked<ConfigService>;
 
     service = new AiService(geminiClient, openAiClient, configService);
@@ -98,6 +99,56 @@ describe('AiService', (): void => {
       );
       expect(geminiClient.generateContent).not.toHaveBeenCalled();
       expect(openAiClient.generateContent).not.toHaveBeenCalled();
+    });
+
+    it('should ask Gemini for a strict JSON answer when the request is a classification', async (): Promise<void> => {
+      configService.getOrThrow.mockImplementation(
+        (key: string, defaultValue?: unknown): any =>
+          key === 'PRIMARY_GENERATION_AI_PROVIDER' ? defaultValue : undefined,
+      );
+      configService.get.mockReturnValue(undefined);
+      geminiClient.generateContent.mockResolvedValue(
+        '{"documentType":"SYSTEM"}',
+      );
+
+      await service.generateResponse('classify me', { classification: true });
+
+      expect(geminiClient.generateContent).toHaveBeenCalledTimes(1);
+      expect(geminiClient.generateContent).toHaveBeenCalledWith(
+        expect.objectContaining<GeminiChatRequest>({
+          contents: [
+            expect.objectContaining({
+              parts: [expect.objectContaining({ text: 'classify me' })],
+            }),
+          ],
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 256,
+            responseMimeType: 'application/json',
+          },
+        }),
+      );
+    });
+
+    it('should use the separate classifier URL when it is configured', async (): Promise<void> => {
+      configService.getOrThrow.mockImplementation(
+        (key: string, defaultValue?: unknown): any =>
+          key === 'PRIMARY_GENERATION_AI_PROVIDER' ? defaultValue : undefined,
+      );
+      configService.get.mockReturnValue('  https://classifier.example/api  ');
+      geminiClient.generateContent.mockResolvedValue(
+        '{"documentType":"SYSTEM"}',
+      );
+
+      await service.generateResponse('classify me', { classification: true });
+
+      expect(configService.get).toHaveBeenCalledWith(
+        'GEMINI_CLASSIFIER_API_URL',
+      );
+      expect(geminiClient.generateContent).toHaveBeenCalledWith(
+        expect.anything(),
+        'https://classifier.example/api',
+      );
     });
 
     it('should propagate an error from Gemini', async (): Promise<void> => {
