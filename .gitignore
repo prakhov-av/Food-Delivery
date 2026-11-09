@@ -56,7 +56,16 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
+# Private benchmark harness and its results
 benchmark-results
-path
-scripts
 /src/chat/benchmark
+scripts/bench-*.mjs
+
+# Local build artifacts
+frontend/tsconfig.tsbuildinfo
+
+# Local skill archives
+skill/*.zip
+
+# Stray files
+path

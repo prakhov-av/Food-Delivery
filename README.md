@@ -160,6 +160,13 @@ The assistant answers general questions from documents stored in Qdrant. Admins 
 
 `docs/knowledge-base/demo/` holds files for demonstrating the safety check: one normal document that passes and three that end up in quarantine (an open "ignore the rules" instruction, a role escalation with a request to reveal internal prompts, and a hidden instruction inside an otherwise normal document). Each exists as `.txt` and `.pdf`. Do not upload the quarantine samples as real content.
 
+The catalog part of the knowledge base can also be rebuilt from a running API instead of being written by hand. The helpers live in `scripts/` and are part of the repository:
+
+- `node scripts/generate-catalog-docs.mjs` reads the restaurants, menus and dishes through the API and writes `docs/knowledge-base/catalog/*.txt` together with `manifest.json`
+- `node scripts/upload-knowledge.mjs` uploads every file from the manifest through `POST /ingestion/upload`
+
+Both take their settings from the environment or from the `.env` file in the project root (`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `BASE_URL`, `ORIGIN`, `DOCS_DIR`); for another file set `$env:ENV_FILE = '.env.prod'`. The uploader also understands `ONLY_PREFIX` (upload only the documents whose id starts with it) and `DRY_RUN=1` (show what would be uploaded without sending anything). The generated documents are not tracked in git, so rebuild them after a fresh clone.
+
 The knowledge base of every environment is separate: the local Qdrant and the one on the Droplet do not synchronize, so the documents have to be uploaded in each of them.
 
 ### The assistant
@@ -276,7 +283,7 @@ The proxied paths are listed in `frontend/vite.config.ts`. **When you add a new 
 
 ## Local benchmark (not part of the repository)
 
-The benchmark harness lives in `src/chat/benchmark/` and `scripts/`, and both are listed in `.gitignore`. It is a private tool: nothing in the project depends on it, and it stays out of version control on purpose.
+The benchmark harness lives in `src/chat/benchmark/` and in the `scripts/bench-*.mjs` helpers, and all of them are listed in `.gitignore`. It is a private tool: nothing in the project depends on it, and it stays out of version control on purpose. The rest of `scripts/` (the knowledge base helpers) is tracked, see [Knowledge base](#knowledge-base).
 
 It runs a fixed set of 47 questions against the real models and the real Qdrant and records, per question, how many calls each part of the assistant needed (model, embeddings, Qdrant), how long the question took and what kind of answer came back.
 
