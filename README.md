@@ -22,6 +22,7 @@ src/                    # Backend (NestJS + TypeORM)
 ├── auth/               # Authentication, JWT, guards, roles
 ├── chat/               # The assistant: classification, RAG, live order data
 ├── confirmation-codes/ # Email confirmation
+├── guest-sessions/     # Guest session lifecycle and cookie identity
 ├── embeddings/         # Embeddings service
 ├── ingestion/          # TXT, PDF, DOCX processing, safety check, quarantine
 ├── logging/            # Winston logging, secret masking
@@ -60,7 +61,7 @@ Four roles: `ADMIN`, `MANAGER`, `CUSTOMER`, `COURIER`. Access is enforced on the
 
 ### API
 
-Swagger is available at `/swagger`. The API covers auth (login, refresh, logout, current user), users, restaurants, menus (`?restaurantId=`), menu items (`?menuId=`), orders, order items, chat, ingestion and the audit log.
+Swagger is available at `/swagger`. The API covers auth (login, refresh, logout, current user), guest sessions, users, restaurants, menus (`?restaurantId=`), menu items (`?menuId=`), orders, order items, chat, ingestion and the audit log. Guest order access is scoped to the guest session and is currently used internally by the assistant; there are no separate guest-order REST routes. See [Guest functionality](docs/GUEST-FUNCTIONALITY.md).
 
 ### Orders
 
@@ -102,6 +103,8 @@ Recorded events include logins (successful and failed), registration and confirm
 - Only admins create, edit, deactivate and re-role users. Admins cannot deactivate themselves or change their own role. An account deactivated by an admin cannot be revived through self-registration
 - Managers can list couriers (needed for assignment) but nothing else about users
 - Customers and couriers only ever see their own orders
+- Guest sessions use an HttpOnly `guest-session` cookie; the database stores only a SHA-256 token hash. Guest order and chat data are isolated by guest-session id
+- An invalid access-token cookie is not silently downgraded to a guest session
 - Knowledge base uploads are admin-only, and every document is checked before it is indexed (see [Knowledge base](#knowledge-base))
 - Qdrant on the Droplet requires an API key
 
@@ -171,9 +174,9 @@ The knowledge base of every environment is separate: the local Qdrant and the on
 
 ### The assistant
 
-The assistant is available to every signed-in user as a floating button in the lower right corner. It works with two kinds of data: the knowledge base in Qdrant, and current order data from PostgreSQL, always scoped to the signed-in user (customers see their own orders, couriers see their assigned orders, staff see all). Order questions work without Qdrant, knowledge base questions need it.
+The assistant is available to signed-in users and visitors with a guest session as a floating button in the lower right corner. It works with two kinds of data: the knowledge base in Qdrant, and current order data from PostgreSQL. Live order access is scoped to the authenticated user or the guest session; customers and guests see only their own orders, couriers see their assigned orders, and staff access follows their role permissions. Order questions work without Qdrant, knowledge base questions need it.
 
-`POST /chat` with `{ "message": "..." }` returns the answer as plain text, `DELETE /chat` clears the caller's history.
+`POST /chat` with `{ "message": "..." }` returns the answer as plain text. `GET /chat/history` reads the caller's history; `DELETE /chat` clears the active chat context and `DELETE /chat/history` clears stored history. The caller is identified by the access-token cookie or, for a guest, by the `guest-session` cookie. See [Guest functionality](docs/GUEST-FUNCTIONALITY.md) for the session and ownership rules.
 
 The assistant tries to spend as few model calls as it can. The checks run in this order:
 
@@ -186,7 +189,7 @@ The assistant tries to spend as few model calls as it can. The checks run in thi
 
 **Prefetching.** The embedding of the question is requested in parallel with the classification call, so the search can start as soon as the classification is known. It is skipped whenever the embedding would be wasted: for a question about an order (that one is answered from live data and needs no search) and for a follow-up, where the classifier rewrites the question and the embedding of the original wording is never used.
 
-**History.** The last 10 messages per user are kept in memory and cleared on sign-out. The assistant also remembers the order that was discussed last and hands it to the classifier, so "and what about it?" is understood as a question about that order.
+**History.** Conversation history is stored per owner: by user id for authenticated users and by guest session id for guests. The persisted chat log is retained for 30 days by default (`CHAT_HISTORY_RETENTION_DAYS`); recent messages are loaded separately for each owner. The assistant also remembers the order that was discussed last within the corresponding chat context, so "and what about it?" is understood as a question about that order.
 
 **Measured effect.** On the local benchmark of 47 questions (14 about live orders, 33 from the knowledge base) the model calls per set went from 94 to 77. Greetings and injection attempts cost nothing at all, a live order question needs one call instead of two (median 2.3 s → 1.3 s), and a follow-up about an order still needs two calls, because the classifier has to resolve the reference to the last discussed order.
 
@@ -231,6 +234,8 @@ Create your `.env` from the provided example (`Copy-Item .env.example .env` in P
 | `SERVER_HOST`, `SERVER_PORT` | Used to build the link in the confirmation email |
 | `EMAIL_DRY_RUN` | `true` logs the confirmation link instead of sending an email |
 | `CHAT_DEBUG_PROMPTS` | `true` logs full assistant prompts (local debugging only) |
+| `GUEST_SESSION_TTL_DAYS` | Optional guest-session lifetime in days; defaults to `30` when unset or invalid |
+| `CHAT_HISTORY_RETENTION_DAYS` | Optional persisted chat-history retention in days; defaults to `30` |
 | `PORT` | Backend port, `3000` by default |
 
 The AI provider and mail settings are listed in `.env.example`.
@@ -354,7 +359,7 @@ Browser ──► fds-frontend-app (static SPA)
                                               └──► Qdrant on the Droplet (:6333, api-key)
 ```
 
-**1. Database.** Create the managed PostgreSQL cluster and put its host, port, user, password and database name into the backend variables. Set `DB_SSL=true` and add the backend app as a trusted source if the cluster restricts incoming connections. The schema is created by TypeORM (`synchronize: true`).
+**1. Database.** Create the managed PostgreSQL cluster and put its host, port, user, password and database name into the backend variables. Set `DB_SSL=true` and add the backend app as a trusted source if the cluster restricts incoming connections. The schema is managed by TypeORM migrations. Keep `synchronize: false`; do not use automatic schema synchronization in production. Apply pending migrations through the project's migration command as part of deployment.
 
 **2. Qdrant on the Droplet.** With Docker installed, generate a key and start Qdrant with it. Run both lines in one SSH session and save the key in a password manager:
 
@@ -386,7 +391,7 @@ The volume keeps the data when the container is recreated, `--restart unless-sto
 - Couriers are assigned when the order becomes `READY`, and the free courier with the lowest id wins. If nobody is free, a manager assigns one by hand
 - Refresh tokens and the chat history are kept in memory, so a backend restart signs everybody out and clears the history
 - Lists of orders, order items and users are loaded and filtered in application code and are not paginated yet
-- The database schema is synchronized by TypeORM (`synchronize: true`). Migrations are planned before any real production use
+- The database schema is managed by TypeORM migrations (`synchronize: false`). Migration execution is an explicit deployment step; review pending migrations and their rollback behaviour before applying them
 - Access denials (`403`), rate limit hits (`429`) and sign-outs are not in the audit log yet
 - Prices are displayed in ₽ regardless of the data
 - Qdrant is reached over plain HTTP, so the API key travels unencrypted. The key stops casual access, but real protection needs TLS (a reverse proxy with a domain in front of Qdrant) or a private network
@@ -403,7 +408,7 @@ The volume keeps the data when the container is recreated, `--restart unless-sto
 - Pagination and SQL-level filtering for large lists
 - TLS in front of Qdrant (or a private network between the app and the Droplet)
 - Persistent refresh tokens and per-account login lockout
-- Migrations and a CI pipeline
+- A CI pipeline
 - Deployment hardening (swap, log rotation, connection pool, audit retention)
 - Reason of a quarantine verdict stored with the document, a list of quarantined documents in the admin UI
 - Retrieval calibrated per document type, so that a question without an answer is caught without a model call
