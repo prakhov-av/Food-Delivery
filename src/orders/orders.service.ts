@@ -69,6 +69,7 @@ export class OrdersService {
     );
 
     entity.courier = null;
+    entity.guestSession = null;
     entity.status = Status.NEW;
     entity.active = true;
     entity.totalPrice = 0;
@@ -77,7 +78,7 @@ export class OrdersService {
 
     this.logger.log(
       `Order created: id ${entity.id}, ` +
-        `customer id ${entity.customer.id}, ` +
+        `customer id ${user.id}, ` +
         `courier id not assigned, ` +
         `restaurant id ${entity.restaurant.id}`,
     );
@@ -112,7 +113,7 @@ export class OrdersService {
       accessibleOrders = orders;
     } else if (user.role === Role.CUSTOMER) {
       accessibleOrders = orders.filter(
-        (order: Order): boolean => order.customer.id === user.id,
+        (order: Order): boolean => order.customer?.id === user.id,
       );
     } else if (user.role === Role.COURIER) {
       accessibleOrders = orders.filter(
@@ -226,6 +227,7 @@ export class OrdersService {
       })),
     };
   }
+
   /**
    * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
    */
@@ -353,13 +355,16 @@ export class OrdersService {
         );
       }
 
-      const submitted: number =
-        await this.repository.countSubmittedByCustomerId(order.customer.id);
+      // Лимит применяется только к заказам зарегистрированных клиентов.
+      if (order.customer) {
+        const submitted: number =
+          await this.repository.countSubmittedByCustomerId(order.customer.id);
 
-      if (submitted >= MAX_SUBMITTED_ORDERS_PER_CUSTOMER) {
-        throw new EntityUpdateException(
-          `Customer id ${order.customer.id} cannot have more than ${MAX_SUBMITTED_ORDERS_PER_CUSTOMER} active orders`,
-        );
+        if (submitted >= MAX_SUBMITTED_ORDERS_PER_CUSTOMER) {
+          throw new EntityUpdateException(
+            `Customer id ${order.customer.id} cannot have more than ${MAX_SUBMITTED_ORDERS_PER_CUSTOMER} active orders`,
+          );
+        }
       }
     }
 

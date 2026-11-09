@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-api.json --runInBand",
     "test:integration": "jest --config ./test/jest-integration.json --runInBand",
     "test:api": "jest --config ./test/jest-api.json --runInBand",
-    "seed": "ts-node src/seed/seed.ts"
+    "seed": "ts-node src/seed/seed.ts",
+    "typeorm": "typeorm-ts-node-commonjs"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.7",
@@ -76,6 +77,7 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "typeorm-ts-node-commonjs": "^0.3.20",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
   },

@@ -16,21 +16,21 @@ export class OrdersRepository {
   ) {}
 
   /**
-   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
+   * Сохраняет заказ.
    */
   async save(order: Order): Promise<Order> {
     return this.repository.save(order);
   }
 
   /**
-   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   * Находит заказ по идентификатору.
    */
   async findById(id: number): Promise<Order | null> {
     return this.repository.findOneBy({ id });
   }
 
   /**
-   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   * Находит заказ по идентификатору вместе со связанными сущностями.
    */
   async findByIdWithRelations(id: number): Promise<Order | null> {
     return this.repository.findOne({
@@ -44,7 +44,7 @@ export class OrdersRepository {
   }
 
   /**
-   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   * Находит активный черновик зарегистрированного пользователя.
    */
   async findActiveDraft(
     customerId: number,
@@ -66,7 +66,7 @@ export class OrdersRepository {
   }
 
   /**
-   * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
+   * Возвращает все активные заказы.
    */
   async findAllActive(): Promise<Order[]> {
     return this.repository.find({
@@ -80,7 +80,54 @@ export class OrdersRepository {
   }
 
   /**
-   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   * Возвращает активные заказы конкретной гостевой сессии.
+   *
+   * Фильтрация выполняется на уровне базы данных.
+   */
+  async findActiveByGuestSessionId(guestSessionId: string): Promise<Order[]> {
+    return this.repository.find({
+      where: {
+        active: true,
+        guestSession: { id: guestSessionId },
+      },
+      relations: {
+        customer: true,
+        courier: true,
+        restaurant: true,
+        guestSession: true,
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+  }
+
+  /**
+   * Возвращает активный заказ, принадлежащий конкретной гостевой сессии.
+   *
+   * Одновременно проверяет идентификатор заказа и владельца.
+   */
+  async findActiveByIdForGuestSession(
+    orderId: number,
+    guestSessionId: string,
+  ): Promise<Order | null> {
+    return this.repository.findOne({
+      where: {
+        id: orderId,
+        active: true,
+        guestSession: { id: guestSessionId },
+      },
+      relations: {
+        customer: true,
+        courier: true,
+        restaurant: true,
+        guestSession: true,
+      },
+    });
+  }
+
+  /**
+   * Возвращает количество активных позиций заказа.
    */
   async countActiveItems(orderId: number): Promise<number> {
     return this.repository.manager.count(OrderItem, {
@@ -88,6 +135,9 @@ export class OrdersRepository {
     });
   }
 
+  /**
+   * Возвращает активные позиции заказа.
+   */
   async findActiveItemsByOrderId(orderId: number): Promise<OrderItem[]> {
     return this.repository.manager.find(OrderItem, {
       where: { order: { id: orderId }, active: true },
@@ -95,8 +145,10 @@ export class OrdersRepository {
       order: { id: 'ASC' },
     });
   }
+
   /**
-   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
+   * Возвращает количество активных заказов клиента,
+   * находящихся в процессе выполнения.
    */
   async countSubmittedByCustomerId(customerId: number): Promise<number> {
     return this.repository.count({

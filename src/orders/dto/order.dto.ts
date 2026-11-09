@@ -11,8 +11,12 @@ export class OrderDto {
   @ApiProperty()
   id: number;
 
-  @ApiProperty()
-  customer: UserDto;
+  @ApiProperty({
+    type: () => UserDto,
+    required: true,
+    nullable: true,
+  })
+  customer: UserDto | null;
 
   @ApiProperty({
     required: false,

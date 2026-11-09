@@ -17,6 +17,7 @@ import { ChatLog } from './chat-log.entity';
 import { ChatLogService } from './chat-log.service';
 import { ChatLogKind } from './enums/chat-log-kind.enum';
 import { ChatHistoryItemDto } from './dto/chat-history-item.dto';
+import { ChatIdentity, ChatOwner, getChatOwnerKey } from './types/chat-identity';
 
 import {
   BASE_PROMPT_FOR_AI_CHAT,
@@ -34,7 +35,8 @@ interface CachedClassification {
 }
 
 interface FinishParams {
-  userId: number;
+  owner: ChatOwner;
+  ownerKey: string;
   userRole: Role;
   request: string;
   answer: string;
@@ -265,15 +267,9 @@ const MIN_CHUNK_SCORE: number = Number(process.env.CHAT_MIN_SCORE ?? 0);
 export class ChatService {
   private readonly logger: Logger = new Logger(ChatService.name);
 
-  private readonly chatHistory: Map<number, ChatMessage[]> = new Map<
-    number,
-    ChatMessage[]
-  >();
+  private readonly chatHistory: Map<string, ChatMessage[]> = new Map();
 
-  private readonly lastOrderIds: Map<number, number> = new Map<
-    number,
-    number
-  >();
+  private readonly lastOrderIds: Map<string, number> = new Map();
 
   private readonly classificationCache: Map<string, CachedClassification> =
     new Map();
@@ -424,57 +420,66 @@ export class ChatService {
     userId: number,
     userRole: Role,
   ): Promise<string> {
-    const chatHistory: ChatMessage[] =
-      await this.getChatHistoryByUserId(userId);
+    return this.generateResponseForIdentity(request, {
+      kind: 'user',
+      userId,
+      role: userRole,
+    });
+  }
 
-    // Фильтр стоит после загрузки истории: иначе finish() создаст в памяти
-    // окно из одной записи и сохранённая переписка не подтянется из БД.
+  /** Обрабатывает запрос чата с изолированной идентичностью пользователя или гостя. */
+  async generateResponseForIdentity(
+    request: string,
+    identity: ChatIdentity,
+  ): Promise<string> {
+    const userRole: Role = identity.role;
+    const ownerKey: string = getChatOwnerKey(identity);
+    const owner: ChatOwner = identity.kind === 'user'
+      ? { userId: identity.userId }
+      : { guestSessionId: identity.guestSessionId };
+    const identityLabel: string = identity.kind === 'user'
+      ? `userId=${identity.userId}`
+      : 'guest=true';
+    const chatHistory: ChatMessage[] = await this.getChatHistoryByOwner(
+      ownerKey,
+      owner,
+    );
+
     if (isInjectionAttempt(request)) {
-      this.logger.warn(`Prompt injection pattern in request: userId=${userId}`);
-
+      this.logger.warn(`Prompt injection pattern in request: ${identityLabel}`);
       return this.finish({
-        userId,
-        userRole,
-        request,
+        owner, ownerKey, userRole, request,
         answer: PROMPT_LEAK_ANSWER,
         kind: ChatLogKind.BLOCKED,
         documentType: DocumentType.SYSTEM,
       });
     }
 
-    // Приветствия и «что ты умеешь» не требуют ни модели, ни поиска.
     const canned: string | undefined = cannedAnswer(request);
-
     if (canned !== undefined) {
       return this.finish({
-        userId,
-        userRole,
-        request,
+        owner, ownerKey, userRole, request,
         answer: canned,
         kind: ChatLogKind.KNOWLEDGE,
         documentType: DocumentType.SYSTEM,
       });
     }
 
-    // C4/C5/C6: запросы про заказы узнаём по словам, без LLM-классификатора.
     const fastLiveClassification: ChatClassification | undefined =
-      this.matchLiveClassification(request, userId);
+      this.matchLiveClassification(request, ownerKey);
 
     if (fastLiveClassification !== undefined) {
       return this.answerLive(
-        fastLiveClassification,
-        request,
-        userId,
-        userRole,
-        chatHistory,
+        fastLiveClassification, request, identity, ownerKey, chatHistory,
       );
     }
 
+    const lastOrderId = this.lastOrderIds.get(ownerKey);
     const classifierPrompt: string = this.promptService
       .buildPromptForDocumentType()
       .withUserRole(userRole)
       .withChatHistory(chatHistory)
-      .withLastOrder(this.lastOrderIds.get(userId))
+      .withLastOrder(lastOrderId)
       .withQuestion(request)
       .build();
 
@@ -482,12 +487,10 @@ export class ChatService {
       userRole,
       request,
       chatHistory,
-      this.lastOrderIds.get(userId),
+      lastOrderId,
     );
-
     const cachedClassification: string | undefined =
       this.readClassificationCache(classificationKey);
-
     const prefetchedEmbedding: Promise<number[]> | undefined =
       cachedClassification === undefined &&
       this.shouldPrefetchEmbedding(request, chatHistory)
@@ -495,62 +498,39 @@ export class ChatService {
         : undefined;
 
     let classificationResponse: string;
-
     if (cachedClassification !== undefined) {
       classificationResponse = cachedClassification;
     } else {
       this.logger.debug(
-        `AI classification request started: userId=${userId}, provider=configured, promptLength=${classifierPrompt.length}`,
+        `AI classification request started: ${identityLabel}, provider=configured, promptLength=${classifierPrompt.length}`,
       );
-
       classificationResponse = await this.aiService.generateResponse(
         classifierPrompt,
         { classification: true },
       );
-
       this.rememberClassification(classificationKey, classificationResponse);
     }
 
-    const classification: ChatClassification = this.classify(
-      classificationResponse,
-    );
-
+    const classification: ChatClassification = this.classify(classificationResponse);
     if (classification.liveDataRequired) {
-      return this.answerLive(
-        classification,
-        request,
-        userId,
-        userRole,
-        chatHistory,
-      );
+      return this.answerLive(classification, request, identity, ownerKey, chatHistory);
     }
 
     const documentType: DocumentType = classification.documentType;
-
     const searchQuery: string = classification.standaloneQuestion ?? request;
-
-    let embedding: number[];
-
-    if (prefetchedEmbedding && searchQuery === request) {
-      embedding = await prefetchedEmbedding;
-    } else {
-      embedding = await this.embedQuery(searchQuery);
-    }
+    const embedding: number[] =
+      prefetchedEmbedding && searchQuery === request
+        ? await prefetchedEmbedding
+        : await this.embedQuery(searchQuery);
 
     let relevantChunks: QdrantResult[] =
       await this.vectorStorageService.getRelevantChunkByAccess(
-        embedding,
-        documentType,
-        userRole,
+        embedding, documentType, userRole,
       );
 
-    // Классификатор мог ошибиться с темой: ищем по всем документам,
-    // доступным роли.
     if (relevantChunks.length === 0) {
       relevantChunks = await this.vectorStorageService.getRelevantChunkByAccess(
-        embedding,
-        undefined,
-        userRole,
+        embedding, undefined, userRole,
       );
     }
 
@@ -566,9 +546,7 @@ export class ChatService {
 
     if (relevantChunks.length === 0) {
       return this.finish({
-        userId,
-        userRole,
-        request,
+        owner, ownerKey, userRole, request,
         answer: NO_KNOWLEDGE_ANSWER,
         kind: ChatLogKind.NO_ANSWER,
         documentType,
@@ -576,9 +554,7 @@ export class ChatService {
       });
     }
 
-    const context: string[] =
-      this.contextService.generateContext(relevantChunks);
-
+    const context: string[] = this.contextService.generateContext(relevantChunks);
     const prompt: string = this.promptService
       .buildPromptForChat()
       .withUserRole(userRole)
@@ -588,49 +564,67 @@ export class ChatService {
       .build();
 
     this.logger.debug(
-      `AI chat request started: userId=${userId}, mode=knowledge-base, promptLength=${prompt.length}`,
+      `AI chat request started: ${identityLabel}, mode=knowledge-base, promptLength=${prompt.length}`,
+    );
+    const protectedAnswer = this.protectPrompt(
+      await this.aiService.generateResponse(prompt),
     );
 
-    const protectedAnswer: { answer: string; blocked: boolean } =
-      this.protectPrompt(await this.aiService.generateResponse(prompt));
-
     return this.finish({
-      userId,
-      userRole,
-      request,
+      owner, ownerKey, userRole, request,
       answer: protectedAnswer.answer,
-      kind: protectedAnswer.blocked
-        ? ChatLogKind.BLOCKED
-        : ChatLogKind.KNOWLEDGE,
+      kind: protectedAnswer.blocked ? ChatLogKind.BLOCKED : ChatLogKind.KNOWLEDGE,
       documentType,
       chunksFound: relevantChunks.length,
     });
   }
 
-  /** Очищает только память процесса (вызывается при выходе). */
+  /** Очищает только память процесса для зарегистрированного пользователя. */
   clearHistory(userId: number): void {
-    this.chatHistory.delete(userId);
-    this.lastOrderIds.delete(userId);
+    this.clearHistoryByOwnerKey(`user:${userId}`);
   }
 
-  /** Удаляет сохранённую переписку пользователя и память процесса. */
+  clearHistoryForIdentity(identity: ChatIdentity): void {
+    this.clearHistoryByOwnerKey(getChatOwnerKey(identity));
+  }
+
+  private clearHistoryByOwnerKey(ownerKey: string): void {
+    this.chatHistory.delete(ownerKey);
+    this.lastOrderIds.delete(ownerKey);
+  }
+
   async clearStoredHistory(userId: number): Promise<void> {
     this.clearHistory(userId);
     await this.chatLogService.deleteByUserId(userId);
   }
 
-  async getHistory(
-    userId: number,
+  async clearStoredHistoryForIdentity(identity: ChatIdentity): Promise<void> {
+    this.clearHistoryForIdentity(identity);
+    if (identity.kind === 'user') {
+      await this.chatLogService.deleteByUserId(identity.userId);
+    } else {
+      await this.chatLogService.deleteByGuestSessionId(identity.guestSessionId);
+    }
+  }
+
+  async getHistory(userId: number, limit: number): Promise<ChatHistoryItemDto[]> {
+    return this.getHistoryForIdentity(
+      { kind: 'user', userId, role: Role.CUSTOMER },
+      limit,
+    );
+  }
+
+  async getHistoryForIdentity(
+    identity: ChatIdentity,
     limit: number,
   ): Promise<ChatHistoryItemDto[]> {
-    const safeLimit: number = Math.min(Math.max(limit, 1), MAX_HISTORY_LIMIT);
-
-    const logs: ChatLog[] = await this.chatLogService.findRecent(
-      userId,
-      safeLimit,
-    );
-
-    return logs.map((log: ChatLog): ChatHistoryItemDto => ({
+    const safeLimit = Math.min(Math.max(limit, 1), MAX_HISTORY_LIMIT);
+    const logs: ChatLog[] = identity.kind === 'user'
+      ? await this.chatLogService.findRecent(identity.userId, safeLimit)
+      : await this.chatLogService.findRecentByGuestSessionId(
+          identity.guestSessionId, safeLimit,
+        );
+    return logs.map((log): ChatHistoryItemDto => ({
       id: log.id,
       createdAt: log.createdAt,
       question: log.question,
@@ -639,18 +633,11 @@ export class ChatService {
     }));
   }
 
-  /**
-   * Собирает классификацию живых данных по словам запроса, без вызова модели.
-   *
-   * Возвращает undefined, если по тексту нельзя однозначно понять, что нужны
-   * живые данные: тогда запрос идёт обычным путём, через классификатор.
-   */
   private matchLiveClassification(
     request: string,
-    userId: number,
+    ownerKey: string,
   ): ChatClassification | undefined {
     const explicitOrderId: number | undefined = matchLiveOrderId(request);
-
     if (explicitOrderId !== undefined) {
       return {
         documentType: DocumentType.ORDER,
@@ -660,19 +647,10 @@ export class ChatService {
       };
     }
 
-    // Вопросы о правилах («Как отменить все заказы?») — это база знаний.
-    if (NOT_ABOUT_ORDER_DATA.test(request)) {
-      return undefined;
-    }
+    if (NOT_ABOUT_ORDER_DATA.test(request)) return undefined;
+    const lastOrderId: number | undefined = this.lastOrderIds.get(ownerKey);
 
-    const lastOrderId: number | undefined = this.lastOrderIds.get(userId);
-
-    // Список заказов пользователя.
-    if (
-      ORDER_LIST_PATTERNS.some((pattern: RegExp): boolean =>
-        pattern.test(request),
-      )
-    ) {
+    if (ORDER_LIST_PATTERNS.some((pattern: RegExp): boolean => pattern.test(request))) {
       return {
         documentType: DocumentType.ORDER,
         liveDataRequired: true,
@@ -680,8 +658,6 @@ export class ChatService {
       };
     }
 
-    // «Мой заказ»: последний обсуждаемый. Без него решение остаётся
-    // за классификатором: непонятно, о каком именно заказе речь.
     if (lastOrderId !== undefined && SINGLE_ORDER_POSSESSIVE.test(request)) {
       return {
         documentType: DocumentType.ORDER,
@@ -690,31 +666,32 @@ export class ChatService {
         resourceId: lastOrderId,
       };
     }
-
     return undefined;
   }
 
-  /**
-   * Ответ по живым данным: контекст заказа уходит в модель, ответ сохраняется
-   * в лог без текста. Используется и после классификатора, и из fast-path C4.
-   */
   private async answerLive(
     classification: ChatClassification,
     request: string,
-    userId: number,
-    userRole: Role,
+    identity: ChatIdentity,
+    ownerKey: string,
     chatHistory: ChatMessage[],
   ): Promise<string> {
-    const liveData: LiveDataResult = await this.liveDataService.getLiveData(
-      classification,
-      userId,
-      userRole,
-    );
+    const userRole: Role = identity.role;
+    const owner: ChatOwner = identity.kind === 'user'
+      ? { userId: identity.userId }
+      : { guestSessionId: identity.guestSessionId };
+    const liveData: LiveDataResult = identity.kind === 'user'
+      ? await this.liveDataService.getLiveData(
+          classification,
+          identity.userId,
+          identity.role,
+        )
+      : await this.liveDataService.getLiveData(classification, identity);
 
     if (liveData.orderId !== undefined) {
-      this.lastOrderIds.set(userId, liveData.orderId);
+      this.lastOrderIds.set(ownerKey, liveData.orderId);
     } else {
-      this.lastOrderIds.delete(userId);
+      this.lastOrderIds.delete(ownerKey);
     }
 
     const prompt: string = this.promptService
@@ -726,16 +703,14 @@ export class ChatService {
       .build();
 
     this.logger.debug(
-      `AI chat request started: userId=${userId}, mode=live-data, promptLength=${prompt.length}`,
+      `AI chat request started: ${identity.kind === 'user' ? `userId=${identity.userId}` : 'guest=true'}, mode=live-data, promptLength=${prompt.length}`,
+    );
+    const protectedAnswer = this.protectPrompt(
+      await this.aiService.generateResponse(prompt),
     );
 
-    const protectedAnswer: { answer: string; blocked: boolean } =
-      this.protectPrompt(await this.aiService.generateResponse(prompt));
-
     return this.finish({
-      userId,
-      userRole,
-      request,
+      owner, ownerKey, userRole, request,
       answer: protectedAnswer.answer,
       kind: protectedAnswer.blocked ? ChatLogKind.BLOCKED : ChatLogKind.LIVE,
       documentType: classification.documentType,
@@ -743,10 +718,9 @@ export class ChatService {
   }
 
   private async finish(params: FinishParams): Promise<string> {
-    this.addChatHistoryByUserId(params.userId, params.request, params.answer);
-
+    this.addChatHistoryByOwnerKey(params.ownerKey, params.request, params.answer);
     await this.chatLogService.record({
-      userId: params.userId,
+      ...params.owner,
       userRole: params.userRole,
       question: params.request,
       // Ответы по живым данным устаревают и содержат данные заказов: не храним.
@@ -755,39 +729,37 @@ export class ChatService {
       documentType: params.documentType,
       chunksFound: params.chunksFound ?? null,
     });
-
     return params.answer;
   }
 
-  private async getChatHistoryByUserId(userId: number): Promise<ChatMessage[]> {
-    let history: ChatMessage[] | undefined = this.chatHistory.get(userId);
-
-    // Первый вопрос после входа или перезапуска: окно берём из базы.
+  private async getChatHistoryByOwner(
+    ownerKey: string,
+    owner: ChatOwner,
+  ): Promise<ChatMessage[]> {
+    let history = this.chatHistory.get(ownerKey);
     if (history === undefined) {
-      history = await this.chatLogService.getWindow(
-        userId,
-        MAX_HISTORY_MESSAGES,
-      );
-      // Копия: массив принадлежит сервису логов, кэшировать его нельзя.
-      this.chatHistory.set(userId, [...history]);
+      history = owner.userId !== undefined
+        ? await this.chatLogService.getWindow(owner.userId, MAX_HISTORY_MESSAGES)
+        : await this.chatLogService.getWindowByGuestSessionId(
+            owner.guestSessionId!,
+            MAX_HISTORY_MESSAGES,
+          );
+      this.chatHistory.set(ownerKey, [...history]);
     }
-
     return history.slice(-MAX_HISTORY_MESSAGES);
   }
 
-  private addChatHistoryByUserId(
-    userId: number,
+  private addChatHistoryByOwnerKey(
+    ownerKey: string,
     userRequest: string,
     aiResponse: string,
   ): void {
-    const message: ChatMessage = new ChatMessage();
+    const message = new ChatMessage();
     message.userRequest = userRequest;
     message.aiAnswer = aiResponse;
-
-    const history: ChatMessage[] = this.chatHistory.get(userId) ?? [];
+    const history = this.chatHistory.get(ownerKey) ?? [];
     history.push(message);
-
-    this.chatHistory.set(userId, history.slice(-MAX_HISTORY_MESSAGES));
+    this.chatHistory.set(ownerKey, history.slice(-MAX_HISTORY_MESSAGES));
   }
 
   /**

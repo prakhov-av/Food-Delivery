@@ -39,10 +39,14 @@ describe('REST API smoke test', () => {
   // does not make unrelated e2e tests depend on their execution order.
   const nextTestIp = (): string => `192.0.2.${++loginIpCounter}`;
 
+  const generateChatResponse = jest
+    .fn()
+    .mockResolvedValue('chat response from test double');
   const chatService = {
-    generateResponse: jest
-      .fn()
-      .mockResolvedValue('chat response from test double'),
+    generateResponse: generateChatResponse,
+    generateResponseForIdentity: jest.fn((message: string) =>
+      generateChatResponse(message),
+    ),
   };
   const ingestionService = { ingest: jest.fn().mockResolvedValue(undefined) };
   const emailService = {
@@ -74,7 +78,7 @@ describe('REST API smoke test', () => {
     process.env.CSRF_ALLOW_NO_ORIGIN = 'true';
 
     // DigitalOcean PostgreSQL requires SSL.
-    process.env.DB_SSL = 'true';
+    //process.env.DB_SSL = 'true';
 
     const module: TestingModule = await Test.createTestingModule({
       imports: [AppModule],

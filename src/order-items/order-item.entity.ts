@@ -10,14 +10,16 @@ import { Order } from '../orders/order.entity';
 import { MenuItem } from '../menu-items/menu-item.entity';
 
 /**
-   * Представляет отдельную позицию заказа и количество выбранного товара.
-   */
+ * Представляет отдельную позицию заказа и количество выбранного товара.
+ */
 @Entity('order_items')
 export class OrderItem {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => Order, (order) => order.items)
+  @ManyToOne(() => Order, (order) => order.items, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'order_id' })
   order: Order;
 

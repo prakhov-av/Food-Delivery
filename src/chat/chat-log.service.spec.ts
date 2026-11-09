@@ -19,7 +19,7 @@ describe('ChatLogService', (): void => {
     chunksFound: 2,
   };
 
-  const ROW: ChatLog = { id: 1, ...ENTRY } as ChatLog;
+  const ROW: ChatLog = { id: 1, createdAt: new Date(), ...ENTRY } as unknown as ChatLog;
 
   beforeEach(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
@@ -122,4 +122,39 @@ describe('ChatLogService', (): void => {
       expect(repository.delete).toHaveBeenCalledWith({ userId: 10 });
     });
   });
+  describe('guest session ownership', (): void => {
+    it('should save and prune only the specified guest session logs', async (): Promise<void> => {
+      const guestEntry = {
+        guestSessionId: 'guest-uuid',
+        userRole: 'CUSTOMER',
+        question: 'guest question',
+        answer: 'guest answer',
+        kind: ChatLogKind.KNOWLEDGE,
+        documentType: 'SYSTEM',
+        chunksFound: 1,
+      };
+      await service.record(guestEntry);
+      expect(repository.create).toHaveBeenCalledWith(guestEntry);
+      expect(repository.delete).toHaveBeenCalledWith({
+        guestSessionId: 'guest-uuid',
+        createdAt: expect.anything(),
+      });
+    });
+
+    it('should query recent logs only for the specified guest session', async (): Promise<void> => {
+      repository.find.mockResolvedValue([]);
+      await service.findRecentByGuestSessionId('guest-uuid', 25);
+      expect(repository.find).toHaveBeenCalledWith({
+        where: expect.objectContaining({ guestSessionId: 'guest-uuid' }),
+        order: { id: 'DESC' },
+        take: 25,
+      });
+    });
+
+    it('should delete only the specified guest session logs', async (): Promise<void> => {
+      await service.deleteByGuestSessionId('guest-uuid');
+      expect(repository.delete).toHaveBeenCalledWith({ guestSessionId: 'guest-uuid' });
+    });
+  });
+
 });

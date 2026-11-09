@@ -1,32 +1,34 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
-  Post,
-  DefaultValuePipe,
-  Get,
   ParseIntPipe,
+  Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AiChatRequestDto } from './dto/ai-chat-request.dto';
 import { ChatService } from './chat.service';
-import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { Audit } from '../audit/audit.decorator';
 import { AuditAction } from '../audit/audit.enums';
 import { ChatHistoryItemDto } from './dto/chat-history-item.dto';
-/**
- * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
- */
+import type { ChatIdentityRequest } from './types/chat-identity-request';
+import { ChatIdentityGuard } from './chat-identity.guard';
+import { Public } from '../auth/types/auth.decorators';
+
+/** HTTP API AI-чата для зарегистрированных пользователей и гостевых сессий. */
+@Public()
+@UseGuards(ChatIdentityGuard)
 @Controller('chat')
 export class ChatController {
   constructor(private readonly service: ChatService) {}
 
-  // Каждый вызов это эмбеддинг и запрос к LLM, поэтому лимит строже общего.
-  // includeBody: false, текст вопросов в журнал не пишется.
   @Audit({
     action: AuditAction.CHAT_QUERY,
     entityType: 'Chat',
@@ -35,41 +37,33 @@ export class ChatController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post()
   @HttpCode(HttpStatus.OK)
-  /**
-   * Реализует часть прикладного сценария, инкапсулированного этим компонентом.
-   */
   async askAi(
     @Body() chatRequestDto: AiChatRequestDto,
-    @Req() request: AuthenticatedRequest,
+    @Req() request: ChatIdentityRequest,
   ): Promise<string> {
-    return this.service.generateResponse(
+    return this.service.generateResponseForIdentity(
       chatRequestDto.message,
-      request.user.id,
-      request.user.role,
+      request.chatIdentity,
     );
   }
 
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
-  /**
-   * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
-   */
-  clearHistory(@Req() request: AuthenticatedRequest): void {
-    this.service.clearHistory(request.user.id);
+  clearHistory(@Req() request: ChatIdentityRequest): void {
+    this.service.clearHistoryForIdentity(request.chatIdentity);
   }
+
   @Get('history')
   async getHistory(
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
-    @Req() request: AuthenticatedRequest,
+    @Req() request: ChatIdentityRequest,
   ): Promise<ChatHistoryItemDto[]> {
-    return this.service.getHistory(request.user.id, limit);
+    return this.service.getHistoryForIdentity(request.chatIdentity, limit);
   }
 
   @Delete('history')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async clearStoredHistory(
-    @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    await this.service.clearStoredHistory(request.user.id);
+  async clearStoredHistory(@Req() request: ChatIdentityRequest): Promise<void> {
+    await this.service.clearStoredHistoryForIdentity(request.chatIdentity);
   }
 }

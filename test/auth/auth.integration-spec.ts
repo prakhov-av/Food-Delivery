@@ -1,64 +1,33 @@
 import { HttpStatus, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import request from 'supertest';
 import * as bcrypt from 'bcrypt';
+
+import { AppModule } from '../../src/app.module';
 import { User } from '../../src/users/user.entity';
-import { UsersModule } from '../../src/users/users.module';
-import { AuthModule } from '../../src/auth/auth.module';
 import { Role } from '../../src/users/enums/role.enum';
-import { ConfigModule } from '@nestjs/config';
-import { EmailModule } from '../../src/email/email.module';
-import { ConfirmationCodesModule } from '../../src/confirmation-codes/confirmation-codes.module';
-import { OrdersModule } from '../../src/orders/orders.module';
-import { RestaurantsModule } from '../../src/restaurants/restaurants.module';
-import { MenusModule } from '../../src/menus/menus.module';
-import { MenuItemsModule } from '../../src/menu-items/menu-items.module';
-import { OrderItemsModule } from '../../src/order-items/order-items.module';
-import { AuditModule } from '../../src/audit/audit.module';
 
 describe('AuthController (IT)', (): void => {
   const RESOURCE_NAME = '/auth';
 
-  let app: INestApplication;
+  let app: INestApplication | undefined;
   let httpServer: any;
 
-  let usersRepository: Repository<User>;
+  let usersRepository: Repository<User> | undefined;
 
   let confirmedUser: User;
   let unconfirmedUser: User;
 
   beforeAll(async (): Promise<void> => {
     const module: TestingModule = await Test.createTestingModule({
-      imports: [
-        TypeOrmModule.forRoot({
-          type: 'postgres',
-          host: 'localhost',
-          port: 5432,
-          username: 'postgres',
-          password: 'qwerty123',
-          database: 'food_delivery',
-          autoLoadEntities: true,
-          synchronize: true,
-        }),
-        ConfigModule.forRoot({
-          isGlobal: true,
-        }),
-        UsersModule,
-        RestaurantsModule,
-        MenusModule,
-        MenuItemsModule,
-        OrdersModule,
-        OrderItemsModule,
-        ConfirmationCodesModule,
-        EmailModule,
-        AuthModule,
-        AuditModule,
-      ],
+      imports: [AppModule],
     }).compile();
 
     app = module.createNestApplication();
+
+    app.getHttpAdapter().getInstance().set('trust proxy', 'loopback');
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -69,11 +38,14 @@ describe('AuthController (IT)', (): void => {
     await app.init();
 
     httpServer = app.getHttpServer();
-
-    usersRepository = module.get(getRepositoryToken(User));
-  });
+    usersRepository = module.get<Repository<User>>(getRepositoryToken(User));
+  }, 30000);
 
   beforeEach(async (): Promise<void> => {
+    if (!usersRepository) {
+      throw new Error('UsersRepository was not initialized');
+    }
+
     confirmedUser = new User();
     confirmedUser.name = 'John';
     confirmedUser.phone = '+380501111111';
@@ -96,17 +68,22 @@ describe('AuthController (IT)', (): void => {
   });
 
   afterEach(async (): Promise<void> => {
-    await usersRepository.deleteAll();
+    if (usersRepository) {
+      await usersRepository.deleteAll();
+    }
   });
 
   afterAll(async (): Promise<void> => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   describe('login', (): void => {
     it('should login successfully', async (): Promise<void> => {
-      const response: Response = await request(httpServer)
+      const response = await request(httpServer)
         .post(`${RESOURCE_NAME}/login`)
+        .set('X-Forwarded-For', '192.0.2.16')
         .send({
           email: confirmedUser.email,
           password: '123456',
@@ -114,7 +91,6 @@ describe('AuthController (IT)', (): void => {
         .expect(HttpStatus.OK);
 
       expect(response.body).toEqual({});
-
       expect(response.headers['set-cookie']).toBeDefined();
 
       const cookies: string[] = response.headers['set-cookie'];
@@ -136,6 +112,7 @@ describe('AuthController (IT)', (): void => {
   it('should return 401 for wrong password', async (): Promise<void> => {
     await request(httpServer)
       .post(`${RESOURCE_NAME}/login`)
+      .set('X-Forwarded-For', '192.0.2.11')
       .send({
         email: confirmedUser.email,
         password: 'wrong-password',
@@ -146,6 +123,7 @@ describe('AuthController (IT)', (): void => {
   it('should return 401 for unknown email', async (): Promise<void> => {
     await request(httpServer)
       .post(`${RESOURCE_NAME}/login`)
+      .set('X-Forwarded-For', '192.0.2.12')
       .send({
         email: 'unknown@test.com',
         password: '123456',
@@ -156,6 +134,7 @@ describe('AuthController (IT)', (): void => {
   it('should return 401 for inactive user', async (): Promise<void> => {
     await request(httpServer)
       .post(`${RESOURCE_NAME}/login`)
+      .set('X-Forwarded-For', '192.0.2.13')
       .send({
         email: unconfirmedUser.email,
         password: '123456',
@@ -166,6 +145,7 @@ describe('AuthController (IT)', (): void => {
   it('should refresh access token successfully', async (): Promise<void> => {
     const loginResponse = await request(httpServer)
       .post(`${RESOURCE_NAME}/login`)
+      .set('X-Forwarded-For', '192.0.2.14')
       .send({
         email: confirmedUser.email,
         password: '123456',
@@ -180,7 +160,6 @@ describe('AuthController (IT)', (): void => {
       .expect(HttpStatus.OK);
 
     expect(refreshResponse.body).toEqual({});
-
     expect(refreshResponse.headers['set-cookie']).toBeDefined();
 
     expect(
@@ -206,6 +185,7 @@ describe('AuthController (IT)', (): void => {
   it('should logout successfully', async (): Promise<void> => {
     const loginResponse = await request(httpServer)
       .post(`${RESOURCE_NAME}/login`)
+      .set('X-Forwarded-For', '192.0.2.15')
       .send({
         email: confirmedUser.email,
         password: '123456',
@@ -220,7 +200,6 @@ describe('AuthController (IT)', (): void => {
       .expect(HttpStatus.OK);
 
     expect(logoutResponse.body).toEqual({});
-
     expect(logoutResponse.headers['set-cookie']).toBeDefined();
 
     const logoutCookies: string[] = logoutResponse.headers['set-cookie'];

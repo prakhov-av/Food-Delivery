@@ -29,6 +29,7 @@ import { PromptsModule } from './prompts/prompts.module';
 
 import { AuditModule } from './audit/audit.module';
 import { CsrfMiddleware } from './security/csrf.middleware';
+import { GuestSessionsModule } from './guest-sessions/guest-sessions.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { CsrfMiddleware } from './security/csrf.middleware';
     ChatModule,
     PromptsModule,
     AuditModule,
+    GuestSessionsModule,
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     // TypeOrmModule.forRoot(typeOrmConfig),
     TypeOrmModule.forRootAsync({
@@ -60,7 +62,7 @@ import { CsrfMiddleware } from './security/csrf.middleware';
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_DATABASE'),
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: false,
         ssl:
           configService.get<string>('DB_SSL') === 'true'
             ? { rejectUnauthorized: false }

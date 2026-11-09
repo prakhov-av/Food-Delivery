@@ -345,4 +345,134 @@ describe('OrdersRepository', (): void => {
       );
     });
   });
+
+  describe('findActiveByGuestSessionId', (): void => {
+    it('should return only active orders belonging to the specified guest session', async (): Promise<void> => {
+      const guestOrders: Order[] = [
+        {
+          ...ORDER,
+          customer: null,
+          courier: null,
+          guestSession: { id: 'guest-session-a' } as Order['guestSession'],
+        } as Order,
+      ];
+
+      typeOrmRepository.find.mockResolvedValue(guestOrders);
+
+      const result: Order[] = await repository.findActiveByGuestSessionId(
+        'guest-session-a',
+      );
+
+      expect(result).toBe(guestOrders);
+      expect(typeOrmRepository.find).toHaveBeenCalledTimes(1);
+      expect(typeOrmRepository.find).toHaveBeenCalledWith({
+        where: {
+          active: true,
+          guestSession: { id: 'guest-session-a' },
+        },
+        relations: {
+          customer: true,
+          courier: true,
+          restaurant: true,
+          guestSession: true,
+        },
+        order: { createdAt: 'DESC' },
+      });
+    });
+
+    it('should return an empty array when the guest session has no active orders', async (): Promise<void> => {
+      typeOrmRepository.find.mockResolvedValue([]);
+
+      const result: Order[] = await repository.findActiveByGuestSessionId(
+        'guest-session-b',
+      );
+
+      expect(result).toEqual([]);
+      expect(typeOrmRepository.find).toHaveBeenCalledWith({
+        where: {
+          active: true,
+          guestSession: { id: 'guest-session-b' },
+        },
+        relations: {
+          customer: true,
+          courier: true,
+          restaurant: true,
+          guestSession: true,
+        },
+        order: { createdAt: 'DESC' },
+      });
+    });
+
+    it('should propagate repository errors', async (): Promise<void> => {
+      const error: Error = new Error('Guest orders query failed');
+      typeOrmRepository.find.mockRejectedValue(error);
+
+      await expect(
+        repository.findActiveByGuestSessionId('guest-session-a'),
+      ).rejects.toThrow('Guest orders query failed');
+    });
+  });
+
+  describe('findActiveByIdForGuestSession', (): void => {
+    it('should query by order id, active flag, and guest session id together', async (): Promise<void> => {
+      const guestOrder: Order = {
+        ...ORDER,
+        customer: null,
+        courier: null,
+        guestSession: { id: 'guest-session-a' } as Order['guestSession'],
+      } as Order;
+      typeOrmRepository.findOne.mockResolvedValue(guestOrder);
+
+      const result: Order | null =
+        await repository.findActiveByIdForGuestSession(42, 'guest-session-a');
+
+      expect(result).toBe(guestOrder);
+      expect(typeOrmRepository.findOne).toHaveBeenCalledTimes(1);
+      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: 42,
+          active: true,
+          guestSession: { id: 'guest-session-a' },
+        },
+        relations: {
+          customer: true,
+          courier: true,
+          restaurant: true,
+          guestSession: true,
+        },
+      });
+    });
+
+    it('should return null when the order does not belong to the specified guest session', async (): Promise<void> => {
+      typeOrmRepository.findOne.mockResolvedValue(null);
+
+      const result: Order | null =
+        await repository.findActiveByIdForGuestSession(42, 'guest-session-b');
+
+      expect(result).toBeNull();
+      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: 42,
+          active: true,
+          guestSession: { id: 'guest-session-b' },
+        },
+        relations: {
+          customer: true,
+          courier: true,
+          restaurant: true,
+          guestSession: true,
+        },
+      });
+    });
+
+    it('should propagate repository errors', async (): Promise<void> => {
+      const error: Error = new Error('Guest order query failed');
+      typeOrmRepository.findOne.mockRejectedValue(error);
+
+      await expect(
+        repository.findActiveByIdForGuestSession(42, 'guest-session-a'),
+      ).rejects.toThrow('Guest order query failed');
+    });
+  });
+
 });

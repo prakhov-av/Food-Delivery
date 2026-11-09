@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   Entity,
@@ -8,7 +9,12 @@ import {
 import { ChatLogKind } from './enums/chat-log-kind.enum';
 
 @Entity('chat_logs')
+@Check(
+  'CHK_chat_logs_exactly_one_owner',
+  '(("user_id" IS NOT NULL AND "guest_session_id" IS NULL) OR ("user_id" IS NULL AND "guest_session_id" IS NOT NULL))',
+)
 @Index(['userId', 'createdAt'])
+@Index(['guestSessionId', 'createdAt'])
 export class ChatLog {
   @PrimaryGeneratedColumn()
   id: number;
@@ -16,8 +22,11 @@ export class ChatLog {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @Column({ name: 'user_id', type: 'int' })
-  userId: number;
+  @Column({ name: 'user_id', type: 'int', nullable: true })
+  userId: number | null;
+
+  @Column({ name: 'guest_session_id', type: 'uuid', nullable: true })
+  guestSessionId: string | null;
 
   @Column({ name: 'user_role', type: 'varchar', length: 20 })
   userRole: string;
@@ -31,12 +40,7 @@ export class ChatLog {
   @Column({ type: 'varchar', length: 20 })
   kind: ChatLogKind;
 
-  @Column({
-    name: 'document_type',
-    type: 'varchar',
-    length: 20,
-    nullable: true,
-  })
+  @Column({ name: 'document_type', type: 'varchar', length: 20, nullable: true })
   documentType: string | null;
 
   @Column({ name: 'chunks_found', type: 'int', nullable: true })
