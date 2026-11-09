@@ -914,8 +914,6 @@ describe('ChatService', (): void => {
   describe('last order memory', (): void => {
     const LIVE_ORDER: string =
       '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":123}';
-    const LIVE_LIST: string =
-      '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER"}';
     const KNOWLEDGE: string =
       '{"documentType":"ORDER","liveDataRequired":false}';
     const LAST_ORDER: string = 'Последний обсуждаемый заказ';
@@ -961,7 +959,6 @@ describe('ChatService', (): void => {
 
     it('should not remember an order when the live answer has no single order', async (): Promise<void> => {
       aiService.generateResponse
-        .mockResolvedValueOnce(LIVE_LIST)
         .mockResolvedValueOnce('У вас два заказа.')
         .mockResolvedValueOnce(KNOWLEDGE)
         .mockResolvedValueOnce('answer');
@@ -977,7 +974,9 @@ describe('ChatService', (): void => {
         Role.CUSTOMER,
       );
 
-      expect(aiService.generateResponse.mock.calls[2][0]).not.toContain(
+      // Список заказов ушёл по fast-path: классификатор не вызывался.
+      expect(aiService.generateResponse).toHaveBeenCalledTimes(3);
+      expect(aiService.generateResponse.mock.calls[1][0]).not.toContain(
         LAST_ORDER,
       );
     });
@@ -1009,7 +1008,6 @@ describe('ChatService', (): void => {
       aiService.generateResponse
         .mockResolvedValueOnce(LIVE_ORDER)
         .mockResolvedValueOnce('Заказ №123 готовится.')
-        .mockResolvedValueOnce(LIVE_LIST)
         .mockResolvedValueOnce('У вас два заказа.')
         .mockResolvedValueOnce(KNOWLEDGE)
         .mockResolvedValueOnce('answer');
@@ -1025,10 +1023,10 @@ describe('ChatService', (): void => {
       await service.generateResponse('Какие у меня заказы?', 10, Role.CUSTOMER);
       await service.generateResponse('Как отменить заказ?', 10, Role.CUSTOMER);
 
-      expect(aiService.generateResponse.mock.calls[2][0]).toContain(
-        `${LAST_ORDER}: №123`,
-      );
-      expect(aiService.generateResponse.mock.calls[4][0]).not.toContain(
+      // Список заказов ушёл по fast-path: классификатор не вызывался.
+      expect(aiService.generateResponse).toHaveBeenCalledTimes(5);
+      // После списка заказов запомненный номер забыт.
+      expect(aiService.generateResponse.mock.calls[3][0]).not.toContain(
         LAST_ORDER,
       );
     });
@@ -1149,6 +1147,112 @@ describe('ChatService', (): void => {
 
       expect(aiService.generateResponse.mock.calls[1][0]).toContain(
         'Последний обсуждаемый заказ: №181',
+      );
+    });
+  });
+  describe('C5: live order list without the classifier call', (): void => {
+    const KNOWLEDGE: string =
+      '{"documentType":"ORDER","liveDataRequired":false}';
+
+    beforeEach((): void => {
+      promptService.buildPromptForDocumentType.mockImplementation(
+        (): PromptBuilder => createPromptBuilder('classifier'),
+      );
+      promptService.buildPromptForChat.mockImplementation((): PromptBuilder =>
+        createPromptBuilder('answer prompt'),
+      );
+      embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+        createQdrantResult('context text'),
+      ]);
+      liveDataService.getLiveData.mockResolvedValue({
+        context: 'Заказ №181\nСтатус: COOKING',
+        orderId: 181,
+      });
+    });
+
+    it.each([
+      'Какие у меня заказы?',
+      'Покажи все заказы',
+      'Какие заказы сейчас в работе?',
+      'Какие заказы мне назначены?',
+    ])(
+      'should answer "%s" without the classifier call',
+      async (question: string): Promise<void> => {
+        aiService.generateResponse.mockResolvedValueOnce('Ответ по заказам.');
+
+        const result: string = await service.generateResponse(
+          question,
+          10,
+          Role.CUSTOMER,
+        );
+
+        expect(result).toBe('Ответ по заказам.');
+
+        // Один вызов LLM: ответ по живым данным, классификатор не вызывался.
+        expect(aiService.generateResponse).toHaveBeenCalledTimes(1);
+
+        // Список заказов: resourceId не указывается.
+        expect(liveDataService.getLiveData).toHaveBeenCalledWith(
+          {
+            documentType: DocumentType.ORDER,
+            liveDataRequired: true,
+            resource: LiveDataResource.ORDER,
+          },
+          10,
+          Role.CUSTOMER,
+        );
+
+        expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
+        expect(
+          vectorStorageService.getRelevantChunkByAccess,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      'Как отменить все заказы?',
+      'Какие бывают статусы заказа?',
+      'Сколько заказов может быть активно одновременно?',
+      'Какие заказы нельзя отменить?',
+      'Какие заказы обычно оформляют через приложение?',
+    ])(
+      'should classify "%s" with the model as before',
+      async (question: string): Promise<void> => {
+        aiService.generateResponse
+          .mockResolvedValueOnce(KNOWLEDGE)
+          .mockResolvedValueOnce('answer');
+
+        await service.generateResponse(question, 10, Role.CUSTOMER);
+
+        expect(aiService.generateResponse).toHaveBeenCalledTimes(2);
+        expect(liveDataService.getLiveData).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should answer "Где мой заказ?" about the last discussed order', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce('Ответ по заказу.')
+        .mockResolvedValueOnce('Ответ по моему заказу.');
+
+      await service.generateResponse('Что в заказе №181?', 10, Role.CUSTOMER);
+
+      expect(liveDataService.getLiveData).toHaveBeenCalledTimes(1);
+
+      await service.generateResponse('Где мой заказ?', 10, Role.CUSTOMER);
+
+      // Второй запрос тоже ушёл без классификатора, но уже с номером заказа.
+      expect(aiService.generateResponse).toHaveBeenCalledTimes(2);
+      expect(liveDataService.getLiveData).toHaveBeenNthCalledWith(
+        2,
+        {
+          documentType: DocumentType.ORDER,
+          liveDataRequired: true,
+          resource: LiveDataResource.ORDER,
+          resourceId: 181,
+        },
+        10,
+        Role.CUSTOMER,
       );
     });
   });
@@ -1444,6 +1548,178 @@ describe('ChatService', (): void => {
       ]);
     });
   });
+  describe('prefetch of the query embedding', (): void => {
+    const KNOWLEDGE: string =
+      '{"documentType":"MENU","liveDataRequired":false}';
+    const LIVE: string =
+      '{"documentType":"ORDER","liveDataRequired":true,"resource":"ORDER","resourceId":181}';
+
+    beforeEach((): void => {
+      promptService.buildPromptForDocumentType.mockImplementation(
+        (): PromptBuilder => createPromptBuilder('classifier'),
+      );
+      promptService.buildPromptForChat.mockImplementation((): PromptBuilder =>
+        createPromptBuilder('answer prompt'),
+      );
+      embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+        createQdrantResult('context text'),
+      ]);
+      liveDataService.getLiveData.mockResolvedValue({
+        context: 'Заказ №181\nСтатус: COOKING',
+        orderId: 181,
+      });
+    });
+
+    it('should embed the first question once', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('Ответ по меню.');
+
+      await service.generateResponse('Покажи меню', 10, Role.CUSTOMER);
+
+      expect(embeddingsService.generateEmbeddings).toHaveBeenCalledTimes(1);
+      expect(embeddingsService.generateEmbeddings).toHaveBeenCalledWith([
+        'Покажи меню',
+      ]);
+    });
+
+    it('should not embed the raw follow-up when the classifier rewrites the question', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce(KNOWLEDGE)
+        .mockResolvedValueOnce('Ответ по меню.')
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            documentType: 'MENU',
+            liveDataRequired: false,
+            standaloneQuestion: 'Покажи все позиции меню ресторана Tokyo Roll',
+          }),
+        )
+        .mockResolvedValueOnce('Ответ по меню Tokyo Roll.');
+
+      await service.generateResponse(
+        'Расскажи про меню Tokyo Roll',
+        10,
+        Role.CUSTOMER,
+      );
+
+      embeddingsService.generateEmbeddings.mockClear();
+
+      await service.generateResponse('Покажи все позиции', 10, Role.CUSTOMER);
+
+      // Эмбеддинг исходной реплики не нужен: поиск идёт по переписанному
+      // вопросу, поэтому вызов embeddings ровно один.
+      expect(embeddingsService.generateEmbeddings).toHaveBeenCalledTimes(1);
+      expect(embeddingsService.generateEmbeddings).toHaveBeenCalledWith([
+        'Покажи все позиции меню ресторана Tokyo Roll',
+      ]);
+    });
+
+    it('should not embed anything for a follow-up about the previous order', async (): Promise<void> => {
+      aiService.generateResponse
+        .mockResolvedValueOnce('Ответ по заказу.')
+        .mockResolvedValueOnce(LIVE)
+        .mockResolvedValueOnce('Ответ по заказу.');
+
+      await service.generateResponse('Что в заказе №181?', 10, Role.CUSTOMER);
+
+      embeddingsService.generateEmbeddings.mockClear();
+
+      await service.generateResponse('А что в нём?', 10, Role.CUSTOMER);
+
+      expect(embeddingsService.generateEmbeddings).not.toHaveBeenCalled();
+      expect(
+        vectorStorageService.getRelevantChunkByAccess,
+      ).not.toHaveBeenCalled();
+    });
+  });
+  describe('the same question with a different history', (): void => {
+    const KNOWLEDGE: string =
+      '{"documentType":"ORDER","liveDataRequired":false}';
+
+    beforeEach((): void => {
+      promptService.buildPromptForDocumentType.mockImplementation(
+        (): PromptBuilder => createPromptBuilder('classifier'),
+      );
+      promptService.buildPromptForChat.mockImplementation((): PromptBuilder =>
+        createPromptBuilder('answer prompt'),
+      );
+      embeddingsService.generateEmbeddings.mockResolvedValue([[1, 2, 3]]);
+      vectorStorageService.getRelevantChunkByAccess.mockResolvedValue([
+        createQdrantResult('context text'),
+      ]);
+    });
+
+    it('should give the same answer and the same log kind with an empty history and after other questions', async (): Promise<void> => {
+      let call = 0;
+
+      aiService.generateResponse.mockImplementation(
+        async (): Promise<string> => {
+          call += 1;
+
+          // Нечётный вызов — классификатор, чётный — ответ.
+          return call % 2 === 1 ? KNOWLEDGE : 'Одинаковый ответ.';
+        },
+      );
+
+      const withoutHistory: string = await service.generateResponse(
+        'Как загрузить документ в базу знаний?',
+        10,
+        Role.CUSTOMER,
+      );
+
+      const firstKind = chatLogService.record.mock.calls[0][0].kind;
+
+      // Тот же вопрос, но в середине диалога.
+      await service.generateResponse(
+        'Расскажи про меню Tokyo Roll',
+        10,
+        Role.CUSTOMER,
+      );
+      await service.generateResponse('Как оформить заказ?', 10, Role.CUSTOMER);
+
+      const withHistory: string = await service.generateResponse(
+        'Как загрузить документ в базу знаний?',
+        10,
+        Role.CUSTOMER,
+      );
+
+      const recordCalls = chatLogService.record.mock.calls;
+      const lastKind = recordCalls[recordCalls.length - 1][0].kind;
+
+      expect(withHistory).toBe(withoutHistory);
+      expect(lastKind).toBe(firstKind);
+    });
+
+    it('should search by the same query for the repeated question', async (): Promise<void> => {
+      let call = 0;
+
+      aiService.generateResponse.mockImplementation(
+        async (): Promise<string> => {
+          call += 1;
+
+          return call % 2 === 1 ? KNOWLEDGE : 'Одинаковый ответ.';
+        },
+      );
+
+      await service.generateResponse('Покажи меню', 10, Role.CUSTOMER);
+      await service.generateResponse(
+        'Расскажи про меню Tokyo Roll',
+        10,
+        Role.CUSTOMER,
+      );
+      await service.generateResponse('Покажи меню', 10, Role.CUSTOMER);
+
+      const queries: unknown[][] =
+        embeddingsService.generateEmbeddings.mock.calls.map(
+          (call: unknown[]): unknown[] => call[0] as unknown[],
+        );
+
+      expect(queries[0]).toEqual(['Покажи меню']);
+      // Повтор идёт по кешу эмбеддингов: новых вызовов нет.
+      expect(queries).toHaveLength(2);
+    });
+  });
   describe('prompt protection', (): void => {
     const SYSTEM: string = '{"documentType":"SYSTEM","liveDataRequired":false}';
     const REFUSAL: string = 'Я не могу показывать внутренние инструкции';
@@ -1516,6 +1792,8 @@ describe('ChatService', (): void => {
       'Где инструкция по регистрации?',
       'Какие системные статусы у заказа?',
       'Что значит системное сообщение об ошибке?',
+      'Какая инструкция у курьера?',
+      'Покажи инструкцию по оформлению заказа',
     ])(
       'should not block the ordinary question "%s"',
       async (question: string): Promise<void> => {
