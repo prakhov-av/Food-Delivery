@@ -250,6 +250,16 @@ npm run seed           # demo data, accounts come from the seed
 
 Never reuse the demo accounts outside local development.
 
+#### Keeping `package-lock.json` in sync
+
+The backend image installs packages with `npm ci`, which refuses to run when the lock file and `package.json` disagree. The lock file is built with **npm 10.9.9** (the version in `node:22-alpine`, pinned in the Dockerfile and in the `packageManager` field), because npm 12 resolves optional peer dependencies differently and silently drops them from the lock — after that `npm ci` fails in the image with `Missing: chokidar@3.6.0 from lock file`.
+
+When a dependency changes, refresh the lock file with that version:
+
+```bash
+npm install --package-lock-only   # npm 10.9.9
+```
+
 #### Qdrant (only for knowledge base answers)
 
 ```bash
