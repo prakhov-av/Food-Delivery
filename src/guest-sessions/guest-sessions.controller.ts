@@ -49,7 +49,15 @@ export class GuestSessionsController {
    */
   @Public()
   @Post()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  /**
+   * Лимит считается по устройству (cookie fd_device), а не по адресу:
+   * за Cloudflare адрес общий у всех посетителей, и общий счётчик
+   * приводил к тому, что вход в гостевой режим упирался в 429.
+   */
+  @Throttle({
+    default: { limit: 20, ttl: 60_000 },
+    ip: { limit: 30, ttl: 60_000 },
+  })
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Res({ passthrough: true }) response: Response,

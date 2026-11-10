@@ -4,7 +4,8 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+# npm ci ставит пакеты строго по package-lock.json: сборка воспроизводима.
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 

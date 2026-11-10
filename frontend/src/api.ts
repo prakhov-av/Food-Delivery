@@ -7,7 +7,24 @@ export class ApiError extends Error {
   }
 }
 
-const API_URL = String(import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
+/**
+ * Базовый путь API.
+ *
+ * API живёт на том же origin, что и фронт: запросы уходят на /api/*,
+ * а nginx (в проде) или vite (в dev) проксирует их на backend.
+ *
+ * Так cookie гостевой сессии и токены становятся first-party.
+ * Раньше фронт и API стояли на разных доменах, и мобильные браузеры
+ * (iOS Safari, Chrome с блокировкой сторонних cookie) такую cookie
+ * выбрасывали: гостевой режим и чат на телефоне не работали.
+ *
+ * VITE_API_BASE нужен только для нестандартных сборок,
+ * по умолчанию всё идёт через /api.
+ */
+const API_BASE = String(import.meta.env.VITE_API_BASE ?? '/api').replace(
+  /\/+$/,
+  '',
+);
 
 const NO_REFRESH = ['/auth/login', '/auth/refresh'];
 
@@ -34,7 +51,7 @@ async function rawRequest(
   // перед каждым запросом — вдвое больше круговых обходов.
   const hasBody = options.body !== undefined && options.body !== null;
 
-  return fetch(`${API_URL}${normalizedPath}`, {
+  return fetch(`${API_BASE}${normalizedPath}`, {
     ...options,
     headers: {
       ...(hasBody && !isFormData

@@ -1,12 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { api, apiList } from '../api';
-import { addGuestOrderItem, getOrCreateGuestOrder } from '../guest';
+import {
+  addGuestOrderItem,
+  getGuestOrders,
+  getOrCreateGuestOrder,
+} from '../guest';
 import { canCreateOrder } from '../types';
 import { ORDER_LIMITS } from '../config';
 import type {
   MenuDto,
   MenuItemDto,
   OrderDto,
+  OrderItemDto,
   RestaurantDto,
   Role,
 } from '../types';
@@ -16,6 +22,72 @@ import {
   SuccessBanner,
   formatPrice,
 } from '../ui';
+
+/**
+ * Позиция в корзине.
+ *
+ * Ключ строим по id блюда, а не по id позиции заказа:
+ * заказ может содержать несколько позиций одного блюда,
+ * в корзине они должны выглядеть одной строкой.
+ */
+interface CartLine {
+  key: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+/** Состояние летящего элемента, который летит в корзину. */
+interface FlyState {
+  name: string;
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+}
+
+const FLY_DURATION_MS = 700;
+
+const toCartLines = (items: OrderItemDto[]): CartLine[] => {
+  const lines = new Map<string, CartLine>();
+
+  for (const item of items) {
+    const key = `menu:${item.menuItem.id}`;
+    const existing = lines.get(key);
+
+    if (existing) {
+      existing.quantity += item.quantity;
+
+      continue;
+    }
+
+    lines.set(key, {
+      key,
+      name: item.menuItem.name,
+      price: Number(item.menuItem.price),
+      quantity: item.quantity,
+    });
+  }
+
+  return [...lines.values()];
+};
+
+const mergeLine = (
+  lines: CartLine[],
+  line: CartLine,
+): CartLine[] => {
+  const existing = lines.find((item) => item.key === line.key);
+
+  if (!existing) {
+    return [...lines, line];
+  }
+
+  return lines.map((item) =>
+    item.key === line.key
+      ? { ...item, quantity: item.quantity + line.quantity }
+      : item,
+  );
+};
 
 export default function DishesView({
   restaurant,
@@ -56,6 +128,16 @@ export default function DishesView({
 
   const [qty, setQty] = useState<Record<number, string>>({});
 
+  // Корзина: состав заказа, который видно сразу после нажатия «В заказ».
+  const [cartLines, setCartLines] = useState<CartLine[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [addingId, setAddingId] = useState<number | null>(null);
+  const [fly, setFly] = useState<FlyState | null>(null);
+  const [pulseKey, setPulseKey] = useState(0);
+
+  const cartButtonRef = useRef<HTMLButtonElement>(null);
+  const flyTimerRef = useRef<number | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -71,9 +153,49 @@ export default function DishesView({
     }
   }, [menu.id]);
 
+  /**
+   * Загружает состав корзины.
+   *
+   * У гостя заказ принадлежит гостевой сессии, у пользователя —
+   * его собственные активные позиции.
+   */
+  const loadCart = useCallback(async () => {
+    try {
+      if (isGuest) {
+        const orders = await getGuestOrders();
+        const draft = orders.find(
+          (order) =>
+            order.order.restaurant?.id === restaurant.id &&
+            order.order.status === 'NEW',
+        );
+
+        setCartLines(draft ? toCartLines(draft.items) : []);
+
+        return;
+      }
+
+      setCartLines(toCartLines(await apiList<OrderItemDto>('/order-items')));
+    } catch {
+      // Корзина вспомогательная: её сбой не должен ломать страницу блюд.
+    }
+  }, [isGuest, restaurant.id]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadCart();
+  }, [loadCart]);
+
+  useEffect(
+    () => () => {
+      if (flyTimerRef.current !== null) {
+        window.clearTimeout(flyTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const run = async (action: () => Promise<void>, successMessage: string) => {
     setBusy(true);
@@ -130,62 +252,132 @@ export default function DishesView({
         api(`/menu-items/${id}`, {
           method: 'DELETE',
         }),
-      'Блюдо деактивировано',
+      'Блюдо деактивировано');
+
+  /**
+   * Запускает анимацию: карточка блюда летит к иконке корзины.
+   */
+  const startFly = (item: MenuItemDto, source: HTMLElement | null) => {
+    const target = cartButtonRef.current;
+
+    if (!target) {
+      return;
+    }
+
+    const from = (source ?? target).getBoundingClientRect();
+    const to = target.getBoundingClientRect();
+
+    const x = from.left + from.width / 2;
+    const y = from.top + from.height / 2;
+
+    setFly({
+      name: item.name,
+      x,
+      y,
+      dx: to.left + to.width / 2 - x,
+      dy: to.top + to.height / 2 - y,
+    });
+
+    if (flyTimerRef.current !== null) {
+      window.clearTimeout(flyTimerRef.current);
+    }
+
+    flyTimerRef.current = window.setTimeout(() => {
+      setFly(null);
+      flyTimerRef.current = null;
+    }, FLY_DURATION_MS);
+  };
+
+  /**
+   * Корзина = заказ в статусе NEW в этом ресторане.
+   * Создаётся при первом добавлении.
+   *
+   * Позиция появляется в корзине сразу, до ответа сервера:
+   * так видно, что блюдо уходит в заказ, а не просто «обновляется страница».
+   */
+  const addToOrder = async (item: MenuItemDto, source: HTMLElement | null) => {
+    const quantity = Math.min(
+      ORDER_LIMITS.maxQuantityPerItem,
+      Math.max(1, Math.floor(Number(qty[item.id] ?? '1')) || 1),
     );
 
-  // Корзина = заказ в статусе NEW в этом ресторане.
-  // Создаётся при первом добавлении.
-  const addToOrder = (item: MenuItemDto) =>
-    run(async () => {
-      const quantity = Math.min(
-        ORDER_LIMITS.maxQuantityPerItem,
-        Math.max(1, Math.floor(Number(qty[item.id] ?? '1')) || 1),
-      );
+    setAddingId(item.id);
+    setError('');
 
+    const snapshot = cartLines;
+
+    setCartLines((lines) =>
+      mergeLine(lines, {
+        key: `menu:${item.id}`,
+        name: item.name,
+        price: Number(item.price),
+        quantity,
+      }),
+    );
+
+    startFly(item, source);
+    setPulseKey((key) => key + 1);
+
+    try {
       if (isGuest) {
         // У гостя заказ принадлежит гостевой сессии, а не пользователю.
         const draft = await getOrCreateGuestOrder(restaurant.id);
 
-        await addGuestOrderItem(draft.order.id, item.id, quantity);
+        const updated = await addGuestOrderItem(draft.order.id, item.id, quantity);
 
-        setQty({
-          ...qty,
-          [item.id]: '1',
-        });
+        setCartLines(toCartLines(updated.items));
+      } else {
+        const orders = await apiList<OrderDto>('/orders');
 
-        return;
-      }
+        let order = orders.find(
+          (o) => o.status === 'NEW' && o.restaurant?.id === restaurant.id,
+        );
 
-      const orders = await apiList<OrderDto>('/orders');
+        if (!order) {
+          order = await api<OrderDto>('/orders', {
+            method: 'POST',
+            body: JSON.stringify({
+              customerId: userId,
+              restaurantId: restaurant.id,
+            }),
+          });
+        }
 
-      let order = orders.find(
-        (o) => o.status === 'NEW' && o.restaurant?.id === restaurant.id,
-      );
-
-      if (!order) {
-        order = await api<OrderDto>('/orders', {
+        await api('/order-items', {
           method: 'POST',
           body: JSON.stringify({
-            customerId: userId,
-            restaurantId: restaurant.id,
+            orderId: order.id,
+            menuItemId: item.id,
+            quantity,
           }),
         });
-      }
 
-      await api('/order-items', {
-        method: 'POST',
-        body: JSON.stringify({
-          orderId: order.id,
-          menuItemId: item.id,
-          quantity,
-        }),
-      });
+        // Состав заказа у пользователя берём с сервера: позиции могут
+        // уже существовать, и их количество посчитает бэкенд.
+        void loadCart();
+      }
 
       setQty({
         ...qty,
         [item.id]: '1',
       });
-    }, `«${item.name}» добавлено в заказ`);
+
+      setSuccess(`«${item.name}» добавлено в заказ`);
+    } catch (err) {
+      setCartLines(snapshot);
+      setError(
+        err instanceof Error ? err.message : 'Не удалось добавить в заказ',
+      );
+    } finally {
+      setAddingId(null);
+    }
+  };
+
+  const cartCount = cartLines.reduce((sum, line) => sum + line.quantity, 0);
+  const cartTotal = cartLines.reduce(
+    (sum, line) => sum + line.price * line.quantity,
+    0,
+  );
 
   return (
     <div className="view">
@@ -361,8 +553,13 @@ export default function DishesView({
 
                     <button
                       className="btn btn-primary btn-sm"
-                      disabled={busy}
-                      onClick={() => void addToOrder(item)}
+                      disabled={addingId !== null}
+                      onClick={(event) =>
+                        void addToOrder(
+                          item,
+                          event.currentTarget.closest('.dish-card'),
+                        )
+                      }
                     >
                       В заказ
                     </button>
@@ -397,6 +594,75 @@ export default function DishesView({
               </div>
             ),
           )}
+        </div>
+      )}
+
+      {fly && (
+        <div
+          className="fly-to-cart"
+          style={
+            {
+              '--fly-x': `${fly.x}px`,
+              '--fly-y': `${fly.y}px`,
+              '--fly-dx': `${fly.dx}px`,
+              '--fly-dy': `${fly.dy}px`,
+            } as CSSProperties
+          }
+        >
+          <span className="fly-to-cart__name">{fly.name}</span>
+        </div>
+      )}
+
+      <button
+        ref={cartButtonRef}
+        type="button"
+        className="cart-button"
+        onClick={() => setCartOpen((open) => !open)}
+        aria-label="Ваш заказ"
+      >
+        <span className="cart-button__icon">🛒</span>
+
+        {cartCount > 0 && (
+          <span key={pulseKey} className="cart-badge">
+            {cartCount}
+          </span>
+        )}
+      </button>
+
+      {cartOpen && (
+        <div className="cart-panel">
+          <div className="cart-panel__head">
+            <span>Ваш заказ</span>
+
+            <button
+              type="button"
+              className="cart-panel__close"
+              onClick={() => setCartOpen(false)}
+              aria-label="Закрыть корзину"
+            >
+              ✕
+            </button>
+          </div>
+
+          {cartLines.length === 0 ? (
+            <div className="cart-panel__empty">В заказе пока пусто</div>
+          ) : (
+            <ul className="cart-panel__list">
+              {cartLines.map((line) => (
+                <li key={line.key}>
+                  <span className="cart-panel__name">{line.name}</span>
+                  <span className="cart-panel__qty">× {line.quantity}</span>
+                  <span className="cart-panel__price">
+                    {formatPrice(line.price * line.quantity)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="cart-panel__total">
+            Итого: {formatPrice(cartTotal)}
+          </div>
         </div>
       )}
     </div>

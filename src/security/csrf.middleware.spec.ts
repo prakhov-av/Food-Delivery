@@ -17,6 +17,12 @@ describe('CsrfMiddleware', (): void => {
   const req = (method: string, origin?: string): Request =>
     ({ method, headers: origin ? { origin } : {} }) as unknown as Request;
 
+  const reqWithFetchSite = (method: string, fetchSite: string): Request =>
+    ({
+      method,
+      headers: { 'sec-fetch-site': fetchSite },
+    }) as unknown as Request;
+
   afterEach((): void => {
     process.env = { ...ORIGINAL_ENV };
   });
@@ -76,5 +82,28 @@ describe('CsrfMiddleware', (): void => {
     mw.use(req('POST'), response, next);
 
     expect(next).toHaveBeenCalled();
+  });
+
+  it('should pass a same-origin request without the origin header', (): void => {
+    const mw = create({
+      CORS_ORIGINS: 'http://localhost:5173',
+      CSRF_ALLOW_NO_ORIGIN: undefined,
+    });
+    const next = jest.fn();
+
+    mw.use(reqWithFetchSite('POST', 'same-origin'), response, next);
+
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('should reject a cross-site request without the origin header', (): void => {
+    const mw = create({
+      CORS_ORIGINS: 'http://localhost:5173',
+      CSRF_ALLOW_NO_ORIGIN: undefined,
+    });
+
+    expect(() =>
+      mw.use(reqWithFetchSite('POST', 'cross-site'), response, jest.fn()),
+    ).toThrow(ForbiddenException);
   });
 });

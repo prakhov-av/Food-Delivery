@@ -31,6 +31,8 @@ import { PromptsModule } from './prompts/prompts.module';
 import { AuditModule } from './audit/audit.module';
 import { CsrfMiddleware } from './security/csrf.middleware';
 import { GuestSessionsModule } from './guest-sessions/guest-sessions.module';
+import { resolveIpTracker, resolveThrottleTracker } from './security/client-ip';
+import type { Request } from 'express';
 
 @Module({
   imports: [
@@ -51,7 +53,28 @@ import { GuestSessionsModule } from './guest-sessions/guest-sessions.module';
     PromptsModule,
     AuditModule,
     GuestSessionsModule,
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    /**
+     * Два счётчика лимитов:
+     *  - default считает запросы по идентичности запроса (пользователь,
+     *    гостевая сессия, устройство) — иначе все посетители сайта
+     *    делили бы один счётчик и 429 получал бы кто угодно;
+     *  - ip считает запросы по адресу клиента и служит страховкой
+     *    от спама с одного адреса.
+     */
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: 120,
+        getTracker: (request) => resolveThrottleTracker(request as Request),
+      },
+      {
+        name: 'ip',
+        ttl: 60_000,
+        limit: 120,
+        getTracker: (request) => resolveIpTracker(request as Request),
+      },
+    ]),
     // TypeOrmModule.forRoot(typeOrmConfig),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
