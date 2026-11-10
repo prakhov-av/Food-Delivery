@@ -20,8 +20,12 @@ export class ApiError extends Error {
  *
  * VITE_API_BASE нужен только для нестандартных сборок,
  * по умолчанию всё идёт через /api.
+ *
+ * Важно: здесь именно `||`, а не `??`. В Docker ARG без значения даёт
+ * пустую строку, а не undefined: с `??` база получилась бы пустой, фронт
+ * пошёл бы по путям без префикса и получал бы HTML страницы вместо JSON.
  */
-const API_BASE = String(import.meta.env.VITE_API_BASE ?? '/api').replace(
+const API_BASE = String(import.meta.env.VITE_API_BASE || '/api').replace(
   /\/+$/,
   '',
 );
