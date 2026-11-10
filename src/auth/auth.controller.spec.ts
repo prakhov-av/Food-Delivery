@@ -45,7 +45,7 @@ describe('AuthController', () => {
     const dto = {
       email: 'user@test.com',
       password: 'password',
-    } as LoginRequestDto;
+    };
 
     const response = createResponseMock();
 
@@ -69,6 +69,7 @@ describe('AuthController', () => {
         httpOnly: true,
         secure: false,
         sameSite: 'lax',
+        path: '/',
         maxAge: 15 * 60 * 1000,
       },
     );
@@ -81,6 +82,7 @@ describe('AuthController', () => {
         httpOnly: true,
         secure: false,
         sameSite: 'lax',
+        path: '/',
         maxAge: 12 * 60 * 60 * 1000,
       },
     );
@@ -112,6 +114,7 @@ describe('AuthController', () => {
         httpOnly: true,
         secure: false,
         sameSite: 'lax',
+        path: '/',
         maxAge: 15 * 60 * 1000,
       },
     );
@@ -132,9 +135,13 @@ describe('AuthController', () => {
       'refresh-token=refresh',
     );
 
-    expect(response.clearCookie).toHaveBeenNthCalledWith(1, 'access-token');
+    expect(response.clearCookie).toHaveBeenNthCalledWith(1, 'access-token', {
+      path: '/',
+    });
 
-    expect(response.clearCookie).toHaveBeenNthCalledWith(2, 'refresh-token');
+    expect(response.clearCookie).toHaveBeenNthCalledWith(2, 'refresh-token', {
+      path: '/',
+    });
   });
 
   it('should use secure cookies and SameSite none outside test environment', async () => {
@@ -153,7 +160,7 @@ describe('AuthController', () => {
       {
         email: 'user@test.com',
         password: 'password',
-      } as LoginRequestDto,
+      },
       createRequestMock() as any,
       response as any,
     );

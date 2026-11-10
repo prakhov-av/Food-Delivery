@@ -23,8 +23,20 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    proxy: Object.fromEntries(
-      apiPaths.map((p) => [p, { target: backend, changeOrigin: true }]),
-    ),
+    proxy: {
+      /**
+       * API живёт на том же origin, что и фронт (в проде это делает nginx).
+       * В dev то же самое делает vite: префикс /api срезается,
+       * backend получает привычные пути /auth, /guest-sessions и так далее.
+       */
+      '/api': {
+        target: backend,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      ...Object.fromEntries(
+        apiPaths.map((p) => [p, { target: backend, changeOrigin: true }]),
+      ),
+    },
   },
 });

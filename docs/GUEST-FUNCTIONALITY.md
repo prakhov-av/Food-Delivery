@@ -53,10 +53,21 @@ Both endpoints are marked public because they establish or revoke the guest iden
 
 | Environment | `Secure` | `SameSite` |
 | --- | --- | --- |
-| Production | yes | `None` — the frontend and the API are on different domains, so the cookie has to be cross-site |
+| Production | yes | `None` — остаётся совместимым с любым вариантом развёртывания |
 | Development and tests | no | `Lax` — over plain `http://localhost` a `Secure` cookie would be rejected by the browser |
 
-In production the frontend and the API are served from different domains, so the `Origin` of every state-changing request must be listed in `CORS_ORIGINS`. Otherwise the CSRF middleware rejects the request with `403 Invalid request origin`.
+Куки ставится с `Path=/`, поэтому работает и когда API доступен по отдельному
+адресу, и когда фронт проксирует его через `/api` на своём origin.
+
+Фронт вызывает API **на своём origin** (`/api/*`, nginx проксирует запрос на
+backend). Благодаря этому куки — свои, а не сторонние: iOS Safari и Chrome с
+блокировкой сторонних кук выбрасывают стороннюю куки, и на телефоне ломался
+гостевой режим и чат.
+
+`Origin` каждого меняющего состояние запроса должен быть в `CORS_ORIGINS`,
+иначе CSRF middleware отвечает `403 Invalid request origin`. Запрос без
+заголовка `Origin` принимается, если браузер отметил его как same-origin
+(`Sec-Fetch-Site: same-origin`).
 
 ## 4. Guest orders and ownership
 

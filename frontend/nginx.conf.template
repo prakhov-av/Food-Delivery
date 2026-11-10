@@ -1,0 +1,81 @@
+# Шаблон конфигурации nginx фронта.
+#
+# Файл обрабатывается envsubst при старте контейнера:
+# подставляется только переменная API_UPSTREAM (адрес backend),
+# остальные $переменные остаются нетронутыми.
+#
+# Почему API проксируется на том же origin:
+# фронт и API стояли на разных доменах, поэтому cookie гостевой сессии
+# была сторонней, и мобильные браузеры (iOS Safari, Chrome с блокировкой
+# сторонних cookie) её выбрасывали. На телефоне не работали ни AI-чат,
+# ни добавление заказа. С same-origin cookie становится своей,
+# и мобильные браузеры её принимают.
+
+# Последний адрес в цепочке X-Forwarded-For — адрес клиента,
+# с которого пришёл запрос (Cloudflare дописывает его в конец).
+map $http_x_forwarded_for $forwarded_client_ip {
+    "~^(?<client_ip>[^,]+)$"     $client_ip;
+    "~.*,\s*(?<client_ip>[^,]+)$" $client_ip;
+    default                      "";
+}
+
+# Cloudflare присылает реальный адрес клиента в CF-Connecting-IP.
+# Если его нет (запрос пришёл мимо Cloudflare), берём X-Forwarded-For.
+map $http_cf_connecting_ip $frontend_client_ip {
+    ""      $forwarded_client_ip;
+    default $http_cf_connecting_ip;
+}
+
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Сжатие на самом origin: Cloudflare жмёт brotli, но и без него
+    # ответы должны уходить сжатыми.
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    # Файлы сборки с хешем в имени никогда не меняются — кэшируем их надолго.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # index.html всегда свежий, иначе после деплоя останется старый бандл.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # API на том же origin: /api/* уходит на backend, префикс /api срезается.
+    location /api/ {
+        proxy_pass ${API_UPSTREAM}/;
+        proxy_http_version 1.1;
+
+        # SNI обязателен: без него Cloudflare не отдаст сертификат.
+        proxy_ssl_server_name on;
+        # Сертификат backend проверяем по системному списку CA.
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Реальный адрес клиента для троттлинга и журнала аудита.
+        proxy_set_header X-Client-IP $frontend_client_ip;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 10s;
+        # AI-чат отвечает не сразу, поэтому читаем ответ дольше минуты.
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

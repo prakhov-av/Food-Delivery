@@ -26,9 +26,12 @@ SPA на Vite + React + TypeScript для backend-приложения дост�
 
 4. Открыть http://localhost:5173
 
-Все запросы к API проксируются dev-сервером Vite на `http://localhost:3000`
-(см. `vite.config.ts`) — это нужно, потому что backend использует httpOnly-cookie
-и не настроен CORS.
+Все запросы к API идут на `/api/*` — тот же origin, что и сам фронт. В dev их
+проксирует сервер Vite на `http://localhost:3000` (см. `vite.config.ts`), в
+проде — nginx внутри контейнера фронта (`nginx.conf.template`). Это нужно,
+потому что backend использует httpOnly-cookie: если API на другом домене, куки
+становятся сторонними, и мобильные браузеры их выбрасывают (на телефоне ломался
+гостевой режим и чат).
 
 ## Гостевой режим
 

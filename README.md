@@ -95,8 +95,9 @@ Recorded events include logins (successful and failed), registration and confirm
 
 ### Security
 
-- Rate limiting: 120 requests per minute per IP overall, 10 per minute on login, registration, order creation and chat. When exceeded, the API answers `429`
-- CSRF protection: every state-changing request (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `Origin` header that is listed in `CORS_ORIGINS`, otherwise the API answers `403`. This matters because the auth cookies are `SameSite=None`
+- Rate limiting: 120 requests per minute overall, 10 per minute on login, registration, order creation and chat. When exceeded, the API answers `429`. The counter is keyed by the identity of the request (user, guest session, device) and not by the IP address: behind Cloudflare every visitor shares one address, so a per-IP counter would let one person block the whole site. A second counter by IP guards against spam from a single address, and login attempts are additionally limited per account
+- CSRF protection: every state-changing request (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `Origin` header that is listed in `CORS_ORIGINS`, otherwise the API answers `403`. A request without `Origin` is accepted when the browser marks it as same-origin (`Sec-Fetch-Site: same-origin`). This matters because the auth cookies are `SameSite=None`
+- The real client address is taken from `X-Client-IP` (the frontend proxy passes it on) or from `CF-Connecting-IP`, so the audit log shows the address of the visitor, not the address of a Cloudflare edge node
 - Request validation rejects unknown fields (`whitelist` and `forbidNonWhitelisted`)
 - Request logs mask passwords and tokens. Chat prompts are logged by size only. Set `CHAT_DEBUG_PROMPTS=true` locally to see full prompts
 - Login failures return one generic error, so the API does not reveal whether an email is registered
@@ -282,9 +283,9 @@ In development the browser talks to Vite, and Vite proxies API calls to the back
 | Variable | Purpose |
 | --- | --- |
 | `PROXY_TARGET` | Backend address for the dev proxy, for example a remote server. Set it for one run only |
-| `VITE_API_URL` | Leave empty in development. In production, the public API URL (read at build time) |
+| `VITE_API_BASE` | Base path of the API. Leave it unset: the frontend calls `/api/*` on its own origin, and the proxy forwards it to the backend |
 
-The proxied paths are listed in `frontend/vite.config.ts`. **When you add a new top-level backend route, add it there too**, otherwise Vite answers `404`.
+The frontend always talks to the API **on its own origin**, through the path `/api`. In development Vite proxies that path to the backend (`frontend/vite.config.ts`); in production nginx does it (`frontend/nginx.conf.template`). The proxy rewrites `/api/*` to the backend's own paths, so **a new top-level backend route needs no frontend change**.
 
 ## Local benchmark (not part of the repository)
 
@@ -351,13 +352,15 @@ One DigitalOcean project with four resources:
 | Vector database | Droplet (FRA1, 512 MB RAM) | Qdrant in Docker, protected with an API key |
 
 ```text
-Browser ──► fds-frontend-app (static SPA)
+Browser ──► fds-frontend-app (static SPA + nginx)
    │
-   └─ fetch with cookies (VITE_API_URL) ──► fds-app (NestJS)
-                                              ├──► Managed PostgreSQL
-                                              ├──► AI provider (answers, embeddings)
-                                              └──► Qdrant on the Droplet (:6333, api-key)
+   └─ fetch /api/* with cookies (same origin) ──► nginx ──► fds-app (NestJS)
+                                                        ├──► Managed PostgreSQL
+                                                        ├──► AI provider (answers, embeddings)
+                                                        └──► Qdrant on the Droplet (:6333, api-key)
 ```
+
+The API is reached through the same origin as the frontend (`/api/*` on the frontend host). That is what keeps the auth cookies working on phones: with the API on a different domain the cookie is third-party, and iOS Safari and Chrome with third-party cookie blocking drop it, so the guest mode and the chat stop working on mobile.
 
 **1. Database.** Create the managed PostgreSQL cluster and put its host, port, user, password and database name into the backend variables. Set `DB_SSL=true` and add the backend app as a trusted source if the cluster restricts incoming connections. The schema is managed by TypeORM migrations. Keep `synchronize: false`; do not use automatic schema synchronization in production. Apply pending migrations through the project's migration command as part of deployment.
 
@@ -372,7 +375,9 @@ The volume keeps the data when the container is recreated, `--restart unless-sto
 
 **3. Backend (`fds-app`).** Set the variables from the table above plus the AI provider and mail settings, and mark the secrets as encrypted. Do not set `CSRF_ALLOW_NO_ORIGIN` and `CHAT_DEBUG_PROMPTS` in production. If `CORS_ORIGINS` is empty, every state-changing request, login included, is rejected with `403`. A wrong `QDRANT_URL` or `QDRANT_API_KEY` is not fatal at startup, it shows up later as errors in the chat and in uploads, so check the logs after the first deployment.
 
-**4. Frontend (`fds-frontend-app`).** Set `VITE_API_URL` to the public address of the backend. Vite reads it **at build time**, so changing it requires a new build. The auth cookies are `Secure` and `SameSite=None`, which works because both apps are served over HTTPS.
+**4. Frontend (`fds-frontend-app`).** Nothing to configure for the API: the frontend calls `/api/*` on its own origin, and nginx inside the container forwards it to the backend. The backend address comes from the `API_UPSTREAM` environment variable (the image already carries the production address as the default; set it only if the backend lives elsewhere). The auth cookies are `Secure` and `SameSite=None`, which works because both apps are served over HTTPS.
+
+> The old build argument `VITE_API_URL` is no longer used. If it is still set in the app spec, remove it: the frontend must not call the API directly, or the cookies become third-party again and break on phones.
 
 **5. Fill the knowledge base.** Sign in as admin on the deployed frontend and upload the documents from `docs/knowledge-base/`. Then check that the number of points of the active collection grew in the Qdrant dashboard, that the assistant answers a question from each role's documents, and that it says it has no information for questions outside the role.
 
@@ -381,9 +386,10 @@ The volume keeps the data when the container is recreated, `--restart unless-sto
 1. Database created, backend variables set
 2. Qdrant running with an API key, port open
 3. Backend deployed, logs show no Qdrant errors
-4. Frontend built with the right `VITE_API_URL`
+4. Frontend deployed, `API_UPSTREAM` points at the backend (the default is the production address)
 5. `CORS_ORIGINS` contains the frontend address
 6. Knowledge base uploaded, chat checked under every role
+7. Guest mode and the chat checked on a phone
 
 ## Known limitations
 
@@ -418,9 +424,12 @@ The volume keeps the data when the container is recreated, `--restart unless-sto
 | Symptom | Likely cause |
 | --- | --- |
 | `429 Too Many Requests` after several logins | Rate limit, wait a minute |
+| The guest mode or the chat does not work on a phone, but works on a desktop | The API is called on a different domain, so the cookie is third-party and the mobile browser drops it. The frontend must call `/api/*` on its own origin (nginx forwards it to the backend) |
+| `401 Guest session is required` right after entering the guest mode | The `guest-session` cookie did not reach the browser: check the `Set-Cookie` of `POST /api/guest-sessions` and that its `Path` is `/` |
 | `403 Invalid request origin` on every POST, login included | The address of the frontend is not in `CORS_ORIGINS` (or the variable is empty). Locally, the Vite address is `http://localhost:5173` |
 | `403 Origin header is required` from Postman, curl or tests | Send an `Origin` header from `CORS_ORIGINS`, or set `CSRF_ALLOW_NO_ORIGIN=true` locally |
 | The page is blank and Vite prints `http proxy error` | The backend is not running or has not finished restarting |
+| Every API call in production answers `404` | `API_UPSTREAM` points at the wrong address, or the frontend image still carries the old `VITE_API_URL` build argument and calls the API directly |
 | A new endpoint returns `404` from the frontend | The path is missing in `frontend/vite.config.ts` (the upload endpoint needs `/ingestion`) |
 | The backend does not start: `QDRANT_URL must be a single valid URL` | `QDRANT_URL` holds two addresses, a comma, a typo or lacks `http://` |
 | Chat answers fail with `ECONNREFUSED ... :6333` | Qdrant is not running or `QDRANT_URL` is wrong. Start the container (on Windows, start Docker Desktop first) |

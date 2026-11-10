@@ -1,33 +1,25 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NestMiddleware,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
 
 const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
-const normalize = (origin: string): string =>
-  origin.trim().replace(/\/+$/, '');
+const normalize = (origin: string): string => origin.trim().replace(/\/+$/, '');
 
 /**
-   * Минимальная CSRF-защита для cookie-аутентификации (SameSite=None).
-   * Запросы, меняющие состояние, принимаются только с разрешённого Origin.
-   * CORS_ORIGINS: адреса фронта через запятую, например
-   * http://localhost:5173,https://my-front.ondigitalocean.app
-   * CSRF_ALLOW_NO_ORIGIN=true: пропускать запросы без заголовка Origin
-   * (Postman, curl, supertest). Только для dev и тестов, в проде не включать.
-   */
+ * Минимальная CSRF-защита для cookie-аутентификации (SameSite=None).
+ * Запросы, меняющие состояние, принимаются только с разрешённого Origin.
+ * CORS_ORIGINS: адреса фронта через запятую, например
+ * http://localhost:5173,https://my-front.ondigitalocean.app
+ * CSRF_ALLOW_NO_ORIGIN=true: пропускать запросы без заголовка Origin
+ * (Postman, curl, supertest). Только для dev и тестов, в проде не включать.
+ */
 /**
-   * Проверяет защитные признаки запросов, изменяющих состояние, чтобы снизить риск CSRF при cookie-аутентификации.
-   */
+ * Проверяет защитные признаки запросов, изменяющих состояние, чтобы снизить риск CSRF при cookie-аутентификации.
+ */
 @Injectable()
 export class CsrfMiddleware implements NestMiddleware {
   private readonly allowedOrigins: Set<string> = new Set(
-    (process.env.CORS_ORIGINS ?? '')
-      .split(',')
-      .map(normalize)
-      .filter(Boolean),
+    (process.env.CORS_ORIGINS ?? '').split(',').map(normalize).filter(Boolean),
   );
 
   private readonly allowNoOrigin: boolean =
@@ -45,6 +37,21 @@ export class CsrfMiddleware implements NestMiddleware {
 
     if (!origin) {
       if (this.allowNoOrigin) {
+        next();
+
+        return;
+      }
+
+      /**
+       * Запрос с того же сайта браузер иногда отправляет без Origin.
+       * Признак `Sec-Fetch-Site: same-origin` ставит сам браузер
+       * и подделать его из чужого сайта нельзя, поэтому такой запрос
+       * считаем своим. Именно так работают запросы фронта
+       * через same-origin проксирование на /api.
+       */
+      const fetchSite: string | undefined = request.headers['sec-fetch-site'];
+
+      if (fetchSite === 'same-origin') {
         next();
 
         return;

@@ -12,10 +12,11 @@ import { AuditLog } from './audit-log.entity';
 import { AuditAction, AuditResult } from './audit.enums';
 import { AuditLogQueryDto } from './audit-log-query.dto';
 import { maskSensitive } from '../logging/request-logging.interceptor';
+import { resolveClientIp } from '../security/client-ip';
 
 /**
-   * Компонент модуля «audit», отвечающий за специализированную часть логики приложения.
-   */
+ * Компонент модуля «audit», отвечающий за специализированную часть логики приложения.
+ */
 export interface AuditEntry {
   action: AuditAction;
   result?: AuditResult;
@@ -28,8 +29,8 @@ export interface AuditEntry {
 }
 
 /**
-   * Компонент модуля «audit», отвечающий за специализированную часть логики приложения.
-   */
+ * Компонент модуля «audit», отвечающий за специализированную часть логики приложения.
+ */
 export interface AuditPage {
   items: AuditLog[];
   total: number;
@@ -40,8 +41,8 @@ export interface AuditPage {
 const MAX_DETAILS_LENGTH = 4000;
 
 /**
-   * Предоставляет операции чтения и сохранения записей аудита.
-   */
+ * Предоставляет операции чтения и сохранения записей аудита.
+ */
 @Injectable()
 export class AuditService {
   private readonly logger: Logger = new Logger(AuditService.name);
@@ -69,7 +70,7 @@ export class AuditService {
           entityType: entry.entityType ?? null,
           entityId: entry.entityId ?? null,
           result: entry.result ?? AuditResult.SUCCESS,
-          ip: entry.request?.ip ?? null,
+          ip: entry.request ? resolveClientIp(entry.request) : null,
           userAgent:
             entry.request?.headers['user-agent']?.slice(0, 255) ?? null,
           details: this.sanitize(entry.details),

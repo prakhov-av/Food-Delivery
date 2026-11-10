@@ -19,10 +19,11 @@ import { UserDto } from '../users/dto/user.dto';
 import type { AuthenticatedRequest } from './types/authenticated-request';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResult } from '../audit/audit.enums';
+import { resolveAccountTracker } from '../security/client-ip';
 
 /**
-   * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
-   */
+ * Обрабатывает HTTP-запросы соответствующего ресурса, валидирует входные DTO через инфраструктуру NestJS и делегирует бизнес-операции сервисам.
+ */
 @Controller('/auth')
 export class AuthController {
   constructor(
@@ -41,7 +42,20 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  /**
+   * Лимит на попытки входа считается по конкретной учётной записи,
+   * а не по адресу: через Cloudflare адрес общий у всех посетителей,
+   * и иначе один человек блокировал бы вход всем остальным.
+   */
+  @Throttle({
+    default: {
+      limit: 10,
+      ttl: 60_000,
+      getTracker: (request) =>
+        resolveAccountTracker(request as express.Request),
+    },
+    ip: { limit: 20, ttl: 60_000 },
+  })
   @Post('/login')
   @HttpCode(HttpStatus.OK)
   /**
@@ -105,10 +119,17 @@ export class AuthController {
     accessToken: string,
     refreshToken?: string,
   ): void {
+    /**
+     * Path=/ обязателен: без него cookie привязывается к каталогу
+     * запроса (для /auth/login это /auth), и браузер не примет её
+     * для остальных адресов. Фронт ходит в API через /api,
+     * поэтому путь cookie должен быть корнем сайта.
+     */
     response.cookie('access-token', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV !== 'test',
       sameSite: process.env.NODE_ENV === 'test' ? 'lax' : 'none',
+      path: '/',
       maxAge: 15 * 60 * 1000,
     });
 
@@ -117,6 +138,7 @@ export class AuthController {
         httpOnly: true,
         secure: process.env.NODE_ENV !== 'test',
         sameSite: process.env.NODE_ENV === 'test' ? 'lax' : 'none',
+        path: '/',
         maxAge: 12 * 60 * 60 * 1000,
       });
     }
@@ -134,7 +156,7 @@ export class AuthController {
   ): void {
     this.service.revokeRefreshToken(request.headers.cookie);
 
-    response.clearCookie('access-token');
-    response.clearCookie('refresh-token');
+    response.clearCookie('access-token', { path: '/' });
+    response.clearCookie('refresh-token', { path: '/' });
   }
 }
