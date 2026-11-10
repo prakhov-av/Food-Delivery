@@ -5,9 +5,6 @@ import { OrderSaveDto } from './order.save-dto';
 import { UsersMapper } from '../../users/dto/users.mapper';
 import { RestaurantsMapper } from '../../restaurants/dto/restaurants.mapper';
 
-/**
- * Описывает структуру данных «OrdersMapper», используемую на границе API или между слоями приложения; ограничения полей определяются декораторами валидации, если они предусмотрены.
- */
 @Injectable()
 export class OrdersMapper {
   constructor(
@@ -22,7 +19,9 @@ export class OrdersMapper {
 
     const dto: OrderDto = new OrderDto();
     dto.id = entity.id;
-    dto.customer = this.usersMapper.mapEntityToDto(entity.customer);
+    dto.customer = entity.customer
+      ? this.usersMapper.mapEntityToDto(entity.customer)
+      : null;
     dto.courier = entity.courier
       ? this.usersMapper.mapEntityToDto(entity.courier)
       : null;
@@ -30,6 +29,7 @@ export class OrdersMapper {
     dto.status = entity.status;
     dto.totalPrice = entity.totalPrice;
     dto.createdAt = entity.createdAt;
+
     return dto;
   }
 
@@ -38,6 +38,8 @@ export class OrdersMapper {
   }
 
   mapEntityListToDtoList(entityList: Order[]): OrderDto[] {
-    return entityList.map((o: Order): OrderDto => this.mapEntityToDto(o));
+    return entityList.map((order: Order): OrderDto =>
+      this.mapEntityToDto(order),
+    );
   }
 }

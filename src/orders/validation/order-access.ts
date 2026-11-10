@@ -11,7 +11,7 @@ export function checkOrderAccess(
     return;
   }
 
-  if (user.role === Role.CUSTOMER && order.customer.id !== user.id) {
+  if (user.role === Role.CUSTOMER && order.customer?.id !== user.id) {
     throw new ForbiddenException('Customer can only access own orders');
   }
 

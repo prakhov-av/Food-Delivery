@@ -1,5 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { OrdersService } from '../orders/orders.service';
+import { GuestOrdersService } from '../orders/guest-orders.service';
+import { ChatIdentity } from './types/chat-identity';
 import { Role } from '../users/enums/role.enum';
 import { User } from '../users/user.entity';
 import { OrderDto } from '../orders/dto/order.dto';
@@ -34,16 +36,24 @@ const STATUS_DESCRIPTIONS: Record<Status, string> = {
  */
 @Injectable()
 export class LiveDataService {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly guestOrdersService?: GuestOrdersService,
+  ) {}
 
   /**
    * Возвращает данные, удовлетворяющие условиям метода; при отсутствии подходящих записей результат определяется контрактом репозитория или сервиса.
    */
   async getLiveData(
     classification: ChatClassification,
-    userId: number,
-    userRole: Role,
+    identityOrUserId: ChatIdentity | number,
+    legacyUserRole?: Role,
   ): Promise<LiveDataResult> {
+    const identity: ChatIdentity | null =
+      typeof identityOrUserId === 'number'
+        ? null
+        : identityOrUserId;
+    const userRole: Role = identity?.role ?? legacyUserRole ?? Role.CUSTOMER;
     if (
       classification.documentType !== DocumentType.ORDER ||
       classification.resource !== LiveDataResource.ORDER
@@ -54,15 +64,22 @@ export class LiveDataService {
       };
     }
 
-    const user: Pick<User, 'id' | 'role'> = {
-      id: userId,
-      role: userRole,
-    };
+    const user: Pick<User, 'id' | 'role'> | null =
+      identity?.kind === 'guest'
+        ? null
+        : {
+            id:
+              identity?.kind === 'user'
+                ? identity.userId
+                : (identityOrUserId as number),
+            role: userRole,
+          };
 
     if (classification.resourceId === undefined) {
       try {
-        const orders: OrderDto[] =
-          await this.ordersService.getCurrentOrders(user);
+        const orders: OrderDto[] = identity?.kind === 'guest'
+          ? await this.getGuestOrdersService().getCurrentGuestOrders(identity.guestSessionId)
+          : await this.ordersService.getCurrentOrders(user!);
 
         // Пустые корзины скрыты на вкладке «Заказы», в чате их тоже не показываем.
         const visibleOrders: OrderDto[] = orders.filter(
@@ -87,11 +104,15 @@ export class LiveDataService {
     }
 
     try {
-      const details: OrderWithItems =
-        await this.ordersService.getOrderWithItemsByIdForUser(
-          classification.resourceId,
-          user,
-        );
+      const details: OrderWithItems = identity?.kind === 'guest'
+        ? await this.getGuestOrdersService().getGuestOrderWithItemsById(
+            classification.resourceId,
+            identity.guestSessionId,
+          )
+        : await this.ordersService.getOrderWithItemsByIdForUser(
+            classification.resourceId,
+            user!,
+          );
 
       return {
         context: this.formatOrderData(details.order, details.items),
@@ -112,6 +133,14 @@ export class LiveDataService {
 
       throw error;
     }
+  }
+
+  private getGuestOrdersService(): GuestOrdersService {
+    if (!this.guestOrdersService) {
+      throw new Error('GuestOrdersService is not configured');
+    }
+
+    return this.guestOrdersService;
   }
 
   private formatOrdersData(orders: OrderDto[]): string {
@@ -156,7 +185,7 @@ export class LiveDataService {
       `Статус: ${order.status ? STATUS_DESCRIPTIONS[order.status] : 'не указан'}`,
       `Сумма: ${order.totalPrice} €`,
       `Ресторан: ${order.restaurant.name}`,
-      `Клиент: ${order.customer.name}`,
+      `Клиент: ${order.customer?.name ?? 'Гость'}`,
       `Курьер: ${order.courier?.name ?? 'не назначен'}`,
       `Создан: ${order.createdAt.toISOString()}`,
       ...(emptyCart

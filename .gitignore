@@ -43,6 +43,9 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# Database schema dumps
+database-schema.sql
+
 # temp directory
 .temp
 .tmp

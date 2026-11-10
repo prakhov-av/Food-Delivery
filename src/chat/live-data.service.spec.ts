@@ -1,6 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { LiveDataService } from './live-data.service';
 import { OrdersService } from '../orders/orders.service';
+import { GuestOrdersService } from '../orders/guest-orders.service';
 import { Role } from '../users/enums/role.enum';
 import { Status } from '../orders/enums/status.enum';
 import { OrderDto } from '../orders/dto/order.dto';
@@ -440,4 +441,129 @@ describe('LiveDataService', (): void => {
     expect(result.context).not.toContain('Состав заказа');
     expect(getOrderWithItemsByIdForUser).not.toHaveBeenCalled();
   });
+  it('should read guest orders only through GuestOrdersService and the guest session id', async (): Promise<void> => {
+    const getCurrentGuestOrders = jest.fn().mockResolvedValue([ORDER]);
+    const getGuestOrderWithItemsById = jest.fn().mockResolvedValue({
+      order: ORDER,
+      items: [],
+    });
+    const guestOrdersService = {
+      getCurrentGuestOrders,
+      getGuestOrderWithItemsById,
+    } as unknown as GuestOrdersService;
+    const guestLiveDataService = new LiveDataService(
+      ordersService,
+      guestOrdersService,
+    );
+    const guestIdentity = {
+      kind: 'guest' as const,
+      guestSessionId: 'guest-session-uuid',
+      role: Role.CUSTOMER,
+    } as const;
+
+    const result = await guestLiveDataService.getLiveData(
+      ordersClassification,
+      guestIdentity,
+    );
+
+    expect(result.context).toContain('Заказ №123');
+    expect(getCurrentGuestOrders).toHaveBeenCalledWith('guest-session-uuid');
+    expect(getCurrentOrders).not.toHaveBeenCalled();
+    expect(getOrderWithItemsByIdForUser).not.toHaveBeenCalled();
+  });
+
+  it('should scope a guest order lookup to both order id and guest session id', async (): Promise<void> => {
+    const getCurrentGuestOrders = jest.fn();
+    const getGuestOrderWithItemsById = jest.fn().mockResolvedValue({
+      order: ORDER,
+      items: [],
+    });
+    const guestOrdersService = {
+      getCurrentGuestOrders,
+      getGuestOrderWithItemsById,
+    } as unknown as GuestOrdersService;
+    const guestLiveDataService = new LiveDataService(ordersService, guestOrdersService);
+    const guestIdentity = {
+      kind: 'guest' as const,
+      guestSessionId: 'guest-session-uuid',
+      role: Role.CUSTOMER,
+    } as const;
+
+    const result = await guestLiveDataService.getLiveData(
+      classification,
+      guestIdentity,
+    );
+
+    expect(result.context).toContain('Заказ №123');
+    expect(getGuestOrderWithItemsById).toHaveBeenCalledWith(
+      123,
+      'guest-session-uuid',
+    );
+    expect(getOrderWithItemsByIdForUser).not.toHaveBeenCalled();
+  });
+
+
+  it('should not expose a guest order that belongs to another guest session', async (): Promise<void> => {
+    const getCurrentGuestOrders = jest.fn();
+    const getGuestOrderWithItemsById = jest
+      .fn()
+      .mockRejectedValue(new EntityNotFoundException('Order', 123));
+    const guestOrdersService = {
+      getCurrentGuestOrders,
+      getGuestOrderWithItemsById,
+    } as unknown as GuestOrdersService;
+    const guestLiveDataService = new LiveDataService(
+      ordersService,
+      guestOrdersService,
+    );
+    const guestIdentity = {
+      kind: 'guest' as const,
+      guestSessionId: 'guest-session-b',
+      role: Role.CUSTOMER,
+    } as const;
+
+    const result = await guestLiveDataService.getLiveData(
+      classification,
+      guestIdentity,
+    );
+
+    expect(result).toEqual({
+      context: 'У вас нет заказа №123 среди ваших заказов.',
+    });
+    expect(result.orderId).toBeUndefined();
+    expect(getGuestOrderWithItemsById).toHaveBeenCalledWith(
+      123,
+      'guest-session-b',
+    );
+    expect(getOrderWithItemsByIdForUser).not.toHaveBeenCalled();
+  });
+
+  it('should not use a synthetic user id for a guest identity', async (): Promise<void> => {
+    const getCurrentGuestOrders = jest.fn().mockResolvedValue([ORDER]);
+    const getGuestOrderWithItemsById = jest.fn();
+    const guestOrdersService = {
+      getCurrentGuestOrders,
+      getGuestOrderWithItemsById,
+    } as unknown as GuestOrdersService;
+    const guestLiveDataService = new LiveDataService(
+      ordersService,
+      guestOrdersService,
+    );
+    const guestIdentity = {
+      kind: 'guest' as const,
+      guestSessionId: 'guest-session-uuid',
+      role: Role.CUSTOMER,
+    } as const;
+
+    const result = await guestLiveDataService.getLiveData(
+      ordersClassification,
+      guestIdentity,
+    );
+
+    expect(result.context).toContain('Заказ №123');
+    expect(getCurrentGuestOrders).toHaveBeenCalledWith('guest-session-uuid');
+    expect(getCurrentOrders).not.toHaveBeenCalled();
+    expect(getOrderWithItemsByIdForUser).not.toHaveBeenCalled();
+  });
+
 });
