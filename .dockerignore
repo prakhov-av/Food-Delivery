@@ -1,0 +1,21 @@
+# Сборочный контекст: только то, что нужно для сборки образа.
+# Без этого локальный docker build копирует host-ный node_modules
+# поверх linux-пакетов (COPY . . идёт после npm install),
+# и нативные модули вроде bcrypt ломают старт контейнера.
+node_modules
+dist
+coverage
+logs
+*.log
+
+.git
+.gitignore
+.idea
+.vscode
+
+.env
+.env.*
+!.env.example
+
+docs/knowledge-base
+skill/*.zip
