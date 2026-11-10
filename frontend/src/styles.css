@@ -1261,3 +1261,222 @@ tbody tr:last-child td {
     justify-content: center;
   }
 }
+
+/* ---------- Корзина и анимация добавления в заказ ---------- */
+
+.cart-button {
+  position: fixed;
+  right: 24px;
+  bottom: 96px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border: none;
+  border-radius: 17px;
+  background: var(--text);
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(31, 29, 26, 0.22);
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+
+.cart-button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(31, 29, 26, 0.28);
+}
+
+.cart-button:active {
+  transform: translateY(-1px) scale(0.97);
+}
+
+.cart-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.cart-button__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cart-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  /* Появление нового счётчика: мягкий «отскок». */
+  animation: cart-badge-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes cart-badge-pop {
+  0% {
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.cart-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 164px;
+  z-index: 1100;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+  animation: cart-panel-in 0.22s ease both;
+}
+
+@keyframes cart-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cart-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.cart-panel__close {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.cart-panel__empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 6px 0 10px;
+}
+
+.cart-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cart-panel__list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.cart-panel__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cart-panel__qty {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.cart-panel__price {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cart-panel__total {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  text-align: right;
+}
+
+/* Блюдо, которое летит в корзину. */
+.fly-to-cart {
+  position: fixed;
+  left: var(--fly-x);
+  top: var(--fly-y);
+  z-index: 1200;
+  pointer-events: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(31, 29, 26, 0.25);
+  /* Двигаем только transform: left/top пересчитывают раскладку на каждом кадре. */
+  animation: fly-to-cart 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.fly-to-cart__name {
+  display: block;
+}
+
+@keyframes fly-to-cart {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(var(--fly-dx) - 50%), calc(var(--fly-dy) - 50%))
+      scale(0.3);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .cart-button {
+    right: 16px;
+    bottom: 84px;
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    font-size: 22px;
+  }
+
+  .cart-panel {
+    right: 16px;
+    bottom: 148px;
+    width: calc(100vw - 32px);
+  }
+}
