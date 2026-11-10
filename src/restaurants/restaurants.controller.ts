@@ -15,7 +15,7 @@ import { RestaurantDto } from './dto/restaurant.dto';
 import { RestaurantSaveDto } from './dto/restaurant.save-dto';
 import { RestaurantUpdateDto } from './dto/restaurant.update-dto';
 import { ApiOkResponse } from '@nestjs/swagger';
-import { Roles } from '../auth/types/auth.decorators';
+import { Public, Roles } from '../auth/types/auth.decorators';
 import { Role } from '../users/enums/role.enum';
 import { Audit } from '../audit/audit.decorator';
 import { AuditAction } from '../audit/audit.enums';
@@ -44,6 +44,8 @@ export class RestaurantsController {
     return this.service.create(saveDto);
   }
 
+  // Каталог доступен для чтения всем, в том числе гостям.
+  @Public()
   @Get()
   @ApiOkResponse({
     type: RestaurantDto,
@@ -56,6 +58,8 @@ export class RestaurantsController {
     return this.service.getAllActiveRestaurants();
   }
 
+  // Каталог доступен для чтения всем, в том числе гостям.
+  @Public()
   @Get(':id')
   @ApiOkResponse({
     type: RestaurantDto,

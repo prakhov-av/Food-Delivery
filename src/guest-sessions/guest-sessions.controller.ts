@@ -1,11 +1,14 @@
 import {
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
   Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/types/auth.decorators';
 import type { Request, Response } from 'express';
 import { GuestSessionsService } from './guest-sessions.service';
@@ -16,12 +19,37 @@ export class GuestSessionsController {
   constructor(private readonly guestSessionsService: GuestSessionsService) {}
 
   /**
+   * Параметры cookie гостевой сессии.
+   *
+   * В продакшене фронт и API лежат на разных доменах, поэтому cookie
+   * должна быть cross-site: Secure + SameSite=None.
+   * Локально фронт и API на одном хосте (localhost), там достаточно Lax
+   * без Secure — иначе браузер не примет cookie по http.
+   */
+  private getCookieOptions(): {
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: 'none' | 'lax';
+    path: string;
+  } {
+    const isProduction: boolean = process.env.NODE_ENV === 'production';
+
+    return {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      path: '/',
+    };
+  }
+
+  /**
    * Создаёт гостевую сессию и устанавливает её секрет в HttpOnly cookie.
    *
    * Сам секрет не возвращается в теле ответа.
    */
   @Public()
   @Post()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Res({ passthrough: true }) response: Response,
@@ -30,12 +58,35 @@ export class GuestSessionsController {
       await this.guestSessionsService.createSession();
 
     response.cookie(GUEST_SESSION_COOKIE, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV !== 'test',
-      sameSite: process.env.NODE_ENV === 'test' ? 'lax' : 'none',
-      path: '/',
+      ...this.getCookieOptions(),
       maxAge: this.guestSessionsService.getCookieMaxAge(),
     });
+
+    return {
+      expiresAt: guestSession.expiresAt,
+    };
+  }
+
+  /**
+   * Возвращает состояние текущей гостевой сессии.
+   *
+   * Позволяет фронту восстановить гостевой режим после перезагрузки страницы,
+   * не создавая новую сессию. Если cookie нет или срок её истёк —
+   * возвращается 401.
+   */
+  @Public()
+  @Get()
+  async current(@Req() request: Request): Promise<{ expiresAt: Date | null }> {
+    const token = this.getCookieValue(
+      request.headers.cookie,
+      GUEST_SESSION_COOKIE,
+    );
+
+    if (!token) {
+      throw new UnauthorizedException('Guest session is required');
+    }
+
+    const guestSession = await this.guestSessionsService.resolveSession(token);
 
     return {
       expiresAt: guestSession.expiresAt,
@@ -61,12 +112,7 @@ export class GuestSessionsController {
       await this.guestSessionsService.revokeSession(token);
     }
 
-    response.clearCookie(GUEST_SESSION_COOKIE, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV !== 'test',
-      sameSite: process.env.NODE_ENV === 'test' ? 'lax' : 'none',
-      path: '/',
-    });
+    response.clearCookie(GUEST_SESSION_COOKIE, this.getCookieOptions());
   }
 
   private getCookieValue(

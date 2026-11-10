@@ -28,10 +28,18 @@ async function rawRequest(
   const isFormData =
     typeof FormData !== 'undefined' && options.body instanceof FormData;
 
+  // Заголовок ставится только когда есть тело.
+  // Content-Type: application/json не входит в список "простых" заголовков CORS,
+  // поэтому запрос без тела с этим заголовком вызывает preflight OPTIONS
+  // перед каждым запросом — вдвое больше круговых обходов.
+  const hasBody = options.body !== undefined && options.body !== null;
+
   return fetch(`${API_URL}${normalizedPath}`, {
     ...options,
     headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(hasBody && !isFormData
+        ? { 'Content-Type': 'application/json' }
+        : {}),
       ...(options.headers ?? {}),
     },
     credentials: 'include',
@@ -53,22 +61,38 @@ async function parseError(response: Response): Promise<ApiError> {
     // тело ответа не JSON, остаётся сообщение по умолчанию
   }
 
+  // Серверная ошибка без конкретной причины не должна показываться пользователю.
+  if (response.status >= 500) {
+    message = 'Сервер временно недоступен. Попробуйте позже.';
+  }
+
   return new ApiError(response.status, message);
+}
+
+export interface ApiOptions extends RequestInit {
+  /** Не пытаться обновить токен при 401: нужно для гостевых запросов. */
+  skipAuthRefresh?: boolean;
 }
 
 export async function api<T = void>(
   path: string,
-  options: RequestInit = {},
+  options: ApiOptions = {},
 ): Promise<T> {
-  let response = await rawRequest(path, options);
+  const { skipAuthRefresh, ...requestOptions } = options;
 
-  if (response.status === 401 && !NO_REFRESH.includes(path)) {
+  let response = await rawRequest(path, requestOptions);
+
+  if (
+    response.status === 401 &&
+    !NO_REFRESH.includes(path) &&
+    !skipAuthRefresh
+  ) {
     const refreshed = await rawRequest('/auth/refresh', {
       method: 'POST',
     });
 
     if (refreshed.ok) {
-      response = await rawRequest(path, options);
+      response = await rawRequest(path, requestOptions);
     } else {
       onSessionExpired?.();
 
@@ -76,7 +100,7 @@ export async function api<T = void>(
     }
   }
 
-  if (response.status === 401) {
+  if (response.status === 401 && !skipAuthRefresh) {
     onSessionExpired?.();
   }
 

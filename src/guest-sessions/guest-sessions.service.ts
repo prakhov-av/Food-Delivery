@@ -1,10 +1,13 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { GuestSession } from './guest-session.entity';
 import { DEFAULT_GUEST_SESSION_TTL_DAYS } from './guest-session.constants';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_GUEST_SESSION_RETENTION_DAYS = 30;
 
 /**
  * Управляет жизненным циклом гостевых сессий.
@@ -14,7 +17,9 @@ import { DEFAULT_GUEST_SESSION_TTL_DAYS } from './guest-session.constants';
  */
 @Injectable()
 export class GuestSessionsService {
+  private readonly logger: Logger = new Logger(GuestSessionsService.name);
   private readonly ttlDays: number;
+  private readonly retentionDays: number;
 
   constructor(
     @InjectRepository(GuestSession)
@@ -29,6 +34,15 @@ export class GuestSessionsService {
       Number.isInteger(configuredTtl) && configuredTtl > 0
         ? configuredTtl
         : DEFAULT_GUEST_SESSION_TTL_DAYS;
+
+    const configuredRetention = Number(
+      this.configService.get<string>('GUEST_SESSION_RETENTION_DAYS'),
+    );
+
+    this.retentionDays =
+      Number.isInteger(configuredRetention) && configuredRetention > 0
+        ? configuredRetention
+        : DEFAULT_GUEST_SESSION_RETENTION_DAYS;
   }
 
   /**
@@ -54,10 +68,54 @@ export class GuestSessionsService {
 
     const savedSession = await this.repository.save(guestSession);
 
+    /**
+     * Уборка просроченных сессий выполняется при создании новой.
+     * Это тот же приём, что и в ChatLogService: никакого планировщика,
+     * чистка происходит тогда, когда таблица реально растёт.
+     */
+    await this.deleteExpiredSessions();
+
     return {
       guestSession: savedSession,
       token,
     };
+  }
+
+  /**
+   * Удаляет гостевые сессии, у которых истёк срок давности.
+   *
+   * Заказы и позиции гостя удаляются каскадом на уровне базы данных:
+   * внешний ключ orders.guest_session_id объявлен с ON DELETE CASCADE.
+   *
+   * @returns Количество удалённых сессий.
+   */
+  async deleteExpiredSessions(): Promise<number> {
+    const cutoff = new Date(Date.now() - this.retentionDays * DAY_MS);
+
+    try {
+      const result = await this.repository.delete({
+        expiresAt: LessThan(cutoff),
+      });
+
+      const affected: number = result.affected ?? 0;
+
+      if (affected > 0) {
+        this.logger.log(
+          `Expired guest sessions removed: ${affected}, ` +
+            `retention ${this.retentionDays} days`,
+        );
+      }
+
+      return affected;
+    } catch (error) {
+      this.logger.error(
+        `Failed to remove expired guest sessions: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return 0;
+    }
   }
 
   /**

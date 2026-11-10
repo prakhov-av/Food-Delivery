@@ -1,12 +1,24 @@
 import { useEffect, useState } from 'react';
 import { api, setSessionExpiredHandler } from './api';
 import { canManageCatalog, canUploadDocs } from './types';
-import type { MenuDto, RestaurantDto, Role, UserDto } from './types';
+import type {
+  AccessMode,
+  MenuDto,
+  RestaurantDto,
+  Role,
+  UserDto,
+} from './types';
+import {
+  createGuestSession,
+  getGuestSession,
+  revokeGuestSession,
+} from './guest';
 import AuthPage from './views/AuthPage';
 import RestaurantsView from './views/RestaurantsView';
 import MenusView from './views/MenusView';
 import DishesView from './views/DishesView';
 import OrdersView from './views/OrdersView';
+import GuestOrdersView from './views/GuestOrdersView';
 import UsersView from './views/UsersView';
 import AuditView from './views/AuditView';
 import UploadView from './views/UploadView.tsx';
@@ -35,6 +47,8 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 export default function App() {
+  // Гость — отдельный режим доступа, а не зарегистрированный CUSTOMER.
+  const [mode, setMode] = useState<AccessMode>('anon');
   const [user, setUser] = useState<UserDto | null>(null);
   const [checking, setChecking] = useState(true);
   const [view, setView] = useState<ViewKey>('restaurants');
@@ -54,16 +68,55 @@ export default function App() {
   useEffect(() => {
     setSessionExpiredHandler(() => {
       setUser(null);
+      setMode('anon');
       resetCatalog();
     });
-    api<UserDto>('/auth/me')
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setChecking(false));
+
+    /**
+     * Восстановление режима доступа после перезагрузки страницы.
+     *
+     * Приоритет такой же, как на backend: сначала проверяется JWT,
+     * и только при его отсутствии — гостевая cookie.
+     *
+     * Обе проверки идут параллельно: гостевая сессия нужна только тогда,
+     * когда JWT нет, но ждать её последовательно значит добавить
+     * целый круговой обход к первому отрисовке.
+     */
+    const restore = async () => {
+      const [meResult, guestResult] = await Promise.allSettled([
+        api<UserDto>('/auth/me'),
+        getGuestSession(),
+      ]);
+
+      if (meResult.status === 'fulfilled') {
+        setUser(meResult.value);
+        setMode('user');
+        setChecking(false);
+
+        return;
+      }
+
+      // getGuestSession() не бросает исключение, а возвращает null,
+      // поэтому смотрим на значение, а не на статус промиса.
+      const guestSession =
+        guestResult.status === 'fulfilled' ? guestResult.value : null;
+
+      setMode(guestSession ? 'guest' : 'anon');
+      setChecking(false);
+    };
+
+    void restore();
   }, []);
 
   const handleLogin = async () => {
     setUser(await api<UserDto>('/auth/me'));
+    setMode('user');
+    openView('restaurants');
+  };
+
+  const handleGuestLogin = async () => {
+    await createGuestSession();
+    setMode('guest');
     openView('restaurants');
   };
 
@@ -79,14 +132,27 @@ export default function App() {
       /* даже если backend недоступен — выходим локально */
     }
     setUser(null);
+    setMode('anon');
+    resetCatalog();
+  };
+
+  const handleGuestLogout = async () => {
+    await revokeGuestSession();
+    setMode('anon');
     resetCatalog();
   };
 
   if (checking) return <div className="empty">Загрузка…</div>;
-  if (!user) return <AuthPage onLogin={handleLogin} />;
+  if (mode === 'anon') {
+    return <AuthPage onLogin={handleLogin} onGuest={handleGuestLogin} />;
+  }
 
-  const canManage = canManageCatalog(user.role);
-  const isAdmin = user.role === 'ADMIN';
+  const isGuest = mode === 'guest';
+
+  // Гость работает с каталогом и своими заказами, без админских разделов.
+  const role: Role = user?.role ?? 'CUSTOMER';
+  const canManage = canManageCatalog(role);
+  const isAdmin = role === 'ADMIN';
 
   return (
     <div className="layout">
@@ -105,18 +171,25 @@ export default function App() {
               onClick={() => openView(n.key)}
             >
               <span className="nav-icon">{n.icon}</span>
-              {n.label}
+              {n.key === 'orders' && isGuest ? 'Мои заказы' : n.label}
             </button>
           ))}
         </nav>
         <div className="sidebar-footer">
           <div className="session-info">
-            <div className="session-email" title={user.name}>
-              {user.name}
+            <div className="session-email" title={user?.name}>
+              {isGuest ? 'Гость' : user?.name}
             </div>
-            <div className="session-role">{ROLE_LABELS[user.role]}</div>
+            <div className="session-role">
+              {isGuest ? 'Гостевой режим' : ROLE_LABELS[role]}
+            </div>
           </div>
-          <button className="btn btn-ghost" onClick={() => void handleLogout()}>
+          <button
+            className="btn btn-ghost"
+            onClick={() =>
+              void (isGuest ? handleGuestLogout() : handleLogout())
+            }
+          >
             Выйти
           </button>
         </div>
@@ -144,17 +217,19 @@ export default function App() {
             restaurant={restaurant}
             menu={menu}
             canManage={canManage}
-            role={user.role}
-            userId={user.id}
+            role={role}
+            userId={user?.id ?? 0}
+            isGuest={isGuest}
             onBack={() => setMenu(null)}
           />
         )}
-        {view === 'orders' && <OrdersView role={user.role} />}
+        {view === 'orders' &&
+          (isGuest ? <GuestOrdersView /> : <OrdersView role={role} />)}
         {view === 'users' && isAdmin && <UsersView />}
         {view === 'audit' && isAdmin && <AuditView />}
-        {view === 'upload' && canUploadDocs(user.role) && <UploadView />}
+        {view === 'upload' && canUploadDocs(role) && <UploadView />}
       </main>
-      <ChatWidget role={user.role} />
+      <ChatWidget role={role} />
     </div>
   );
 }

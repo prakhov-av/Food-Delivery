@@ -60,7 +60,7 @@ export interface MenuItemDto {
 
 export interface OrderDto {
   id: number;
-  customer: UserDto;
+  customer: UserDto | null;
   courier: UserDto | null;
   restaurant: RestaurantDto;
   status?: OrderStatus;
@@ -219,4 +219,56 @@ export interface AuditPageDto {
   total: number;
   page: number;
   pageSize: number;
+}
+
+/**
+ * Режим доступа приложения.
+ *
+ * Гость — отдельное состояние, а не зарегистрированный CUSTOMER:
+ * у него нет userId, его данные живут в гостевой сессии.
+ */
+export type AccessMode = 'anon' | 'guest' | 'user';
+
+export interface GuestSessionDto {
+  expiresAt: string | null;
+}
+
+/** Заказ гостевой сессии вместе с его позициями. */
+export interface GuestOrderDto {
+  order: OrderDto;
+  items: OrderItemDto[];
+}
+
+/**
+ * Статусы, которые гость выбирает самостоятельно.
+ *
+ * Отменённые статусы гостю недоступны: у ассистента нет
+ * актуальных данных об отмене заказа.
+ */
+export const GUEST_STATUSES: OrderStatus[] = [
+  'NEW',
+  'ACCEPTED',
+  'COOKING',
+  'READY',
+  'DELIVERING',
+  'COMPLETED',
+];
+
+/**
+ * Следующие статусы, доступные гостю.
+ *
+ * Движение возможно только вперёд по цепочке.
+ */
+export function guestNextStatuses(current?: OrderStatus): OrderStatus[] {
+  if (!current) {
+    return [];
+  }
+
+  const index: number = GUEST_STATUSES.indexOf(current);
+
+  if (index === -1) {
+    return [];
+  }
+
+  return GUEST_STATUSES.slice(index + 1);
 }

@@ -5,8 +5,10 @@ type Tab = 'login' | 'register';
 
 export default function AuthPage({
   onLogin,
+  onGuest,
 }: {
   onLogin: (email: string) => Promise<void>;
+  onGuest: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<Tab>('login');
   const [email, setEmail] = useState('');
@@ -74,6 +76,12 @@ export default function AuthPage({
 
       setInfo('Ссылка подтверждения отправлена на почту');
       setTab('login');
+    });
+  };
+
+  const handleGuest = () => {
+    void run(async () => {
+      await onGuest();
     });
   };
 
@@ -186,6 +194,22 @@ export default function AuthPage({
             </button>
           </form>
         )}
+
+        <div className="guest-entry">
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={busy}
+            onClick={handleGuest}
+          >
+            {busy ? '…' : 'Продолжить как гость'}
+          </button>
+
+          <div className="auth-hint">
+            Гостевой режим: доступен AI-помощник и оформление заказа.
+            Регистрация не требуется, данные гостя нигде не сохраняются.
+          </div>
+        </div>
       </div>
     </div>
   );

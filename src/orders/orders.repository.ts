@@ -80,6 +80,29 @@ export class OrdersRepository {
   }
 
   /**
+   * Находит активный черновик гостевой сессии в ресторане.
+   */
+  async findActiveDraftForGuest(
+    guestSessionId: string,
+    restaurantId: number,
+  ): Promise<Order | null> {
+    return this.repository.findOne({
+      where: {
+        active: true,
+        status: Status.NEW,
+        guestSession: { id: guestSessionId },
+        restaurant: { id: restaurantId },
+      },
+      relations: {
+        customer: true,
+        courier: true,
+        restaurant: true,
+        guestSession: true,
+      },
+    });
+  }
+
+  /**
    * Возвращает активные заказы конкретной гостевой сессии.
    *
    * Фильтрация выполняется на уровне базы данных.
@@ -122,6 +145,18 @@ export class OrdersRepository {
         courier: true,
         restaurant: true,
         guestSession: true,
+      },
+    });
+  }
+
+  /**
+   * Возвращает количество активных заказов гостевой сессии.
+   */
+  async countActiveByGuestSessionId(guestSessionId: string): Promise<number> {
+    return this.repository.count({
+      where: {
+        active: true,
+        guestSession: { id: guestSessionId },
       },
     });
   }
