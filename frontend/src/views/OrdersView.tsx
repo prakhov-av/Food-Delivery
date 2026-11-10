@@ -213,7 +213,7 @@ export default function OrdersView({ role }: { role: Role }) {
         </div>
 
         <div className="muted" style={{ marginTop: 4 }}>
-          Клиент: {o.customer?.name ?? '—'} · {formatDate(o.createdAt)}
+          Клиент: {o.customer?.name ?? 'Гость'} · {formatDate(o.createdAt)}
         </div>
 
         <div style={{ marginTop: 4 }}>

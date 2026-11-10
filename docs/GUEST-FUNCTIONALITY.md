@@ -42,11 +42,21 @@ The optional `GUEST_SESSION_TTL_DAYS` environment variable controls the lifetime
 | Method | Endpoint | Behaviour |
 | --- | --- | --- |
 | `POST` | `/guest-sessions` | Public endpoint; creates a guest session, sets the `guest-session` cookie and returns `{ expiresAt }` |
+| `GET` | `/guest-sessions` | Public endpoint; returns `{ expiresAt }` of the current guest session, `401` when the cookie is missing, invalid or expired |
 | `POST` | `/guest-sessions/revoke` | Public endpoint; revokes the cookie's session and clears the cookie; returns `204` |
 
 Both endpoints are marked public because they establish or revoke the guest identity rather than requiring a registered-user JWT.
 
-There are currently no dedicated guest-order REST endpoints. Guest order reads are implemented by `GuestOrdersService` and are used by the assistant's live-data path. Do not assume routes such as `/guest-orders` exist.
+`GET /guest-sessions` exists so that the frontend can restore the guest mode after a page reload without creating a new session on every refresh.
+
+### Cookie attributes
+
+| Environment | `Secure` | `SameSite` |
+| --- | --- | --- |
+| Production | yes | `None` — the frontend and the API are on different domains, so the cookie has to be cross-site |
+| Development and tests | no | `Lax` — over plain `http://localhost` a `Secure` cookie would be rejected by the browser |
+
+In production the frontend and the API are served from different domains, so the `Origin` of every state-changing request must be listed in `CORS_ORIGINS`. Otherwise the CSRF middleware rejects the request with `403 Invalid request origin`.
 
 ## 4. Guest orders and ownership
 
@@ -59,6 +69,33 @@ There are currently no dedicated guest-order REST endpoints. Guest order reads a
 When no matching order is found, the service throws `EntityNotFoundException`. An order id alone is therefore insufficient to read a guest order. The guest-session id is part of the ownership condition, preventing one guest from reading another guest's order by guessing or learning its numeric id.
 
 The database relationship also records guest ownership on the order. The schema enforces that an order is owned either by a registered customer or by a guest session, rather than both. The exact constraint and foreign-key behaviour are defined by the guest-session migration.
+
+## 4.1 Guest order REST API
+
+`GuestOrdersController` exposes the guest checkout. All routes are public at the HTTP level and protected by `GuestSessionGuard`, which resolves the guest session from the cookie and puts it into `request.guestSession`. The client never sends a `guestSessionId` or a `userId`.
+
+| Method | Endpoint | Body | Behaviour |
+| --- | --- | --- | --- |
+| `GET` | `/guest-orders` | — | Returns the orders of the current guest session with their active positions; an empty list when there are no orders |
+| `POST` | `/guest-orders` | `{ restaurantId }` | Returns the active `NEW` draft of the guest in that restaurant, creating it when it does not exist |
+| `POST` | `/guest-orders/:id/items` | `{ menuItemId, quantity }` | Adds a position to the guest order; an already present position is increased instead of duplicated |
+| `PATCH` | `/guest-orders/:id/items/:itemId` | `{ newQuantity }` | Changes the quantity of a position |
+| `DELETE` | `/guest-orders/:id/items/:itemId` | — | Deactivates a position |
+| `PATCH` | `/guest-orders/:id/status` | `{ status }` | Moves the order forward in the guest status chain |
+
+Order ownership is always part of the repository condition: `findActiveByIdForGuestSession(orderId, guestSessionId)` matches the order id and the owner at the same time. An order id alone never grants access.
+
+Positions can only be changed while the order is in `NEW`, the same rule that applies to a registered customer. The order total is recalculated from the active positions after every change, and the limits `MAX_ITEMS_PER_ORDER`, `MAX_QUANTITY_PER_ITEM` and `MAX_ORDER_TOTAL` apply to guests as well.
+
+### Guest status chain
+
+The guest chooses the status of their own order. The chain is forward-only and contains no cancellation statuses, because the assistant has no up-to-date data about a cancellation:
+
+```
+NEW -> ACCEPTED -> COOKING -> READY -> DELIVERING -> COMPLETED
+```
+
+`checkGuestStatusChange` rejects any transition that is not one of the next steps in the chain, including every `CANCELLED_*` status and any move backwards. Leaving `NEW` requires at least one active position, and `READY` assigns a free courier automatically, exactly as it does for a registered order. The status chosen by the guest is the status the assistant reports, because `LiveDataService` reads the very same guest orders.
 
 ## 5. Guest AI chat
 
@@ -125,14 +162,31 @@ The initial schema migration is `1794227040000-InitialSchema.ts`.
 
 The application uses `synchronize: false`; schema changes are managed by migrations. The `down()` implementation of the guest-session migration is destructive for guest-owned orders, so do not run that rollback without first assessing the data impact. The initial schema migration is intentionally irreversible.
 
+### Applying migrations
+
+The application applies pending migrations on start: `TypeOrmModule.forRoot` in `src/app.module.ts` points at the compiled migrations in `dist/database/migrations` and sets `migrationsRun: true`. A container that starts with an outdated database therefore upgrades itself instead of failing requests with `QueryFailedError`.
+
+For a manual run use `npm run migration:run` (and `npm run migration:show` to see what is pending). The migration command reads the same environment variables as the application.
+
+The catalog endpoints `GET /restaurants`, `GET /restaurants/:id`, `GET /menus`, `GET /menus/:id`, `GET /menu-items` and `GET /menu-items/:id` are public: a guest has to be able to browse the menu before placing an order.
+
 ## 8. Environment configuration
 
 | Variable | Default / rule | Purpose |
 | --- | --- | --- |
 | `GUEST_SESSION_TTL_DAYS` | `30`; positive integer required | Guest session lifetime in days |
+| `GUEST_SESSION_RETENTION_DAYS` | `30`; positive integer required | How long an expired guest session and its orders are kept |
 | `CHAT_HISTORY_RETENTION_DAYS` | `30` when unset, non-numeric or zero | Retention window for persisted chat logs |
 
 `GUEST_SESSION_TTL_DAYS` is optional. The session service falls back to 30 days when the configured value is not a positive integer. `CHAT_HISTORY_RETENTION_DAYS` is read by `ChatLogService` at module load. The implementation falls back to 30 days when the value converts to `0` or `NaN`; a negative numeric value is not rejected by the current implementation.
+
+### Removing stale guest sessions
+
+`GuestSessionsService.deleteExpiredSessions()` removes guest sessions whose `expires_at` is older than `GUEST_SESSION_RETENTION_DAYS`. The cleanup runs when a new guest session is created, the same lazy approach that `ChatLogService` uses for chat history: no scheduler and no extra dependency are needed, and the cleanup only costs a query when guest sessions actually accumulate.
+
+The orders of a removed guest are deleted by PostgreSQL itself: `orders.guest_session_id` references `guest_sessions` with `ON DELETE CASCADE`, and `order_items` references `orders` with `ON DELETE CASCADE`. No application code deletes orders.
+
+A consequence of that schema rule is worth knowing: a guest order cannot outlive its session. The check constraint `CHK_orders_exactly_one_owner` requires every order to have either a customer or a guest session, so there is no way to keep the orders of an anonymous visitor once the session itself is gone.
 
 ## 9. Security considerations
 
@@ -144,6 +198,10 @@ The application uses `synchronize: false`; schema changes are managed by migrati
 - Chat history uses the same owner separation as live order data.
 - An invalid JWT cookie must not cause a fallback to guest identity.
 - The guest-session row is retained on revocation because orders may have a foreign-key reference to it.
+- Expired guest sessions are removed after `GUEST_SESSION_RETENTION_DAYS`, and the orders of an anonymous visitor are removed with them by the cascade in the database.
+- The guest endpoints are rate limited per IP: creating a session is allowed 5 times a minute, creating an order 10 times a minute, and changing positions or the status 30 times a minute. A guest session can hold at most `MAX_ACTIVE_GUEST_ORDERS` active orders.
+- The rate limit is bound to the IP address, so it does not stop an attacker who rotates addresses. The remaining protection is the infrastructure level: a firewall or a bot-protection service in front of the API.
+- The guest session lives in the browser cookie and is not tied to a person. On a shared device the next visitor inherits the session of the previous one and sees its orders. The «Выйти» button revokes the session and clears the cookie.
 
 ## 10. Testing
 

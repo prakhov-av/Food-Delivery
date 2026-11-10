@@ -16,7 +16,7 @@ import { ApiOkResponse, ApiQuery } from '@nestjs/swagger';
 import { MenuItemDto } from './dto/menu-item.dto';
 import { MenuItemSaveDto } from './dto/menu-item.save-dto';
 import { MenuItemUpdateDto } from './dto/menu-item.update-dto';
-import { Roles } from '../auth/types/auth.decorators';
+import { Public, Roles } from '../auth/types/auth.decorators';
 import { Role } from '../users/enums/role.enum';
 
 import { Audit } from '../audit/audit.decorator';
@@ -45,6 +45,8 @@ export class MenuItemsController {
     return this.service.create(saveDto);
   }
 
+  // Каталог доступен для чтения всем, в том числе гостям.
+  @Public()
   @Get()
   @ApiQuery({ name: 'menuId', required: false, type: Number })
   @ApiOkResponse({
@@ -61,6 +63,8 @@ export class MenuItemsController {
     return this.service.getAllActiveMenuItems(menuId);
   }
 
+  // Каталог доступен для чтения всем, в том числе гостям.
+  @Public()
   @Get(':id')
   @ApiOkResponse({
     type: MenuItemDto,

@@ -155,7 +155,10 @@ describe('GlobalExceptionHandler', () => {
     handler.catch(exception, host as any);
 
     expect(errorSpy).toHaveBeenCalledWith(
-      'Unhandled exception: method=POST, status=500, errorType=Error',
+      expect.stringContaining(
+        'Unhandled exception: method=POST, status=500, errorType=Error',
+      ),
+      expect.any(String),
     );
     expect(response.status).toHaveBeenCalledWith(
       HttpStatus.INTERNAL_SERVER_ERROR,
@@ -183,7 +186,10 @@ describe('GlobalExceptionHandler', () => {
     handler.catch('sensitive internal information', host as any);
 
     expect(errorSpy).toHaveBeenCalledWith(
-      'Unhandled exception: method=POST, status=500, errorType=Error',
+      expect.stringContaining(
+        'Unhandled exception: method=POST, status=500, errorType=Error',
+      ),
+      expect.any(String),
     );
 
     expect(response.status).toHaveBeenCalledWith(

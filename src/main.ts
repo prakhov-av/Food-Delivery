@@ -53,6 +53,8 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
+    // Браузер кэширует preflight-ответ и не повторяет OPTIONS перед запросами.
+    maxAge: 600,
   });
 
   if (!isProduction || process.env.SWAGGER_ENABLED === 'true') {

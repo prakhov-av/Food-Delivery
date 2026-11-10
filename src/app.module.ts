@@ -4,6 +4,7 @@ import {
   NestModule,
   RequestMethod,
 } from '@nestjs/common';
+import { join } from 'path';
 import { UsersModule } from './users/users.module';
 import { RestaurantsModule } from './restaurants/restaurants.module';
 import { MenuItemsModule } from './menu-items/menu-items.module';
@@ -63,6 +64,11 @@ import { GuestSessionsModule } from './guest-sessions/guest-sessions.module';
         database: configService.getOrThrow<string>('DB_DATABASE'),
         autoLoadEntities: true,
         synchronize: false,
+        // Миграции применяются при старте приложения.
+        // Без этого схема базы отстаёт от кода и запросы падают с QueryFailedError.
+        migrations: [join(__dirname, 'database', 'migrations', '*.{ts,js}')],
+        migrationsRun: true,
+        migrationsTableName: 'migrations',
         ssl:
           configService.get<string>('DB_SSL') === 'true'
             ? { rejectUnauthorized: false }

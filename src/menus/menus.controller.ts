@@ -16,7 +16,7 @@ import { MenusService } from './menus.service';
 import { MenuDto } from './dto/menu.dto';
 import { MenuSaveDto } from './dto/menu.save-dto';
 import { MenuUpdateDto } from './dto/menu.update-dto';
-import { Roles } from '../auth/types/auth.decorators';
+import { Public, Roles } from '../auth/types/auth.decorators';
 import { Role } from '../users/enums/role.enum';
 
 import { Audit } from '../audit/audit.decorator';
@@ -50,6 +50,8 @@ export class MenusController {
     action: AuditAction.CATALOG_UPDATED,
     entityType: 'Menu',
   })
+  // Каталог доступен для чтения всем, в том числе гостям.
+  @Public()
   @Get()
   @ApiQuery({ name: 'restaurantId', required: false, type: Number })
   @ApiOkResponse({
@@ -66,6 +68,8 @@ export class MenusController {
     return this.service.getAllActiveMenus(restaurantId);
   }
 
+  // Каталог доступен для чтения всем, в том числе гостям.
+  @Public()
   @Get(':id')
   @ApiOkResponse({
     type: MenuDto,

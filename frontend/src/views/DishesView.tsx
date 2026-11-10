@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, apiList } from '../api';
+import { addGuestOrderItem, getOrCreateGuestOrder } from '../guest';
 import { canCreateOrder } from '../types';
 import { ORDER_LIMITS } from '../config';
 import type {
@@ -22,6 +23,7 @@ export default function DishesView({
   canManage,
   role,
   userId,
+  isGuest,
   onBack,
 }: {
   restaurant: RestaurantDto;
@@ -29,6 +31,7 @@ export default function DishesView({
   canManage: boolean;
   role: Role;
   userId: number;
+  isGuest: boolean;
   onBack: () => void;
 }) {
   const [items, setItems] = useState<MenuItemDto[]>([]);
@@ -138,6 +141,20 @@ export default function DishesView({
         ORDER_LIMITS.maxQuantityPerItem,
         Math.max(1, Math.floor(Number(qty[item.id] ?? '1')) || 1),
       );
+
+      if (isGuest) {
+        // У гостя заказ принадлежит гостевой сессии, а не пользователю.
+        const draft = await getOrCreateGuestOrder(restaurant.id);
+
+        await addGuestOrderItem(draft.order.id, item.id, quantity);
+
+        setQty({
+          ...qty,
+          [item.id]: '1',
+        });
+
+        return;
+      }
 
       const orders = await apiList<OrderDto>('/orders');
 

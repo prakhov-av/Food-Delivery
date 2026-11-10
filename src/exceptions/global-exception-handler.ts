@@ -49,8 +49,17 @@ export class GlobalExceptionHandler implements ExceptionFilter {
           : new Error('Unknown internal error');
 
       this.logger.error(
-        `Unhandled exception: method=${request.method ?? 'unknown'}, status=${status}, errorType=${error.name}`,
+        `Unhandled exception: method=${request.method ?? 'unknown'}, ` +
+          `status=${status}, errorType=${error.name}, ` +
+          `message=${error.message}, path=${request.path ?? '/'}`,
+        error.stack,
       );
+
+      const details: string = this.getDriverErrorDetails(error);
+
+      if (details) {
+        this.logger.error(`Database error details: ${details}`);
+      }
     }
 
     response.status(status).json({
@@ -98,5 +107,31 @@ export class GlobalExceptionHandler implements ExceptionFilter {
     }
 
     return exception.message;
+  }
+
+  /**
+   * Извлекает детали ошибки драйвера базы данных.
+   *
+   * Позволяет сразу увидеть в логе код и описание ошибки PostgreSQL,
+   * не разбирая текст сообщения QueryFailedError.
+   */
+  private getDriverErrorDetails(error: Error): string {
+    const driverError = (
+      error as Error & {
+        driverError?: { code?: string; detail?: string; table?: string };
+      }
+    ).driverError;
+
+    if (!driverError) {
+      return '';
+    }
+
+    return [
+      driverError.code ? `code=${driverError.code}` : '',
+      driverError.table ? `table=${driverError.table}` : '',
+      driverError.detail ? `detail=${driverError.detail}` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
   }
 }

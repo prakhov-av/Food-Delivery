@@ -935,6 +935,20 @@ tbody tr:last-child td {
   text-align: center;
 }
 
+/* ---------- Гостевой вход ---------- */
+
+.guest-entry {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(173, 157, 143, 0.24);
+}
+
+.guest-entry .btn {
+  width: 100%;
+}
+
 .auth-hint code {
   padding: 1px 6px;
   border-radius: 6px;
@@ -1039,11 +1053,13 @@ tbody tr:last-child td {
   pointer-events: none;
   background: rgba(255, 255, 255, 0.14);
   transform: rotate(25deg);
-  transition: left 0.7s ease;
+  /* Анимируем transform, а не left: left пересчитывает раскладку на каждом кадре. */
+  transition: transform 0.7s ease;
+  will-change: transform;
 }
 
 .ai-chat-button:hover::after {
-  left: 220px;
+  transform: translateX(320px) rotate(25deg);
 }
 
 @keyframes ai-chat-bubbles {
@@ -1087,7 +1103,15 @@ tbody tr:last-child td {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
   transform: rotate(20deg);
   opacity: 0;
-  transition: left 0.55s ease, opacity 0.2s ease;
+  /* Как и выше — transform вместо left, чтобы не пересчитывать раскладку. */
+  transition: transform 0.55s ease, opacity 0.2s ease;
+  will-change: transform;
+}
+
+.ai-quick-question:hover:not(:disabled)::after {
+  /* 433% ширины самой полосы = 195% ширины кнопки: тот же сдвиг, что был у left. */
+  transform: translateX(433%) rotate(20deg);
+  opacity: 1;
 }
 
 .ai-quick-question:hover:not(:disabled) {
@@ -1098,11 +1122,6 @@ tbody tr:last-child td {
           0 6px 18px rgba(1, 61, 182, 0.1),
           0 0 0 3px rgba(1, 61, 182, 0.045),
           inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
-}
-
-.ai-quick-question:hover:not(:disabled)::after {
-  left: 125%;
-  opacity: 1;
 }
 
 .ai-quick-question:active:not(:disabled) {

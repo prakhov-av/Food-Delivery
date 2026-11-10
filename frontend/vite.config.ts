@@ -12,6 +12,8 @@ const apiPaths = [
   '/menu-items',
   '/orders',
   '/order-items',
+  '/guest-sessions',
+  '/guest-orders',
   '/chat',
   '/audit-logs',
   '/ingestion',
