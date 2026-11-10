@@ -5,7 +5,11 @@ WORKDIR /app
 COPY package*.json ./
 
 # npm ci ставит пакеты строго по package-lock.json: сборка воспроизводима.
-RUN npm ci --no-audit --no-fund
+# npm 10.9.9 — та версия, которой собран package-lock.json. Без фиксации
+# новая версия npm в образе может по-другому разрешить peer-зависимости
+# и сломать `npm ci` на ровном месте.
+RUN npm install --no-audit --no-fund --global npm@10.9.9 \
+    && npm ci --no-audit --no-fund
 
 COPY . .
 

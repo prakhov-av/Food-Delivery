@@ -4,7 +4,10 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm ci
+# npm 10.9.9 — та же версия, что и в backend-образе: package-lock.json
+# должен разрешаться той версией npm, которой он собран.
+RUN npm install --no-audit --no-fund --global npm@10.9.9 \
+    && npm ci --no-audit --no-fund
 
 COPY . .
 
