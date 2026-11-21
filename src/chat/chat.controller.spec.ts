@@ -1,6 +1,7 @@
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { Role } from '../users/enums/role.enum';
+import { Lang } from './locales/lang';
 
 describe('ChatController', () => {
   let controller: ChatController;
@@ -22,6 +23,7 @@ describe('ChatController', () => {
     expect(service.generateResponseForIdentity).toHaveBeenCalledWith(
       'What is my order status?',
       request.chatIdentity,
+      undefined,
     );
   });
 
@@ -35,6 +37,22 @@ describe('ChatController', () => {
     expect(service.generateResponseForIdentity).toHaveBeenCalledWith(
       dto.message,
       identity,
+      undefined,
+    );
+  });
+
+  it('passes the language selected in the interface', async () => {
+    service.generateResponseForIdentity.mockResolvedValue('answer');
+    const request = {
+      chatIdentity: { kind: 'user', userId: 42, role: Role.CUSTOMER },
+    } as any;
+    const dto = { message: 'Wo ist meine Bestellung?', lang: Lang.DE } as any;
+
+    await expect(controller.askAi(dto, request)).resolves.toBe('answer');
+    expect(service.generateResponseForIdentity).toHaveBeenCalledWith(
+      'Wo ist meine Bestellung?',
+      request.chatIdentity,
+      Lang.DE,
     );
   });
 });

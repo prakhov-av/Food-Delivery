@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { translate, useT } from '../i18n';
 import type { MenuDto, RestaurantDto } from '../types';
 import { CollapsibleForm, ErrorBanner, SuccessBanner } from '../ui';
 
@@ -14,6 +15,7 @@ export default function MenusView({
   onSelect: (menu: MenuDto) => void;
   onBack: () => void;
 }) {
+  const t = useT();
   const [menus, setMenus] = useState<MenuDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -31,7 +33,7 @@ export default function MenusView({
       setMenus(await api<MenuDto[]>(`/menus?restaurantId=${restaurant.id}`));
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Не удалось загрузить меню',
+        err instanceof Error ? err.message : translate('views.menus.loadFailed'),
       );
     } finally {
       setLoading(false);
@@ -51,7 +53,9 @@ export default function MenusView({
       setSuccess(successMessage);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Операция не выполнена');
+      setError(
+        err instanceof Error ? err.message : t('views.menus.operationFailed'),
+      );
     } finally {
       setBusy(false);
     }
@@ -64,7 +68,7 @@ export default function MenusView({
         body: JSON.stringify({ name, restaurantId: restaurant.id }),
       });
       setName('');
-    }, 'Меню создано');
+    }, t('views.menus.created'));
 
   const rename = (id: number) =>
     run(async () => {
@@ -73,22 +77,22 @@ export default function MenusView({
         body: JSON.stringify({ newName: renameValue }),
       });
       setRenameId(null);
-    }, 'Меню переименовано');
+    }, t('views.menus.renamed'));
 
   const remove = (id: number) =>
-    run(() => api(`/menus/${id}`, { method: 'DELETE' }), 'Меню деактивировано');
+    run(() => api(`/menus/${id}`, { method: 'DELETE' }), t('views.menus.deactivated'));
 
   return (
     <div className="view">
       <header className="view-header">
         <div>
           <button className="btn btn-ghost btn-sm" onClick={onBack}>
-            ← К ресторанам
+            {t('views.menus.back')}
           </button>
-          <h1>Меню · {restaurant.name}</h1>
+          <h1>{t('views.menus.title', { name: restaurant.name })}</h1>
         </div>
         <button className="btn btn-ghost" onClick={() => void load()}>
-          Обновить
+          {t('views.menus.refresh')}
         </button>
       </header>
 
@@ -98,9 +102,9 @@ export default function MenusView({
       )}
 
       {canManage && (
-        <CollapsibleForm title="Добавить меню" onSubmit={create} busy={busy}>
+        <CollapsibleForm title={t('views.menus.addTitle')} onSubmit={create} busy={busy}>
           <label>
-            Название (латиницей)
+            {t('views.menus.nameLatin')}
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -112,17 +116,17 @@ export default function MenusView({
       )}
 
       {loading ? (
-        <div className="empty">Загрузка…</div>
+        <div className="empty">{t('views.menus.loading')}</div>
       ) : menus.length === 0 ? (
-        <div className="empty">У этого ресторана пока нет меню</div>
+        <div className="empty">{t('views.menus.empty')}</div>
       ) : (
         <div className="card table-card">
           <table>
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Название</th>
-                <th className="actions-col">Действия</th>
+                <th>{t('views.menus.name')}</th>
+                <th className="actions-col">{t('views.menus.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -140,13 +144,13 @@ export default function MenusView({
                           className="btn btn-primary btn-sm"
                           onClick={() => void rename(m.id)}
                         >
-                          ОК
+                          {t('views.menus.ok')}
                         </button>
                         <button
                           className="btn btn-ghost btn-sm"
                           onClick={() => setRenameId(null)}
                         >
-                          Отмена
+                          {t('views.menus.cancel')}
                         </button>
                       </div>
                     ) : (
@@ -158,7 +162,7 @@ export default function MenusView({
                       className="btn btn-primary btn-sm"
                       onClick={() => onSelect(m)}
                     >
-                      Блюда →
+                      {t('views.menus.dishesLink')}
                     </button>
                     {canManage && (
                       <>
@@ -169,14 +173,14 @@ export default function MenusView({
                             setRenameValue(m.name);
                           }}
                         >
-                          Переименовать
+                          {t('views.menus.rename')}
                         </button>
                         <button
                           className="btn btn-danger btn-sm"
                           onClick={() => void remove(m.id)}
                           disabled={busy}
                         >
-                          Удалить
+                          {t('views.menus.delete')}
                         </button>
                       </>
                     )}

@@ -8,6 +8,7 @@ import {
 } from '../guest';
 import { guestNextStatuses } from '../types';
 import type { GuestOrderDto, OrderStatus } from '../types';
+import { translate, useT } from '../i18n';
 import {
   ErrorBanner,
   StatusBadge,
@@ -30,6 +31,7 @@ const itemsTotal = (guestOrder: GuestOrderDto): number =>
  * отвечать по фактическому состоянию заказа.
  */
 export default function GuestOrdersView() {
+  const t = useT();
   const [orders, setOrders] = useState<GuestOrderDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -44,7 +46,7 @@ export default function GuestOrdersView() {
       setOrders(await getGuestOrders());
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Не удалось загрузить заказы',
+        err instanceof Error ? err.message : translate('views.guestOrders.loadFailed'),
       );
     } finally {
       setLoading(false);
@@ -74,7 +76,9 @@ export default function GuestOrdersView() {
 
       setSuccess(successMessage);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Операция не выполнена');
+      setError(
+        err instanceof Error ? err.message : t('views.guestOrders.operationFailed'),
+      );
     } finally {
       setBusy(false);
     }
@@ -83,19 +87,22 @@ export default function GuestOrdersView() {
   const changeStatus = (orderId: number, status: OrderStatus) =>
     run(
       () => setGuestOrderStatus(orderId, status),
-      `Заказ #${orderId}: ${statusLabel(status)}`,
+      t('views.guestOrders.statusChanged', {
+        id: orderId,
+        status: statusLabel(status),
+      }),
     );
 
   const changeQty = (guestOrder: GuestOrderDto, itemId: number, quantity: number) =>
     run(
       () => updateGuestOrderItem(guestOrder.order.id, itemId, quantity),
-      'Количество обновлено',
+      t('views.guestOrders.qtyUpdated'),
     );
 
   const removeItem = (guestOrder: GuestOrderDto, itemId: number) =>
     run(
       () => removeGuestOrderItem(guestOrder.order.id, itemId),
-      'Позиция удалена',
+      t('views.guestOrders.itemRemoved'),
     );
 
   const { active, history } = useMemo(() => {
@@ -141,12 +148,12 @@ export default function GuestOrdersView() {
         </div>
 
         <div className="muted" style={{ marginTop: 4 }}>
-          Гость · {formatDate(order.createdAt)}
+          {t('views.guestOrders.guestLine', { date: formatDate(order.createdAt) })}
         </div>
 
         {list.length === 0 ? (
           <div className="muted" style={{ marginTop: 8 }}>
-            В заказе пока нет позиций
+            {t('views.guestOrders.noItems')}
           </div>
         ) : (
           <ul
@@ -215,7 +222,7 @@ export default function GuestOrdersView() {
         )}
 
         <div style={{ marginTop: 8 }}>
-          <b>Итого: {formatPrice(itemsTotal(guestOrder))}</b>
+          <b>{t('views.guestOrders.total', { price: formatPrice(itemsTotal(guestOrder)) })}</b>
         </div>
 
         {next.length > 0 && (
@@ -239,14 +246,14 @@ export default function GuestOrdersView() {
   return (
     <div className="view">
       <header className="view-header">
-        <h1>Мои заказы</h1>
+        <h1>{t('views.guestOrders.title')}</h1>
 
         <button
           className="btn btn-ghost"
           onClick={() => void load()}
           disabled={loading || busy}
         >
-          Обновить
+          {t('views.guestOrders.refresh')}
         </button>
       </header>
 
@@ -257,15 +264,13 @@ export default function GuestOrdersView() {
       )}
 
       {loading ? (
-        <div className="empty">Загрузка…</div>
+        <div className="empty">{t('views.guestOrders.loading')}</div>
       ) : active.length === 0 && history.length === 0 ? (
-        <div className="empty">
-          Заказов пока нет. Добавьте блюда из меню ресторана.
-        </div>
+        <div className="empty">{t('views.guestOrders.empty')}</div>
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
           {active.length === 0 && (
-            <div className="empty">Активных заказов нет</div>
+            <div className="empty">{t('views.guestOrders.noActive')}</div>
           )}
 
           {active.map(renderOrder)}
@@ -273,7 +278,7 @@ export default function GuestOrdersView() {
           {history.length > 0 && (
             <details>
               <summary style={{ cursor: 'pointer', margin: '8px 0' }}>
-                История ({history.length})
+                {t('views.guestOrders.history', { count: history.length })}
               </summary>
 
               <div

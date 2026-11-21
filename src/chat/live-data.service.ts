@@ -11,28 +11,20 @@ import { LiveDataResource } from './enums/live-data-resource.enum';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { Status } from '../orders/enums/status.enum';
 import { LiveDataResult } from './types/live-data-result';
+import { DEFAULT_LANG, Lang } from './locales/lang';
+import { LOCALE_PACKS } from './locales/locale-packs';
+import { LocalePack } from './locales/locale-pack';
 
 import {
   OrderItemLine,
   OrderWithItems,
 } from '../orders/types/order-with-items';
 
-const STATUS_DESCRIPTIONS: Record<Status, string> = {
-  [Status.NEW]: 'NEW — новый заказ, ожидает подтверждения менеджера',
-  [Status.ACCEPTED]:
-    'ACCEPTED — заказ принят менеджером, готовится к приготовлению',
-  [Status.COOKING]: 'COOKING — готовится',
-  [Status.READY]: 'READY — готов, ждёт курьера',
-  [Status.DELIVERING]: 'DELIVERING — доставляется курьером',
-  [Status.COMPLETED]: 'COMPLETED — завершён',
-  [Status.CANCELLED_CUSTOMER]: 'CANCELLED_CUSTOMER — отменён клиентом',
-  [Status.CANCELLED_COURIER]: 'CANCELLED_COURIER — отменён курьером',
-  [Status.CANCELLED_STAFF]:
-    'CANCELLED_STAFF — отменён менеджером или администратором',
-};
-
 /**
  * Получает актуальные данные приложения для ответов чат-ассистента и ограничивает доступ к ресурсам с учётом пользователя и его роли.
+ *
+ * Подписи полей и статусов берутся из пака языка: модель их не переводит,
+ * поэтому ответ детерминирован и не зависит от того, как модель поняла язык.
  */
 @Injectable()
 export class LiveDataService {
@@ -48,19 +40,21 @@ export class LiveDataService {
     classification: ChatClassification,
     identityOrUserId: ChatIdentity | number,
     legacyUserRole?: Role,
+    lang: Lang = DEFAULT_LANG,
   ): Promise<LiveDataResult> {
     const identity: ChatIdentity | null =
       typeof identityOrUserId === 'number'
         ? null
         : identityOrUserId;
     const userRole: Role = identity?.role ?? legacyUserRole ?? Role.CUSTOMER;
+    const pack: LocalePack = LOCALE_PACKS[lang];
+
     if (
       classification.documentType !== DocumentType.ORDER ||
       classification.resource !== LiveDataResource.ORDER
     ) {
       return {
-        context:
-          'Для ответа на этот вопрос необходимы актуальные данные системы.',
+        context: pack.orderLabels.liveDataRequired,
       };
     }
 
@@ -87,16 +81,16 @@ export class LiveDataService {
         );
 
         if (visibleOrders.length === 0) {
-          return { context: this.formatNoOrdersMessage(userRole) };
+          return { context: this.formatNoOrdersMessage(pack, userRole) };
         }
 
         return {
-          context: this.formatOrdersData(visibleOrders),
+          context: this.formatOrdersData(pack, visibleOrders),
           orderId: visibleOrders.length === 1 ? visibleOrders[0].id : undefined,
         };
       } catch (error) {
         if (error instanceof EntityNotFoundException) {
-          return { context: this.formatNoOrdersMessage(userRole) };
+          return { context: this.formatNoOrdersMessage(pack, userRole) };
         }
 
         throw error;
@@ -115,7 +109,7 @@ export class LiveDataService {
           );
 
       return {
-        context: this.formatOrderData(details.order, details.items),
+        context: this.formatOrderData(pack, details.order, details.items),
         orderId: details.order.id,
       };
     } catch (error) {
@@ -125,6 +119,7 @@ export class LiveDataService {
       ) {
         return {
           context: this.formatNoOrdersMessage(
+            pack,
             userRole,
             classification.resourceId,
           ),
@@ -143,65 +138,78 @@ export class LiveDataService {
     return this.guestOrdersService;
   }
 
-  private formatOrdersData(orders: OrderDto[]): string {
+  private formatOrdersData(pack: LocalePack, orders: OrderDto[]): string {
     return orders
-      .map((order: OrderDto): string => this.formatOrderData(order))
+      .map((order: OrderDto): string => this.formatOrderData(pack, order))
       .join('\n\n');
   }
 
-  private formatNoOrdersMessage(userRole: Role, orderId?: number): string {
+  private formatNoOrdersMessage(
+    pack: LocalePack,
+    userRole: Role,
+    orderId?: number,
+  ): string {
+    const labels = pack.orderLabels;
+
     if (orderId !== undefined) {
       if (userRole === Role.COURIER) {
-        return `У вас нет заказа №${orderId} на выполнение.`;
+        return labels.noSuchOrderCourier.replace('{id}', String(orderId));
       }
 
       if (userRole === Role.CUSTOMER) {
-        return `У вас нет заказа №${orderId} среди ваших заказов.`;
+        return labels.noSuchOrderCustomer.replace('{id}', String(orderId));
       }
 
-      return `Заказ №${orderId} не найден.`;
+      return labels.orderNotFound.replace('{id}', String(orderId));
     }
 
     if (userRole === Role.COURIER) {
-      return 'У вас нет заказов на выполнение.';
+      return labels.noOrdersCourier;
     }
 
     if (userRole === Role.CUSTOMER) {
-      return 'У вас нет заказов.';
+      return labels.noOrdersCustomer;
     }
 
-    return 'В системе нет доступных заказов.';
+    return labels.noOrdersStaff;
   }
 
   private isEmptyCart(order: OrderDto): boolean {
     return order.status === Status.NEW && Number(order.totalPrice) === 0;
   }
 
-  private formatOrderData(order: OrderDto, items?: OrderItemLine[]): string {
+  private formatOrderData(
+    pack: LocalePack,
+    order: OrderDto,
+    items?: OrderItemLine[],
+  ): string {
     const emptyCart: boolean = this.isEmptyCart(order);
+    const labels = pack.orderLabels;
+
+    const statusDescription: string = order.status
+      ? pack.statusLabels[order.status]
+      : labels.noStatus;
 
     return [
-      `Заказ №${order.id}`,
-      `Статус: ${order.status ? STATUS_DESCRIPTIONS[order.status] : 'не указан'}`,
-      `Сумма: ${order.totalPrice} €`,
-      `Ресторан: ${order.restaurant.name}`,
-      `Клиент: ${order.customer?.name ?? 'Гость'}`,
-      `Курьер: ${order.courier?.name ?? 'не назначен'}`,
-      `Создан: ${order.createdAt.toISOString()}`,
-      ...(emptyCart
-        ? ['Это пустая корзина: блюд в заказе нет, такой заказ нельзя принять.']
-        : []),
-      ...(items !== undefined && !emptyCart ? this.formatItems(items) : []),
+      `${labels.order}${order.id}`,
+      `${labels.status} ${statusDescription}`,
+      `${labels.total} ${order.totalPrice} €`,
+      `${labels.restaurant} ${order.restaurant.name}`,
+      `${labels.customer} ${order.customer?.name ?? labels.guestCustomer}`,
+      `${labels.courier} ${order.courier?.name ?? labels.noCourier}`,
+      `${labels.created} ${order.createdAt.toISOString()}`,
+      ...(emptyCart ? [labels.emptyCart] : []),
+      ...(items !== undefined && !emptyCart ? this.formatItems(pack, items) : []),
     ].join('\n');
   }
 
-  private formatItems(items: OrderItemLine[]): string[] {
+  private formatItems(pack: LocalePack, items: OrderItemLine[]): string[] {
     if (items.length === 0) {
-      return ['Состав заказа: активных позиций нет.'];
+      return [pack.orderLabels.noItems];
     }
 
     return [
-      'Состав заказа:',
+      pack.orderLabels.itemsHeader,
       ...items.map(
         (item: OrderItemLine): string => `- ${item.name} × ${item.quantity}`,
       ),

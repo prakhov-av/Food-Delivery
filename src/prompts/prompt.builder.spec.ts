@@ -8,7 +8,7 @@ describe('PromptBuilder', (): void => {
         .build();
 
       expect(result.startsWith('base')).toBe(true);
-      expect(result).toContain('Последний обсуждаемый заказ: №123');
+      expect(result).toContain('Last discussed order: No.123');
     });
 
     it('should leave the prompt unchanged when there is no order id', (): void => {
@@ -26,11 +26,9 @@ describe('PromptBuilder', (): void => {
         .withQuestion('вопрос')
         .build();
 
-      const historyEnd: number = result.indexOf('Конец истории диалога.');
-      const lastOrder: number = result.indexOf(
-        'Последний обсуждаемый заказ: №7',
-      );
-      const question: number = result.lastIndexOf('Вопрос пользователя:');
+      const historyEnd: number = result.indexOf('End of the conversation history.');
+      const lastOrder: number = result.indexOf('Last discussed order: No.7');
+      const question: number = result.lastIndexOf('User question:');
 
       expect(historyEnd).toBeLessThan(lastOrder);
       expect(lastOrder).toBeLessThan(question);

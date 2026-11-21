@@ -245,6 +245,11 @@ select:focus {
   width: 100%;
 }
 
+/* Переключатель языка в сайдбаре: по ширине кнопок, а не во всю колонку. */
+.sidebar-footer .lang-switch {
+  align-self: flex-start;
+}
+
 .content {
   flex: 1;
   width: 0;
@@ -1479,4 +1484,56 @@ tbody tr:last-child td {
     bottom: 148px;
     width: calc(100vw - 32px);
   }
+}
+
+/* ---------- Language Switch ---------- */
+
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.lang-switch__btn {
+  min-width: 38px;
+  height: 26px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.lang-switch__btn:hover {
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.lang-switch__btn.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(31, 29, 26, 0.16);
+}
+
+.lang-switch__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lang-switch--compact .lang-switch__btn {
+  min-width: 30px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 10px;
 }

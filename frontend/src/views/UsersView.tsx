@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, apiList } from '../api';
+import { translate, useT } from '../i18n';
 import type { Role, UserDto } from '../types';
 import { CollapsibleForm, ErrorBanner, RoleBadge, SuccessBanner, roleLabel } from '../ui';
 
 const ROLES: Role[] = ['ADMIN', 'MANAGER', 'CUSTOMER', 'COURIER'];
 
 export default function UsersView() {
+  const t = useT();
   const [users, setUsers] = useState<UserDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -20,7 +22,9 @@ export default function UsersView() {
     try {
       setUsers(await apiList<UserDto>('/users'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить пользователей');
+      setError(
+        err instanceof Error ? err.message : translate('views.users.loadFailed'),
+      );
     } finally {
       setLoading(false);
     }
@@ -39,7 +43,9 @@ export default function UsersView() {
       setSuccess(successMessage);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Операция не выполнена');
+      setError(
+        err instanceof Error ? err.message : t('views.users.operationFailed'),
+      );
     } finally {
       setBusy(false);
     }
@@ -49,32 +55,35 @@ export default function UsersView() {
     run(async () => {
       await api('/users', { method: 'POST', body: JSON.stringify(form) });
       setForm({ name: '', email: '', phone: '', password: '' });
-    }, 'Пользователь создан (роль: Клиент)');
+    }, t('views.users.created'));
 
   const setRole = (id: number, role: Role) =>
     run(
       () => api(`/users/${id}/set-role/${role}`, { method: 'PATCH' }),
-      `Роль пользователя #${id}: ${roleLabel(role)}`,
+      t('views.users.roleChanged', { id, role: roleLabel(role) }),
     );
 
   const remove = (id: number) =>
-    run(() => api(`/users/${id}`, { method: 'DELETE' }), `Пользователь #${id} деактивирован`);
+    run(
+      () => api(`/users/${id}`, { method: 'DELETE' }),
+      t('views.users.deactivated', { id }),
+    );
 
   return (
     <div className="view">
       <header className="view-header">
-        <h1>Пользователи</h1>
+        <h1>{t('views.users.title')}</h1>
         <button className="btn btn-ghost" onClick={() => void load()}>
-          Обновить
+          {t('views.users.refresh')}
         </button>
       </header>
 
       {error && <ErrorBanner message={error} onClose={() => setError('')} />}
       {success && <SuccessBanner message={success} onClose={() => setSuccess('')} />}
 
-      <CollapsibleForm title="Добавить пользователя" onSubmit={create} busy={busy}>
+      <CollapsibleForm title={t('views.users.addTitle')} onSubmit={create} busy={busy}>
         <label>
-          Имя (латиницей)
+          {t('views.users.nameLatin')}
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -83,7 +92,7 @@ export default function UsersView() {
           />
         </label>
         <label>
-          Email
+          {t('views.users.email')}
           <input
             type="email"
             value={form.email}
@@ -92,7 +101,7 @@ export default function UsersView() {
           />
         </label>
         <label>
-          Телефон
+          {t('views.users.phone')}
           <input
             value={form.phone}
             onChange={(e) => setForm({ ...form, phone: e.target.value })}
@@ -100,7 +109,7 @@ export default function UsersView() {
           />
         </label>
         <label>
-          Пароль
+          {t('views.users.password')}
           <input
             type="password"
             value={form.password}
@@ -112,19 +121,19 @@ export default function UsersView() {
       </CollapsibleForm>
 
       {loading ? (
-        <div className="empty">Загрузка…</div>
+        <div className="empty">{t('views.users.loading')}</div>
       ) : users.length === 0 ? (
-        <div className="empty">Пользователей нет</div>
+        <div className="empty">{t('views.users.empty')}</div>
       ) : (
         <div className="card table-card">
           <table>
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Имя</th>
-                <th>Телефон</th>
-                <th>Роль</th>
-                <th className="actions-col">Действия</th>
+                <th>{t('views.users.name')}</th>
+                <th>{t('views.users.phone')}</th>
+                <th>{t('views.users.role')}</th>
+                <th className="actions-col">{t('views.users.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -147,7 +156,7 @@ export default function UsersView() {
                       }}
                       disabled={busy}
                     >
-                      <option value="">Сменить роль…</option>
+                      <option value="">{t('views.users.changeRole')}</option>
                       {ROLES.filter((r) => r !== u.role).map((r) => (
                         <option key={r} value={r}>
                           {roleLabel(r)}
@@ -159,7 +168,7 @@ export default function UsersView() {
                       onClick={() => void remove(u.id)}
                       disabled={busy}
                     >
-                      Удалить
+                      {t('views.users.delete')}
                     </button>
                   </td>
                 </tr>

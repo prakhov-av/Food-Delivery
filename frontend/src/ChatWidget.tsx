@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError } from './api';
 import type { Role } from './types';
+import { QUICK_QUESTIONS } from './i18n/core';
+import LanguageSwitch from './i18n/LanguageSwitch';
+import { useT, type Lang } from './i18n';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,52 +16,32 @@ interface HistoryItem {
   answer: string | null;
 }
 
-const GREETING: Message = {
-  role: 'assistant',
-  text: 'Здравствуйте! Выберите вопрос ниже или напишите свой.',
-};
-
-const LIVE_ANSWER_NOTE =
-  'Ответ с данными заказов не сохраняется. Задайте вопрос ещё раз, чтобы получить актуальные данные.';
-
-const toMessages = (items: HistoryItem[]): Message[] =>
+const toMessages = (
+  items: HistoryItem[],
+  liveNote: string,
+): Message[] =>
   items.flatMap((item: HistoryItem): Message[] => [
     { role: 'user', text: item.question },
-    { role: 'assistant', text: item.answer ?? LIVE_ANSWER_NOTE },
+    { role: 'assistant', text: item.answer ?? liveNote },
   ]);
 
 const ACCENT = 'rgb(1 61 182 / 0.65)';
 const BUBBLE = 'rgba(241, 239, 236, 0.62)';
 
-const QUICK_QUESTIONS: Record<Role, string[]> = {
-  CUSTOMER: [
-    'Где мой заказ?',
-    'Какие у меня заказы?',
-    'Как оформить заказ?',
-    'Как отменить заказ?',
-    'Что ты умеешь?',
-  ],
-  COURIER: [
-    'Какие заказы мне назначены?',
-    'Как доставить заказ?',
-    'Что ты умеешь?',
-  ],
-  MANAGER: [
-    'Какие заказы сейчас в работе?',
-    'Покажи все заказы',
-    'Что ты умеешь?',
-  ],
-  ADMIN: [
-    'Какие заказы сейчас в работе?',
-    'Покажи все заказы',
-    'Что ты умеешь?',
-  ],
-};
+export default function ChatWidget({
+  role,
+  lang,
+}: {
+  role: Role;
+  lang: Lang;
+}) {
+  const t = useT();
 
-export default function ChatWidget({ role }: { role: Role }) {
   const [open, setOpen] = useState(false);
 
-  const [messages, setMessages] = useState<Message[]>([GREETING]);
+  const [messages, setMessages] = useState<Message[]>([
+    { role: 'assistant', text: t('chat.greeting') },
+  ]);
 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -66,6 +49,25 @@ export default function ChatWidget({ role }: { role: Role }) {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const historyLoaded = useRef(false);
+
+  const greeting: string = useMemo(() => t('chat.greeting'), [t]);
+  const liveNote: string = useMemo(() => t('chat.liveNote'), [t]);
+  const quickQuestions: string[] = useMemo(
+    () => QUICK_QUESTIONS[lang][role],
+    [lang, role],
+  );
+
+  // При смене языка приветствие обновляется: переписка уже начата, её
+  // сообщения остаются как есть.
+  useEffect(() => {
+    setMessages((messages: Message[]): Message[] => {
+      if (messages.length === 0) {
+        return [{ role: 'assistant', text: greeting }];
+      }
+
+      return [{ ...messages[0], text: greeting }, ...messages.slice(1)];
+    });
+  }, [greeting]);
 
   useEffect(() => {
     if (open) {
@@ -85,12 +87,12 @@ export default function ChatWidget({ role }: { role: Role }) {
       .then((items) => {
         if (!items || items.length === 0) return;
 
-        setMessages((m) => [m[0], ...toMessages(items), ...m.slice(1)]);
+        setMessages((m) => [m[0], ...toMessages(items, liveNote), ...m.slice(1)]);
       })
       .catch(() => {
         // история необязательна: чат работает и без неё
       });
-  }, [open]);
+  }, [open, liveNote]);
 
   const ask = async (raw: string) => {
     const text = raw.trim();
@@ -114,6 +116,9 @@ export default function ChatWidget({ role }: { role: Role }) {
         method: 'POST',
         body: JSON.stringify({
           message: text,
+          // Язык интерфейса уезжает вместе с вопросом: ассистент отвечает
+          // на том же языке, а короткие сообщения не путаются между собой.
+          lang,
         }),
       });
 
@@ -126,10 +131,10 @@ export default function ChatWidget({ role }: { role: Role }) {
       ]);
     } catch (err) {
       if (err instanceof ApiError && err.status >= 500) {
-        setError('Помощник временно недоступен, попробуйте позже');
+        setError(t('chat.errorUnavailable'));
       } else {
         setError(
-          err instanceof Error ? err.message : 'Не удалось получить ответ',
+          err instanceof Error ? err.message : t('chat.errorGeneric'),
         );
       }
     } finally {
@@ -138,21 +143,18 @@ export default function ChatWidget({ role }: { role: Role }) {
   };
 
   const clearHistory = async () => {
-    if (
-      busy ||
-      !window.confirm('Удалить всю историю переписки с помощником?')
-    ) {
+    if (busy || !window.confirm(t('chat.clearConfirm'))) {
       return;
     }
 
     try {
       await api('/chat/history', { method: 'DELETE' });
 
-      setMessages([GREETING]);
+      setMessages([{ role: 'assistant', text: greeting }]);
       setError('');
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Не удалось очистить историю',
+        err instanceof Error ? err.message : t('chat.errorClearFailed'),
       );
     }
   };
@@ -222,13 +224,15 @@ export default function ChatWidget({ role }: { role: Role }) {
               fontWeight: 650,
             }}
           >
-            <span>AI помощник</span>
+            <span>{t('chat.title')}</span>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <LanguageSwitch compact />
+
               <button
                 onClick={() => void clearHistory()}
                 disabled={busy}
-                aria-label="Очистить историю переписки"
+                aria-label={t('chat.clearAria')}
                 style={{
                   height: 30,
                   padding: '0 10px',
@@ -236,7 +240,6 @@ export default function ChatWidget({ role }: { role: Role }) {
                   background: 'rgba(255,255,255,.12)',
 
                   border: '1px solid rgba(255,255,255,.18)',
-
                   borderRadius: 9,
 
                   color: '#fff',
@@ -248,12 +251,12 @@ export default function ChatWidget({ role }: { role: Role }) {
                   transition: 'all .2s ease',
                 }}
               >
-                Очистить
+                {t('chat.clear')}
               </button>
 
               <button
                 onClick={() => setOpen(false)}
-                aria-label="Закрыть чат"
+                aria-label={t('chat.closeAria')}
                 style={{
                   width: 30,
                   height: 30,
@@ -264,7 +267,6 @@ export default function ChatWidget({ role }: { role: Role }) {
                   background: 'rgba(255,255,255,.12)',
 
                   border: '1px solid rgba(255,255,255,.18)',
-
                   borderRadius: 9,
 
                   color: '#fff',
@@ -356,7 +358,7 @@ export default function ChatWidget({ role }: { role: Role }) {
                   WebkitBackdropFilter: 'blur(10px)',
                 }}
               >
-                Думаю…
+                {t('chat.thinking')}
               </div>
             )}
 
@@ -411,7 +413,7 @@ export default function ChatWidget({ role }: { role: Role }) {
               zIndex: 2,
             }}
           >
-            {QUICK_QUESTIONS[role].map((q) => (
+            {quickQuestions.map((q) => (
               <button
                 key={q}
                 disabled={busy}
@@ -479,7 +481,7 @@ export default function ChatWidget({ role }: { role: Role }) {
               }}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ваш вопрос…"
+              placeholder={t('chat.placeholder')}
               disabled={busy}
             />
 
@@ -503,13 +505,13 @@ export default function ChatWidget({ role }: { role: Role }) {
 
       <button
         onClick={() => setOpen((o) => !o)}
-        aria-label={open ? 'Закрыть AI ассистента' : 'Открыть AI ассистента'}
+        aria-label={open ? t('chat.closeAriaButton') : t('chat.openAria')}
         className={`ai-chat-button ${open ? 'open' : ''}`}
       >
         <span className="ai-chat-icon">{open ? '×' : '💬'}</span>
 
         <span className="ai-chat-label">
-          {open ? 'Закрыть' : 'Chat with AI'}
+          {open ? t('chat.labelClose') : t('chat.labelOpen')}
         </span>
       </button>
     </>

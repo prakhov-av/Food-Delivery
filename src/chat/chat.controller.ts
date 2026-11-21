@@ -44,6 +44,7 @@ export class ChatController {
     return this.service.generateResponseForIdentity(
       chatRequestDto.message,
       request.chatIdentity,
+      chatRequestDto.lang,
     );
   }
 

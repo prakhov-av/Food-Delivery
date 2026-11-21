@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, apiList } from '../api';
+import { translate, useT } from '../i18n';
 import { canAssignCourier, canEditItems, nextStatuses } from '../types';
 import { ORDER_LIMITS } from '../config';
 import type {
@@ -27,13 +28,14 @@ const isClosed = (s?: OrderStatus): boolean =>
   s === 'COMPLETED' || (s !== undefined && isCancel(s));
 
 function actionLabel(target: OrderStatus): string {
-  if (target === 'ACCEPTED') return 'Принять заказ';
-  if (target === 'COOKING') return 'Заказ готовится';
-  if (target === 'READY') return 'Заказ готов';
-  if (target === 'DELIVERING') return 'Заказ отправлен';
-  if (target === 'COMPLETED') return 'Доставлен';
-  if (target === 'CANCELLED_COURIER') return 'Отменить заказ';
-  if (isCancel(target)) return 'Отменить';
+  if (target === 'ACCEPTED') return translate('views.orders.action.accept');
+  if (target === 'COOKING') return translate('views.orders.action.cooking');
+  if (target === 'READY') return translate('views.orders.action.ready');
+  if (target === 'DELIVERING') return translate('views.orders.action.delivering');
+  if (target === 'COMPLETED') return translate('views.orders.action.completed');
+  if (target === 'CANCELLED_COURIER')
+    return translate('views.orders.action.cancelOrder');
+  if (isCancel(target)) return translate('views.orders.action.cancel');
 
   return statusLabel(target);
 }
@@ -42,6 +44,7 @@ const itemsTotal = (list: OrderItemDto[]): number =>
   list.reduce((sum, it) => sum + Number(it.menuItem.price) * it.quantity, 0);
 
 export default function OrdersView({ role }: { role: Role }) {
+  const t = useT();
   const [orders, setOrders] = useState<OrderDto[]>([]);
   const [items, setItems] = useState<OrderItemDto[]>([]);
   const [couriers, setCouriers] = useState<UserDto[]>([]);
@@ -78,7 +81,7 @@ export default function OrdersView({ role }: { role: Role }) {
       }
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Не удалось загрузить заказы',
+        err instanceof Error ? err.message : translate('views.orders.loadFailed'),
       );
     } finally {
       setLoading(false);
@@ -127,14 +130,16 @@ export default function OrdersView({ role }: { role: Role }) {
 
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Операция не выполнена');
+      setError(
+        err instanceof Error ? err.message : t('views.orders.operationFailed'),
+      );
     } finally {
       setBusy(false);
     }
   };
 
   const setStatus = (id: number, status: OrderStatus) => {
-    if (isCancel(status) && !window.confirm(`Отменить заказ #${id}?`)) {
+    if (isCancel(status) && !window.confirm(t('views.orders.cancelConfirm', { id }))) {
       return Promise.resolve();
     }
 
@@ -143,7 +148,7 @@ export default function OrdersView({ role }: { role: Role }) {
         api(`/orders/${id}/set-status/${status}`, {
           method: 'PATCH',
         }),
-      `Заказ #${id}: ${statusLabel(status)}`,
+      t('views.orders.statusChanged', { id, status: statusLabel(status) }),
     );
   };
 
@@ -154,7 +159,7 @@ export default function OrdersView({ role }: { role: Role }) {
           method: 'PATCH',
           body: JSON.stringify({ courierId }),
         }),
-      `Курьер заказа #${id} назначен`,
+      t('views.orders.courierAssigned', { id }),
     );
 
   const changeQty = (item: OrderItemDto, newQuantity: number) =>
@@ -166,7 +171,7 @@ export default function OrdersView({ role }: { role: Role }) {
             newQuantity,
           }),
         }),
-      'Количество обновлено',
+      t('views.orders.qtyUpdated'),
     );
 
   const removeItem = (id: number) =>
@@ -175,7 +180,7 @@ export default function OrdersView({ role }: { role: Role }) {
         api(`/order-items/${id}`, {
           method: 'DELETE',
         }),
-      'Позиция удалена',
+      t('views.orders.itemRemoved'),
     );
 
   const renderOrder = (o: OrderDto) => {
@@ -213,11 +218,14 @@ export default function OrdersView({ role }: { role: Role }) {
         </div>
 
         <div className="muted" style={{ marginTop: 4 }}>
-          Клиент: {o.customer?.name ?? 'Гость'} · {formatDate(o.createdAt)}
+          {t('views.orders.customerLine', {
+            customer: o.customer?.name ?? t('session.guest'),
+            date: formatDate(o.createdAt),
+          })}
         </div>
 
         <div style={{ marginTop: 4 }}>
-          <b>Курьер:</b>{' '}
+          <b>{t('views.orders.courierLabel')}</b>{' '}
           {isStaff && !closed && couriers.length > 0 ? (
             <select
               value={o.courier?.id ?? ''}
@@ -230,7 +238,9 @@ export default function OrdersView({ role }: { role: Role }) {
                 }
               }}
             >
-              {!o.courier && <option value="">Не назначен</option>}
+              {!o.courier && (
+                <option value="">{t('views.orders.courierUnassigned')}</option>
+              )}
 
               {couriers.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -239,27 +249,27 @@ export default function OrdersView({ role }: { role: Role }) {
               ))}
             </select>
           ) : (
-            (o.courier?.name ?? 'Не назначен')
+            (o.courier?.name ?? t('views.orders.courierUnassigned'))
           )}
         </div>
 
         {o.status === 'READY' && !o.courier && (
           <div className="muted" style={{ marginTop: 4 }}>
             {isStaff
-              ? 'Свободного курьера не нашлось. Назначьте курьера вручную.'
-              : 'Заказ готов. Ищем свободного курьера.'}
+              ? t('views.orders.noCourierStaff')
+              : t('views.orders.noCourierCustomer')}
           </div>
         )}
 
         {o.status === 'DELIVERING' && o.courier && (
           <div className="muted" style={{ marginTop: 4 }}>
-            Курьер {o.courier.name} доставляет заказ.
+            {t('views.orders.courierDelivering', { name: o.courier.name })}
           </div>
         )}
 
         {list.length === 0 ? (
           <div className="muted" style={{ marginTop: 8 }}>
-            В заказе пока нет позиций
+            {t('views.orders.noItems')}
           </div>
         ) : (
           <ul
@@ -326,7 +336,7 @@ export default function OrdersView({ role }: { role: Role }) {
         )}
 
         <div style={{ marginTop: 8 }}>
-          <b>Итого: {formatPrice(itemsTotal(list))}</b>
+          <b>{t('views.orders.total', { price: formatPrice(itemsTotal(list)) })}</b>
         </div>
 
         {(primary.length > 0 || forced.length > 0) && (
@@ -355,7 +365,7 @@ export default function OrdersView({ role }: { role: Role }) {
                   }
                 }}
               >
-                <option value="">Принудительно…</option>
+                <option value="">{t('views.orders.forcedStatus')}</option>
 
                 {forced.map((s) => (
                   <option key={s} value={s}>
@@ -373,14 +383,14 @@ export default function OrdersView({ role }: { role: Role }) {
   return (
     <div className="view">
       <header className="view-header">
-        <h1>Заказы</h1>
+        <h1>{t('views.orders.title')}</h1>
 
         <button
           className="btn btn-ghost"
           onClick={() => void load()}
           disabled={loading || busy}
         >
-          Обновить
+          {t('views.orders.refresh')}
         </button>
       </header>
 
@@ -391,12 +401,12 @@ export default function OrdersView({ role }: { role: Role }) {
       )}
 
       {loading ? (
-        <div className="empty">Загрузка…</div>
+        <div className="empty">{t('views.orders.loading')}</div>
       ) : active.length === 0 && history.length === 0 ? (
         <div className="empty">
           {role === 'CUSTOMER'
-            ? 'Заказов пока нет. Добавьте блюда из меню ресторана.'
-            : 'Заказов пока нет'}
+            ? t('views.orders.emptyCustomer')
+            : t('views.orders.empty')}
         </div>
       ) : (
         <div
@@ -406,7 +416,7 @@ export default function OrdersView({ role }: { role: Role }) {
           }}
         >
           {active.length === 0 && (
-            <div className="empty">Активных заказов нет</div>
+            <div className="empty">{t('views.orders.noActive')}</div>
           )}
 
           {active.map(renderOrder)}
@@ -419,7 +429,7 @@ export default function OrdersView({ role }: { role: Role }) {
                   margin: '8px 0',
                 }}
               >
-                История ({history.length})
+                {t('views.orders.history', { count: history.length })}
               </summary>
 
               <div

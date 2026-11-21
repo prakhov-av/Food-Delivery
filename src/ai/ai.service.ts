@@ -18,11 +18,29 @@ export interface GenerateOptions {
 }
 @Injectable()
 export class AiService {
+  /**
+   * Счётчик вызовов генерации с момента последнего сброса.
+   *
+   * Нужен для eval-набора: главная метрика экономии — сколько вызовов LLM
+   * уходит на один вопрос.
+   */
+  private callCount: number = 0;
+
   constructor(
     private readonly geminiClient: GeminiClient,
     private readonly openAiClient: OpenAiClient,
     private readonly configService: ConfigService,
   ) {}
+
+  /** Количество вызовов генерации с момента последнего сброса. */
+  getCallCount(): number {
+    return this.callCount;
+  }
+
+  /** Сбрасывает счётчик вызовов. */
+  resetCallCount(): void {
+    this.callCount = 0;
+  }
 
   /**
    * Выполняет соответствующую операцию прикладного сценария с использованием зависимостей компонента.
@@ -32,6 +50,8 @@ export class AiService {
     prompt: string,
     options?: GenerateOptions,
   ): Promise<string> {
+    this.callCount += 1;
+
     const generationAiProvider: string = this.configService.getOrThrow(
       'PRIMARY_GENERATION_AI_PROVIDER',
       'gemini',

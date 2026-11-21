@@ -9,6 +9,7 @@ import { Role } from '../users/enums/role.enum';
 import { QdrantPayload } from './qdrant/types/search/qdrant-payload';
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { DocumentVersionConflictException } from '../exceptions/types/document-version-conflict.exception';
+import { Lang } from '../chat/locales/lang';
 
 /**
  * Преобразует фрагменты документов в эмбеддинги и точки Qdrant, управляет версиями документов и выполняет поиск с учётом типа документа и роли пользователя.
@@ -108,12 +109,14 @@ export class VectorStorageService {
     embedding: number[],
     documentType: DocumentType | undefined,
     userRole: Role,
+    lang?: Lang,
   ): Promise<QdrantResult[]> {
     const relevantChunks: QdrantResult[] =
       await this.client.getRelevantChunksByAccess(
         embedding,
         documentType,
         userRole,
+        lang,
       );
 
     return relevantChunks;

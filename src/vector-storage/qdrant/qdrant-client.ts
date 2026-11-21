@@ -11,6 +11,7 @@ import { Role } from '../../users/enums/role.enum';
 import { DocumentType } from '../../ingestion/enums/document-type.enum';
 import { QdrantScrollResponse } from './types/scroll/qdrant-scroll-response';
 import { ConfigurationException } from '../../exceptions/types/configuration.exception';
+import { Lang } from '../../chat/locales/lang';
 
 /**
    * Инкапсулирует HTTP-взаимодействие с Qdrant: сохранение, поиск, чтение и удаление точек векторной коллекции.
@@ -19,6 +20,9 @@ import { ConfigurationException } from '../../exceptions/types/configuration.exc
 export class QdrantClient {
   private readonly baseUrl: string;
   private readonly archiveUrl: string;
+
+  /** Поля, для которых создаётся keyword-индекс. */
+  private readonly keywordIndexFields: string[] = ['language'];
 
   // Заголовок api-key добавляется только если задан QDRANT_API_KEY.
   // Без ключа запросы уходят как раньше (локальный Qdrant без защиты).
@@ -63,6 +67,40 @@ export class QdrantClient {
         // Collection already exists
       }
     }
+
+    // Индексы создаются только по явному запросу: коллекция живёт в общей
+    // базе, и её схему нельзя менять молча при старте приложения.
+    if (this.shouldCreatePayloadIndexes()) {
+      await this.createPayloadIndexes();
+    }
+  }
+
+  /**
+   * Создаёт keyword-индексы для полей фильтрации.
+   *
+   * Фильтр по language работает и без индекса, но с индексом Qdrant
+   * отбирает точки заметно быстрее на больших коллекциях.
+   */
+  async createPayloadIndexes(): Promise<void> {
+    for (const field of this.keywordIndexFields) {
+      try {
+        await this.put(`${this.baseUrl}/index`, {
+          field_name: field,
+          field_schema: 'keyword',
+        });
+      } catch {
+        // Индекс уже существует или Qdrant не даёт его создать: поиск
+        // продолжает работать, просто медленнее.
+      }
+    }
+  }
+
+  private shouldCreatePayloadIndexes(): boolean {
+    return (
+      String(this.configService.get('QDRANT_CREATE_PAYLOAD_INDEXES') ?? '')
+        .trim()
+        .toLowerCase() === 'true'
+    );
   }
 
   /**
@@ -83,6 +121,7 @@ export class QdrantClient {
     embedding: number[],
     documentType: DocumentType | undefined,
     userRole: Role,
+    lang?: Lang,
   ): Promise<QdrantResult[]> {
     const response: QdrantResponse = await this.post(
       `${this.baseUrl}/points/search`,
@@ -91,7 +130,7 @@ export class QdrantClient {
         limit: 5,
         with_payload: true,
         with_vector: false,
-        filter: this.createMetadataSearchFilter(documentType, userRole),
+        filter: this.createMetadataSearchFilter(documentType, userRole, lang),
       },
     );
 
@@ -99,10 +138,12 @@ export class QdrantClient {
   }
 
   // Роль всегда обязательна (это контроль доступа). Тип документа необязателен:
-  // без него поиск идёт по всем документам, доступным роли.
+  // без него поиск идёт по всем документам, доступным роли. Язык необязателен:
+  // без него поиск идёт по всем языкам, но медленнее.
   private createMetadataSearchFilter(
     documentType: DocumentType | undefined,
     userRole: Role,
+    lang?: Lang,
   ): SearchFilterAnd {
     const filter: SearchFilterAnd = new SearchFilterAnd();
 
@@ -117,6 +158,17 @@ export class QdrantClient {
       documentTypeParameter.match = documentTypeMatcher;
 
       filter.must.push(documentTypeParameter);
+    }
+
+    if (lang) {
+      const langMatcher: SearchFilterMatcher = new SearchFilterMatcher();
+      langMatcher.value = lang;
+
+      const langParameter: SearchFilterParameter = new SearchFilterParameter();
+      langParameter.key = 'language';
+      langParameter.match = langMatcher;
+
+      filter.must.push(langParameter);
     }
 
     const roleMatcher: SearchFilterMatcher = new SearchFilterMatcher();

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, apiList } from '../api';
+import { translate, useT } from '../i18n';
 import type { RestaurantDto } from '../types';
 import { CollapsibleForm, ErrorBanner, SuccessBanner } from '../ui';
 
@@ -10,6 +11,7 @@ export default function RestaurantsView({
   canManage: boolean;
   onSelect: (restaurant: RestaurantDto) => void;
 }) {
+  const t = useT();
   const [restaurants, setRestaurants] = useState<RestaurantDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -32,7 +34,7 @@ export default function RestaurantsView({
       setRestaurants(await apiList<RestaurantDto>('/restaurants'));
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Не удалось загрузить рестораны',
+        err instanceof Error ? err.message : translate('views.restaurants.loadFailed'),
       );
     } finally {
       setLoading(false);
@@ -52,7 +54,9 @@ export default function RestaurantsView({
       setSuccess(successMessage);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Операция не выполнена');
+      setError(
+        err instanceof Error ? err.message : t('views.restaurants.operationFailed'),
+      );
     } finally {
       setBusy(false);
     }
@@ -62,7 +66,7 @@ export default function RestaurantsView({
     run(async () => {
       await api('/restaurants', { method: 'POST', body: JSON.stringify(form) });
       setForm({ name: '', address: '', phone: '', email: '' });
-    }, 'Ресторан создан');
+    }, t('views.restaurants.created'));
 
   const rename = (id: number) =>
     run(async () => {
@@ -71,20 +75,20 @@ export default function RestaurantsView({
         body: JSON.stringify({ newName: renameValue }),
       });
       setRenameId(null);
-    }, 'Название обновлено');
+    }, t('views.restaurants.renamed'));
 
   const remove = (id: number) =>
     run(
       () => api(`/restaurants/${id}`, { method: 'DELETE' }),
-      'Ресторан деактивирован',
+      t('views.restaurants.deactivated'),
     );
 
   return (
     <div className="view">
       <header className="view-header view-header-redesign">
         <div className="view-header-main">
-          <div className="view-section-label">Панель управления</div>
-          <h1>Рестораны</h1>
+          <div className="view-section-label">{t('views.restaurants.panel')}</div>
+          <h1>{t('views.restaurants.title')}</h1>
         </div>
 
         <div className="view-header-actions">
@@ -92,7 +96,7 @@ export default function RestaurantsView({
             className="btn btn-ghost view-refresh-button"
             onClick={() => void load()}
           >
-            Обновить
+            {t('views.restaurants.refresh')}
           </button>
         </div>
       </header>
@@ -104,12 +108,12 @@ export default function RestaurantsView({
 
       {canManage && (
         <CollapsibleForm
-          title="Добавить ресторан"
+          title={t('views.restaurants.addTitle')}
           onSubmit={create}
           busy={busy}
         >
           <label>
-            Название (латиницей)
+            {t('views.restaurants.nameLatin')}
             <input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -118,7 +122,7 @@ export default function RestaurantsView({
             />
           </label>
           <label>
-            Адрес
+            {t('views.restaurants.address')}
             <input
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
@@ -127,7 +131,7 @@ export default function RestaurantsView({
             />
           </label>
           <label>
-            Телефон
+            {t('views.restaurants.phone')}
             <input
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
@@ -135,7 +139,7 @@ export default function RestaurantsView({
             />
           </label>
           <label>
-            Email
+            {t('views.restaurants.email')}
             <input
               type="email"
               value={form.email}
@@ -147,9 +151,9 @@ export default function RestaurantsView({
       )}
 
       {loading ? (
-        <div className="empty">Загрузка…</div>
+        <div className="empty">{t('views.restaurants.loading')}</div>
       ) : restaurants.length === 0 ? (
-        <div className="empty">Ресторанов пока нет</div>
+        <div className="empty">{t('views.restaurants.empty')}</div>
       ) : (
         <div className="cards-grid">
           {restaurants.map((r) => (
@@ -169,19 +173,19 @@ export default function RestaurantsView({
                   <input
                     value={renameValue}
                     onChange={(e) => setRenameValue(e.target.value)}
-                    placeholder="Новое название"
+                    placeholder={t('views.restaurants.newName')}
                   />
                   <button
                     className="btn btn-primary btn-sm"
                     onClick={() => void rename(r.id)}
                   >
-                    ОК
+                    {t('views.restaurants.ok')}
                   </button>
                   <button
                     className="btn btn-ghost btn-sm"
                     onClick={() => setRenameId(null)}
                   >
-                    Отмена
+                    {t('views.restaurants.cancel')}
                   </button>
                 </div>
               ) : (
@@ -190,7 +194,7 @@ export default function RestaurantsView({
                     className="btn btn-primary btn-sm"
                     onClick={() => onSelect(r)}
                   >
-                    Меню →
+                    {t('views.restaurants.menuLink')}
                   </button>
                   {canManage && (
                     <>
@@ -201,14 +205,14 @@ export default function RestaurantsView({
                           setRenameValue(r.name);
                         }}
                       >
-                        Переименовать
+                        {t('views.restaurants.rename')}
                       </button>
                       <button
                         className="btn btn-danger btn-sm"
                         onClick={() => void remove(r.id)}
                         disabled={busy}
                       >
-                        Удалить
+                        {t('views.restaurants.delete')}
                       </button>
                     </>
                   )}
