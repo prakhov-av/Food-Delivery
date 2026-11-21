@@ -9,14 +9,7 @@ import {
 } from 'react';
 import { CORE_DE, CORE_EN, CORE_RU } from './core';
 import { VIEWS_DE, VIEWS_EN, VIEWS_RU } from './views';
-import {
-  DEFAULT_LANG,
-  LANG_STORAGE_KEY,
-  LANGS,
-  type Dict,
-  type Lang,
-  type Vars,
-} from './types';
+import { DEFAULT_LANG, type Dict, type Lang, type Vars } from './types';
 
 /** Merged dictionaries: the shared keys plus the keys of the screens. */
 const DICTS: Record<Lang, Dict> = {
@@ -26,32 +19,11 @@ const DICTS: Record<Lang, Dict> = {
 };
 
 /**
- * The language of the first visit: the stored choice, then the language of
- * the browser.
+ * The interface always starts in English: the stored choice and the language
+ * of the browser are deliberately ignored. DEFAULT_LANG stays the fallback
+ * for keys missing in a dictionary.
  */
-function detectInitialLang(): Lang {
-  try {
-    const stored: string | null = window.localStorage.getItem(
-      LANG_STORAGE_KEY,
-    );
-
-    if (stored && (LANGS as string[]).includes(stored)) {
-      return stored as Lang;
-    }
-  } catch {
-    // localStorage is not available (private mode): that is no reason to
-    // break the application.
-  }
-
-  const browser: string = window.navigator?.language ?? '';
-  const short: string = browser.split('-')[0].toLowerCase();
-
-  if ((LANGS as string[]).includes(short)) {
-    return short as Lang;
-  }
-
-  return DEFAULT_LANG;
-}
+const INITIAL_LANG: Lang = 'en';
 
 /**
  * The current language outside of React.
@@ -59,7 +31,7 @@ function detectInitialLang(): Lang {
  * Needed by modules that cannot use a hook, for example api.ts that builds
  * an error message.
  */
-let currentLang: Lang = detectInitialLang();
+let currentLang: Lang = INITIAL_LANG;
 
 /** Substitutes {parameters} in a string. */
 function interpolate(template: string, vars?: Vars): string {
@@ -67,10 +39,8 @@ function interpolate(template: string, vars?: Vars): string {
     return template;
   }
 
-  return template.replace(
-    /\{(\w+)\}/g,
-    (match: string, key: string): string =>
-      key in vars ? String(vars[key]) : match,
+  return template.replace(/\{(\w+)\}/g, (match: string, key: string): string =>
+    key in vars ? String(vars[key]) : match,
   );
 }
 
@@ -95,7 +65,7 @@ interface I18nContextValue {
 }
 
 const I18nContext = createContext<I18nContextValue>({
-  lang: DEFAULT_LANG,
+  lang: INITIAL_LANG,
   setLang: (): void => {},
   t: translate,
 });
@@ -104,20 +74,14 @@ const I18nContext = createContext<I18nContextValue>({
  * Provider of the interface language.
  *
  * The chosen language is sent to the chat together with the request: the
- * assistant answers in the same language as the interface.
+ * assistant answers in the same language as the interface. The choice lives
+ * until the page is reloaded and is not stored.
  */
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => detectInitialLang());
+  const [lang, setLangState] = useState<Lang>(INITIAL_LANG);
 
   useEffect(() => {
     document.documentElement.lang = lang;
-
-    try {
-      window.localStorage.setItem(LANG_STORAGE_KEY, lang);
-    } catch {
-      // The choice could not be saved: the language still applies to this
-      // session.
-    }
   }, [lang]);
 
   const setLang = useCallback((next: Lang): void => {
