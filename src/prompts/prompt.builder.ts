@@ -16,8 +16,8 @@ export class PromptBuilder {
    */
   withUserRole(role: Role): PromptBuilder {
     this.prompt = `${this.prompt}
-    
-Роль пользователя:
+
+User role:
 ${role}`;
     return this;
   }
@@ -27,12 +27,12 @@ ${role}`;
    */
   withContext(chunks: string[]): PromptBuilder {
     this.prompt = `${this.prompt}
-    
-Контекст:
+
+Context:
 
 ${chunks.join('\n\n')}
 
-Конец контекста.`;
+End of context.`;
     return this;
   }
 
@@ -41,12 +41,12 @@ ${chunks.join('\n\n')}
    */
   withChatHistory(chatHistory: ChatMessage[]): PromptBuilder {
     this.prompt = `${this.prompt}
-    
-История диалога:
+
+Conversation history:
 
 ${this.mapChatHistoryToMultistring(chatHistory)}
 
-Конец истории диалога.`;
+End of the conversation history.`;
     return this;
   }
 
@@ -54,7 +54,7 @@ ${this.mapChatHistoryToMultistring(chatHistory)}
     return chatHistory
       .map(
         (m: ChatMessage): string =>
-          `Вопрос пользователя: ${m.userRequest}\nОтвет ИИ ассистента: ${m.aiAnswer}`,
+          `User question: ${m.userRequest}\nAI assistant answer: ${m.aiAnswer}`,
       )
       .join('\n\n');
   }
@@ -64,7 +64,7 @@ ${this.mapChatHistoryToMultistring(chatHistory)}
       return this;
     }
 
-    this.prompt = `${this.prompt}\n\nПоследний обсуждаемый заказ: №${orderId}`;
+    this.prompt = `${this.prompt}\n\nLast discussed order: No.${orderId}`;
     return this;
   }
   /**
@@ -72,8 +72,8 @@ ${this.mapChatHistoryToMultistring(chatHistory)}
    */
   withQuestion(request: string): PromptBuilder {
     this.prompt = `${this.prompt}
-    
-Вопрос пользователя:
+
+User question:
 ${request}`;
     return this;
   }
@@ -83,12 +83,12 @@ ${request}`;
    */
   withDocument(documentText: string): PromptBuilder {
     this.prompt = `${this.prompt}
-    
-Анализируемый документ:
+
+Document under analysis:
 
 ${documentText}
 
-Конец анализируемого документа.`;
+End of the document under analysis.`;
     return this;
   }
 

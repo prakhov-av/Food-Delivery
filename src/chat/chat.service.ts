@@ -18,11 +18,22 @@ import { ChatLogService } from './chat-log.service';
 import { ChatLogKind } from './enums/chat-log-kind.enum';
 import { ChatHistoryItemDto } from './dto/chat-history-item.dto';
 import { ChatIdentity, ChatOwner, getChatOwnerKey } from './types/chat-identity';
-
+import { LanguageService } from './language/language.service';
+import { LeakGuardService } from './leak-guard.service';
+import { ALL_LANGS, DEFAULT_LANG, Lang } from './locales/lang';
+import { LocalePack } from './locales/locale-pack';
 import {
-  BASE_PROMPT_FOR_AI_CHAT,
-  PUBLIC_PROMPT_PHRASES,
-} from '../prompts/constants/prompt.constants';
+  ALL_FOLLOW_UP_PRONOUNS,
+  ALL_FOLLOW_UP_START,
+  ALL_INJECTION_PATTERNS,
+  ALL_LIVE_ORDER_MARKERS,
+  ALL_NOT_ABOUT_ORDER_DATA,
+  ALL_ORDER_LIST_PATTERNS,
+  ALL_ORDER_MENTIONS,
+  ALL_ORDER_NUMBER_PATTERNS,
+  ALL_SINGLE_ORDER_POSSESSIVE,
+  LOCALE_PACKS,
+} from './locales/locale-packs';
 
 const MAX_HISTORY_LIMIT = 100;
 const MAX_HISTORY_MESSAGES = 10;
@@ -45,10 +56,15 @@ interface FinishParams {
   chunksFound?: number;
 }
 
-const PROMPT_LEAK_ANSWER =
-  'Я не могу показывать внутренние инструкции. Могу помочь с заказами, ресторанами, меню, доставкой и регистрацией.';
-const LEAK_SHINGLE_SIZE = 9;
 const MAX_STANDALONE_QUESTION_LENGTH = 300;
+
+/**
+ * Порог релевантности, ниже которого поиск продолжается на другом языке.
+ *
+ * Если по языку пользователя нашлось только слабо подходящие фрагменты,
+ * лучше отдать документ на языке по умолчанию, чем ответить «нет информации».
+ */
+const DEFAULT_LANG_FALLBACK_MIN_SCORE = 0.3;
 
 const toWords = (text: string): string[] =>
   text
@@ -57,211 +73,34 @@ const toWords = (text: string): string[] =>
     .split(/\s+/)
     .filter(Boolean);
 
-const shingles = (words: string[]): Set<string> => {
-  const result: Set<string> = new Set<string>();
-
-  for (let i = 0; i + LEAK_SHINGLE_SIZE <= words.length; i++) {
-    result.add(words.slice(i, i + LEAK_SHINGLE_SIZE).join(' '));
-  }
-
-  return result;
-};
-
-const PROMPT_WORDS: string[] = toWords(BASE_PROMPT_FOR_AI_CHAT);
-
-// Слова промпта, входящие в разрешённые для повтора фразы, не защищаем.
-const PUBLIC_WORD_MASK: boolean[] = PROMPT_WORDS.map((): boolean => false);
-
-for (const phrase of PUBLIC_PROMPT_PHRASES.map(toWords)) {
-  for (let i = 0; i + phrase.length <= PROMPT_WORDS.length; i++) {
-    if (
-      phrase.every(
-        (word: string, j: number): boolean => PROMPT_WORDS[i + j] === word,
-      )
-    ) {
-      phrase.forEach((_: string, j: number): void => {
-        PUBLIC_WORD_MASK[i + j] = true;
-      });
-    }
-  }
-}
-
-const PROMPT_SHINGLES: Set<string> = new Set<string>();
-
-for (let i = 0; i + LEAK_SHINGLE_SIZE <= PROMPT_WORDS.length; i++) {
-  if (!PUBLIC_WORD_MASK.slice(i, i + LEAK_SHINGLE_SIZE).some(Boolean)) {
-    PROMPT_SHINGLES.add(PROMPT_WORDS.slice(i, i + LEAK_SHINGLE_SIZE).join(' '));
-  }
-}
-
-const leaksPrompt = (answer: string): boolean =>
-  [...shingles(toWords(answer))].some((s: string): boolean =>
-    PROMPT_SHINGLES.has(s),
-  );
-
-const INJECTION_PATTERNS: RegExp[] = [
-  /системн\p{L}*\s+(?:инструкци\p{L}*|промпт\p{L}*)/iu,
-  /(?:покажи|выведи|напиши|повтори|процитируй|раскрой|выдай|пришли|скажи|распечатай|перечисли)\p{L}*\s+(?:мне\s+)?(?:все\s+)?(?:свои|свой|твои|твой|ваши|ваш|внутренние|скрытые)\s+(?:инструкци\p{L}*|промпт\p{L}*)/iu,
-  /(?:игнорируй|проигнорируй|забудь|отмени)\p{L}*\s+(?:все\s+)?(?:предыдущ\p{L}*|прежн\p{L}*|прошл\p{L}*|свои|системн\p{L}*)\s+(?:инструкци\p{L}*|указани\p{L}*)/iu,
-  /(?:system|hidden|initial|internal)\s+(?:prompt|instructions?)/i,
-  /(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:the\s+|your\s+)?(?:previous|prior|above|earlier|system)\s+(?:instructions?|prompts?|rules)/i,
-  /(?:reveal|show|print|repeat|display|output)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+)?(?:prompt|instructions?)/i,
-];
-
-const isInjectionAttempt = (request: string): boolean =>
-  INJECTION_PATTERNS.some((pattern: RegExp): boolean => pattern.test(request));
-
-const CAPABILITIES_ANSWER =
-  'Я могу помочь с правилами сервиса (рестораны, меню, заказы и статусы, доставка, регистрация и вход) и вашими текущими заказами.';
-const GREETING_ANSWER = `Здравствуйте! ${CAPABILITIES_ANSWER}`;
-
-// Совпадение только полное, после нормализации (регистр, пунктуация):
-// «Привет, как отменить заказ?» идёт обычным путём через модель.
-const GREETINGS: Set<string> = new Set<string>([
-  'привет',
-  'приветствую',
-  'здравствуй',
-  'здравствуйте',
-  'добрый день',
-  'добрый вечер',
-  'доброе утро',
-  'hello',
-  'hi',
-  'hey',
-]);
-
-const CAPABILITY_QUESTIONS: Set<string> = new Set<string>([
-  'что ты умеешь',
-  'что вы умеете',
-  'что ты можешь',
-  'что вы можете',
-  'чем ты можешь помочь',
-  'чем вы можете помочь',
-  'чем можешь помочь',
-  'о чем можно спросить',
-  'о чём можно спросить',
-  'что можно спросить',
-  'what can you do',
-  'help',
-  'помощь',
-]);
-
-const cannedAnswer = (request: string): string | undefined => {
-  const normalized: string = toWords(request).join(' ');
-
-  if (GREETINGS.has(normalized)) {
-    return GREETING_ANSWER;
-  }
-
-  if (CAPABILITY_QUESTIONS.has(normalized)) {
-    return CAPABILITIES_ANSWER;
-  }
-
-  return undefined;
-};
-
-/**
- * C4: запрос про конкретный заказ узнаём без LLM-классификатора.
- *
- * Нужны оба признака сразу: номер заказа в тексте и признак живых данных
- * («что в», «статус», «когда доставят»). По одному номеру шаблон не срабатывает:
- * «Как отменить заказ 195?» — это вопрос про правила, а не про данные заказа.
- */
-const ORDER_NUMBER_PATTERN: RegExp =
-  /(?<![\p{L}\p{N}])заказ(?:а|е|у|ом)?\s*(?:№\s*)?(\d{1,9})(?![\p{L}\p{N}])/iu;
-
-const LIVE_ORDER_MARKERS: RegExp[] = [
-  /(?<![\p{L}])что\s+в(?![\p{L}])/iu,
-  /(?<![\p{L}])статус(?:а|е|у|ом)?(?![\p{L}])/iu,
-  /(?<![\p{L}])когда\s+достав/iu,
-];
-
-// Вопросы о правилах и процедурах («Как изменить статус заказа 195?»): маркер
-// «статус» и номер там есть, но данные заказа не нужны, нужна база знаний.
-const NOT_ABOUT_ORDER_DATA: RegExp =
-  /(?<![\p{L}])(?:как(?![\p{L}])|можно|нельзя|нужно|надо|должен|должна|должно|следует|выгодно|запрещ\p{L}*|почему|зачем|правил\p{L}*|что\s+делать|что\s+значит|что\s+означает|измен\p{L}*|отмен\p{L}*|оформ\p{L}*|созда\p{L}*|оплат\p{L}*|верн\p{L}*|жалоб\p{L}*|принять|принима\p{L}*)/iu;
-
-/** Номер заказа из текста запроса, если это явно запрос про данные заказа. */
-const matchLiveOrderId = (request: string): number | undefined => {
-  const orderMatch: RegExpExecArray | null = ORDER_NUMBER_PATTERN.exec(request);
-
-  if (orderMatch === null) {
-    return undefined;
-  }
-
-  // Два числа и больше («заказ 195 за 2 часа», «заказы 195 и 196»): не гадаем.
-  if ((request.match(/(?<!\p{N})\d+(?!\p{N})/gu) ?? []).length !== 1) {
-    return undefined;
-  }
-
-  if (NOT_ABOUT_ORDER_DATA.test(request)) {
-    return undefined;
-  }
-
-  const hasLiveMarker: boolean = LIVE_ORDER_MARKERS.some(
-    (marker: RegExp): boolean => marker.test(request),
-  );
-
-  if (!hasLiveMarker) {
-    return undefined;
-  }
-
-  const orderId: number = Number(orderMatch[1]);
-
-  return Number.isInteger(orderId) && orderId > 0 ? orderId : undefined;
-};
-
-/**
- * C5: списочный запрос про заказы («какие у меня заказы», «все заказы»).
- *
- * Классификатор для таких фраз всегда отвечает одинаково: ORDER, живые данные,
- * resourceId не указывается (список доступных заказов). Поэтому маркеров
- * достаточно, чтобы собрать ту же классификацию без вызова модели.
- */
-const ORDER_LIST_PATTERNS: RegExp[] = [
-  /(?<![\p{L}])какие\s+(?:у\s+меня\s+)?заказы(?![\p{L}])/iu,
-  /(?<![\p{L}])все\s+заказы(?![\p{L}])/iu,
-  /(?<![\p{L}])мои\s+заказы(?![\p{L}])/iu,
-  /(?<![\p{L}])моих\s+заказов(?![\p{L}])/iu,
-  /(?<![\p{L}])заказы\s+(?:сейчас\s+)?в\s+работе(?![\p{L}])/iu,
-  /(?<![\p{L}])заказы\s+мне\s+назначены(?![\p{L}])/iu,
-];
-
-/**
- * «Мой заказ» — заказ один. Отвечаем про последний обсуждаемый: без него
- * запрос остаётся за классификатором, который и решает, о каком заказе речь.
- */
-const SINGLE_ORDER_POSSESSIVE: RegExp =
-  /(?<![\p{L}])мо(?:й|его|ю|я)\s+заказ(?![\p{L}])/iu;
-
-/**
- * Признаки вопроса, который опирается на предыдущие реплики: местоимение,
- * указывающее на уже названный объект, или союз в начале фразы.
- */
-const FOLLOW_UP_PRONOUNS: RegExp =
-  /(?<![\p{L}])(?:его|её|ею|им|ими|нём|нему|него|неё|ней|из\s+них|у\s+них|у\s+него|у\s+неё)(?![\p{L}])/iu;
-
-const FOLLOW_UP_START: RegExp = /^\s*(?:а|и|итак|тоже|ну)(?![\p{L}])/iu;
-
-/**
- * Название ресторана или блюда в середине фразы: первое слово пропускаем,
- * иначе обычное начало предложения считалось бы именем собственным.
- */
+/** Название ресторана или блюда в середине фразы. */
 const hasProperNoun = (text: string): boolean =>
   text
     .split(/\s+/)
     .slice(1)
-    .some((word: string): boolean => /^[А-ЯЁA-Z][а-яёa-z]+$/.test(word));
+    .some((word: string): boolean => /^\p{Lu}\p{Ll}+$/u.test(word));
 
-const NO_KNOWLEDGE_ANSWER =
-  'В базе знаний нет информации по этому вопросу. Попробуйте переформулировать вопрос.';
+/** Приветствия и вопросы о возможностях по всем языкам. */
+const ALL_GREETINGS: Set<string> = new Set(
+  ALL_LANGS.flatMap((lang: Lang): string[] => LOCALE_PACKS[lang].greetings),
+);
+
+const ALL_CAPABILITY_QUESTIONS: Set<string> = new Set(
+  ALL_LANGS.flatMap((lang: Lang): string[] =>
+    LOCALE_PACKS[lang].capabilityQuestions,
+  ),
+);
 
 const MIN_CHUNK_SCORE: number = Number(process.env.CHAT_MIN_SCORE ?? 0);
 
+const LANG_FALLBACK_MIN_SCORE: number = Number(
+  process.env.CHAT_LANG_FALLBACK_MIN_SCORE ?? DEFAULT_LANG_FALLBACK_MIN_SCORE,
+);
+
 /**
- * Оркестрирует ответы чат-ассистента: классифицирует запрос, выбирает актуальные
- * данные приложения или RAG-поиск, учитывает историю диалога и проверяет ответ
- * на утечку системного промпта.
+ * Оркестрирует ответы чат-ассистента: определяет язык, классифицирует запрос,
+ * выбирает актуальные данные приложения или RAG-поиск, учитывает историю
+ * диалога и проверяет ответ на утечку системного промпта.
  */
 @Injectable()
 export class ChatService {
@@ -283,7 +122,10 @@ export class ChatService {
     private readonly liveDataService: LiveDataService,
     private readonly contextService: ContextService,
     private readonly chatLogService: ChatLogService,
+    private readonly languageService: LanguageService,
+    private readonly leakGuardService: LeakGuardService,
   ) {}
+
   /**
    * Предзагружать эмбеддинг стоит только тогда, когда классификатор не станет
    * переписывать вопрос: для уточняющих реплик он вернёт standaloneQuestion,
@@ -295,7 +137,7 @@ export class ChatService {
     request: string,
     chatHistory: ChatMessage[],
   ): boolean {
-    if (/заказ/i.test(request)) {
+    if (this.looksLikeOrderQuestion(request)) {
       return false;
     }
 
@@ -305,7 +147,12 @@ export class ChatService {
       return true;
     }
 
-    if (FOLLOW_UP_PRONOUNS.test(request) || FOLLOW_UP_START.test(request)) {
+    if (
+      ALL_FOLLOW_UP_PRONOUNS.some((pattern: RegExp): boolean =>
+        pattern.test(request),
+      ) ||
+      ALL_FOLLOW_UP_START.some((pattern: RegExp): boolean => pattern.test(request))
+    ) {
       return false;
     }
 
@@ -319,6 +166,29 @@ export class ChatService {
     }
 
     return true;
+  }
+
+  /** Вопрос про заказы по любому из поддерживаемых языков. */
+  private looksLikeOrderQuestion(request: string): boolean {
+    if (
+      ALL_ORDER_MENTIONS.some((pattern: RegExp): boolean =>
+        pattern.test(request),
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      ALL_ORDER_LIST_PATTERNS.some((pattern: RegExp): boolean =>
+        pattern.test(request),
+      )
+    ) {
+      return true;
+    }
+
+    return ALL_ORDER_NUMBER_PATTERNS.some((pattern: RegExp): boolean =>
+      pattern.test(request),
+    );
   }
 
   private embedQuery(text: string): Promise<number[]> {
@@ -355,19 +225,19 @@ export class ChatService {
     request: string,
     history: ChatMessage[],
     lastOrderId: number | undefined,
+    lang: Lang,
   ): string {
     const tail: string = history
       .slice(-2)
       .map((message: ChatMessage): string => message.userRequest)
       .join('|');
 
-    return `${userRole}|${lastOrderId ?? ''}|${tail}|${request}`;
+    return `${userRole}|${lang}|${lastOrderId ?? ''}|${tail}|${request}`;
   }
 
   private readClassificationCache(key: string): string | undefined {
     const hit: CachedClassification | undefined =
       this.classificationCache.get(key);
-
     if (!hit) {
       return undefined;
     }
@@ -400,19 +270,55 @@ export class ChatService {
       }
     }
   }
-  private protectPrompt(answer: string): {
-    answer: string;
-    blocked: boolean;
-  } {
-    if (leaksPrompt(answer)) {
+
+  private protectPrompt(
+    answer: string,
+    pack: LocalePack,
+  ): { answer: string; blocked: boolean } {
+    if (this.leakGuardService.isLeaking(answer)) {
       this.logger.warn(
         'Assistant answer repeated the system instructions and was replaced',
       );
 
-      return { answer: PROMPT_LEAK_ANSWER, blocked: true };
+      return { answer: pack.promptLeakAnswer, blocked: true };
     }
 
     return { answer, blocked: false };
+  }
+
+  /**
+   * Попытка инъекции промпта.
+   *
+   * Паттерны берутся из всех языковых паков сразу: атакующий пишет на любом
+   * языке независимо от того, какой язык определился для запроса.
+   */
+  private isInjectionAttempt(request: string): boolean {
+    return ALL_INJECTION_PATTERNS.some((pattern: RegExp): boolean =>
+      pattern.test(request),
+    );
+  }
+
+  /**
+   * Ответ без вызова модели: приветствие или вопрос о возможностях.
+   *
+   * Совпадение проверяется по всем языкам (слово приветствия может быть
+   * прислано на любом из них), а сам ответ отдаётся на языке пользователя.
+   */
+  private cannedAnswer(
+    request: string,
+    pack: LocalePack,
+  ): string | undefined {
+    const normalized: string = toWords(request).join(' ');
+
+    if (ALL_GREETINGS.has(normalized)) {
+      return pack.greetingAnswer;
+    }
+
+    if (ALL_CAPABILITY_QUESTIONS.has(normalized)) {
+      return pack.capabilitiesAnswer;
+    }
+
+    return undefined;
   }
 
   async generateResponse(
@@ -431,6 +337,7 @@ export class ChatService {
   async generateResponseForIdentity(
     request: string,
     identity: ChatIdentity,
+    explicitLang?: Lang,
   ): Promise<string> {
     const userRole: Role = identity.role;
     const ownerKey: string = getChatOwnerKey(identity);
@@ -445,17 +352,25 @@ export class ChatService {
       owner,
     );
 
-    if (isInjectionAttempt(request)) {
+    // Язык определяется один раз на входе и дальше едет вместе с запросом.
+    const lang: Lang = this.languageService.resolve(
+      explicitLang,
+      request,
+      ownerKey,
+    );
+    const pack: LocalePack = LOCALE_PACKS[lang];
+
+    if (this.isInjectionAttempt(request)) {
       this.logger.warn(`Prompt injection pattern in request: ${identityLabel}`);
       return this.finish({
         owner, ownerKey, userRole, request,
-        answer: PROMPT_LEAK_ANSWER,
+        answer: pack.promptLeakAnswer,
         kind: ChatLogKind.BLOCKED,
         documentType: DocumentType.SYSTEM,
       });
     }
 
-    const canned: string | undefined = cannedAnswer(request);
+    const canned: string | undefined = this.cannedAnswer(request, pack);
     if (canned !== undefined) {
       return this.finish({
         owner, ownerKey, userRole, request,
@@ -469,14 +384,16 @@ export class ChatService {
       this.matchLiveClassification(request, ownerKey);
 
     if (fastLiveClassification !== undefined) {
+      // Вопрос про заказы распознан без модели: данные из БД уже готовы
+      // и подписаны на языке пользователя, вызывать LLM не нужно.
       return this.answerLive(
-        fastLiveClassification, request, identity, ownerKey, chatHistory,
+        fastLiveClassification, request, identity, ownerKey, chatHistory, lang, true,
       );
     }
 
     const lastOrderId = this.lastOrderIds.get(ownerKey);
     const classifierPrompt: string = this.promptService
-      .buildPromptForDocumentType()
+      .buildPromptForDocumentType(lang)
       .withUserRole(userRole)
       .withChatHistory(chatHistory)
       .withLastOrder(lastOrderId)
@@ -488,6 +405,7 @@ export class ChatService {
       request,
       chatHistory,
       lastOrderId,
+      lang,
     );
     const cachedClassification: string | undefined =
       this.readClassificationCache(classificationKey);
@@ -502,7 +420,7 @@ export class ChatService {
       classificationResponse = cachedClassification;
     } else {
       this.logger.debug(
-        `AI classification request started: ${identityLabel}, provider=configured, promptLength=${classifierPrompt.length}`,
+        `AI classification request started: ${identityLabel}, lang=${lang}, provider=configured, promptLength=${classifierPrompt.length}`,
       );
       classificationResponse = await this.aiService.generateResponse(
         classifierPrompt,
@@ -513,7 +431,9 @@ export class ChatService {
 
     const classification: ChatClassification = this.classify(classificationResponse);
     if (classification.liveDataRequired) {
-      return this.answerLive(classification, request, identity, ownerKey, chatHistory);
+      return this.answerLive(
+        classification, request, identity, ownerKey, chatHistory, lang, false,
+      );
     }
 
     const documentType: DocumentType = classification.documentType;
@@ -523,40 +443,34 @@ export class ChatService {
         ? await prefetchedEmbedding
         : await this.embedQuery(searchQuery);
 
-    let relevantChunks: QdrantResult[] =
-      await this.vectorStorageService.getRelevantChunkByAccess(
-        embedding, documentType, userRole,
-      );
+    const relevantChunks: QdrantResult[] = await this.searchChunks(
+      embedding, documentType, userRole, lang,
+    );
 
-    if (relevantChunks.length === 0) {
-      relevantChunks = await this.vectorStorageService.getRelevantChunkByAccess(
-        embedding, undefined, userRole,
-      );
-    }
-
-    relevantChunks = relevantChunks.filter(
+    // Слабые фрагменты в контекст не берём: дешевле ответить «нет информации».
+    const strongChunks: QdrantResult[] = relevantChunks.filter(
       (chunk: QdrantResult): boolean => (chunk.score ?? 0) >= MIN_CHUNK_SCORE,
     );
 
     this.logger.debug(
-      `Retrieval: type=${documentType}, role=${userRole}, chunks=${relevantChunks.length}, scores=[${relevantChunks
+      `Retrieval: type=${documentType}, role=${userRole}, lang=${lang}, chunks=${strongChunks.length}, scores=[${strongChunks
         .map((c: QdrantResult): string => (c.score ?? 0).toFixed(2))
         .join(', ')}]`,
     );
 
-    if (relevantChunks.length === 0) {
+    if (strongChunks.length === 0) {
       return this.finish({
         owner, ownerKey, userRole, request,
-        answer: NO_KNOWLEDGE_ANSWER,
+        answer: pack.noKnowledgeAnswer,
         kind: ChatLogKind.NO_ANSWER,
         documentType,
         chunksFound: 0,
       });
     }
 
-    const context: string[] = this.contextService.generateContext(relevantChunks);
+    const context: string[] = this.contextService.generateContext(strongChunks);
     const prompt: string = this.promptService
-      .buildPromptForChat()
+      .buildPromptForChat(lang)
       .withUserRole(userRole)
       .withContext(context)
       .withChatHistory(chatHistory)
@@ -564,10 +478,11 @@ export class ChatService {
       .build();
 
     this.logger.debug(
-      `AI chat request started: ${identityLabel}, mode=knowledge-base, promptLength=${prompt.length}`,
+      `AI chat request started: ${identityLabel}, mode=knowledge-base, lang=${lang}, promptLength=${prompt.length}`,
     );
     const protectedAnswer = this.protectPrompt(
       await this.aiService.generateResponse(prompt),
+      pack,
     );
 
     return this.finish({
@@ -575,8 +490,70 @@ export class ChatService {
       answer: protectedAnswer.answer,
       kind: protectedAnswer.blocked ? ChatLogKind.BLOCKED : ChatLogKind.KNOWLEDGE,
       documentType,
-      chunksFound: relevantChunks.length,
+      chunksFound: strongChunks.length,
     });
+  }
+
+  /**
+   * Ищет фрагменты базы знаний с учётом языка.
+   *
+   * Порядок попыток: язык пользователя → язык по умолчанию → любой язык →
+   * любой тип документа. Попытка следующего языка делается, только если
+   * лучший результат текущего хуже порога: иначе качественный ответ на
+   * языке пользователя не был бы заменён документом на другом языке.
+   */
+  private async searchChunks(
+    embedding: number[],
+    documentType: DocumentType,
+    userRole: Role,
+    lang: Lang,
+  ): Promise<QdrantResult[]> {
+    const attempts: { lang?: Lang; documentType?: DocumentType }[] = [
+      { lang, documentType },
+    ];
+
+    if (lang !== DEFAULT_LANG) {
+      attempts.push({ lang: DEFAULT_LANG, documentType });
+    }
+
+    attempts.push({ documentType });
+    attempts.push({});
+
+    let best: QdrantResult[] = [];
+    let bestScore: number = -1;
+
+    for (const attempt of attempts) {
+      const chunks: QdrantResult[] =
+        await this.vectorStorageService.getRelevantChunkByAccess(
+          embedding,
+          attempt.documentType,
+          userRole,
+          attempt.lang,
+        );
+
+      const score: number = this.topScore(chunks);
+
+      if (score > bestScore) {
+        best = chunks;
+        bestScore = score;
+      }
+
+      if (score >= LANG_FALLBACK_MIN_SCORE) {
+        return chunks;
+      }
+    }
+
+    return best;
+  }
+
+  private topScore(chunks: QdrantResult[]): number {
+    if (chunks.length === 0) {
+      return -1;
+    }
+
+    return Math.max(
+      ...chunks.map((chunk: QdrantResult): number => chunk.score ?? 0),
+    );
   }
 
   /** Очищает только память процесса для зарегистрированного пользователя. */
@@ -591,6 +568,7 @@ export class ChatService {
   private clearHistoryByOwnerKey(ownerKey: string): void {
     this.chatHistory.delete(ownerKey);
     this.lastOrderIds.delete(ownerKey);
+    this.languageService.clearSessionLang(ownerKey);
   }
 
   async clearStoredHistory(userId: number): Promise<void> {
@@ -624,7 +602,7 @@ export class ChatService {
       : await this.chatLogService.findRecentByGuestSessionId(
           identity.guestSessionId, safeLimit,
         );
-    return logs.map((log): ChatHistoryItemDto => ({
+    return logs.map((log: ChatLog): ChatHistoryItemDto => ({
       id: log.id,
       createdAt: log.createdAt,
       question: log.question,
@@ -637,7 +615,7 @@ export class ChatService {
     request: string,
     ownerKey: string,
   ): ChatClassification | undefined {
-    const explicitOrderId: number | undefined = matchLiveOrderId(request);
+    const explicitOrderId: number | undefined = this.matchLiveOrderId(request);
     if (explicitOrderId !== undefined) {
       return {
         documentType: DocumentType.ORDER,
@@ -647,10 +625,14 @@ export class ChatService {
       };
     }
 
-    if (NOT_ABOUT_ORDER_DATA.test(request)) return undefined;
+    if (this.isNotAboutOrderData(request)) return undefined;
     const lastOrderId: number | undefined = this.lastOrderIds.get(ownerKey);
 
-    if (ORDER_LIST_PATTERNS.some((pattern: RegExp): boolean => pattern.test(request))) {
+    if (
+      ALL_ORDER_LIST_PATTERNS.some((pattern: RegExp): boolean =>
+        pattern.test(request),
+      )
+    ) {
       return {
         documentType: DocumentType.ORDER,
         liveDataRequired: true,
@@ -658,7 +640,12 @@ export class ChatService {
       };
     }
 
-    if (lastOrderId !== undefined && SINGLE_ORDER_POSSESSIVE.test(request)) {
+    if (
+      lastOrderId !== undefined &&
+      ALL_SINGLE_ORDER_POSSESSIVE.some((pattern: RegExp): boolean =>
+        pattern.test(request),
+      )
+    ) {
       return {
         documentType: DocumentType.ORDER,
         liveDataRequired: true,
@@ -669,24 +656,84 @@ export class ChatService {
     return undefined;
   }
 
+  private isNotAboutOrderData(request: string): boolean {
+    return ALL_NOT_ABOUT_ORDER_DATA.some((pattern: RegExp): boolean =>
+      pattern.test(request),
+    );
+  }
+
+  /**
+   * C4: запрос про конкретный заказ узнаём без LLM-классификатора.
+   *
+   * Нужны оба признака сразу: номер заказа в тексте и признак живых данных
+   * («что в», «статус», «когда доставят»). По одному номеру шаблон не
+   * срабатывает: «Как отменить заказ 195?» — это вопрос про правила, а не
+   * про данные заказа.
+   */
+  private matchLiveOrderId(request: string): number | undefined {
+    const orderMatch: RegExpExecArray | null =
+      this.execOrderNumberPattern(request);
+
+    if (orderMatch === null) {
+      return undefined;
+    }
+
+    // Два числа и больше («заказ 195 за 2 часа», «заказы 195 и 196»): не гадаем.
+    if ((request.match(/(?<!\p{N})\d+(?!\p{N})/gu) ?? []).length !== 1) {
+      return undefined;
+    }
+
+    if (this.isNotAboutOrderData(request)) {
+      return undefined;
+    }
+
+    const hasLiveMarker: boolean = ALL_LIVE_ORDER_MARKERS.some(
+      (marker: RegExp): boolean => marker.test(request),
+    );
+
+    if (!hasLiveMarker) {
+      return undefined;
+    }
+
+    const orderId: number = Number(orderMatch[1]);
+
+    return Number.isInteger(orderId) && orderId > 0 ? orderId : undefined;
+  }
+
+  private execOrderNumberPattern(request: string): RegExpExecArray | null {
+    for (const pattern of ALL_ORDER_NUMBER_PATTERNS) {
+      const match: RegExpExecArray | null = pattern.exec(request);
+
+      if (match !== null) {
+        return match;
+      }
+    }
+
+    return null;
+  }
+
   private async answerLive(
     classification: ChatClassification,
     request: string,
     identity: ChatIdentity,
     ownerKey: string,
     chatHistory: ChatMessage[],
+    lang: Lang,
+    useTemplate: boolean,
   ): Promise<string> {
     const userRole: Role = identity.role;
     const owner: ChatOwner = identity.kind === 'user'
       ? { userId: identity.userId }
       : { guestSessionId: identity.guestSessionId };
+    const pack: LocalePack = LOCALE_PACKS[lang];
     const liveData: LiveDataResult = identity.kind === 'user'
       ? await this.liveDataService.getLiveData(
           classification,
           identity.userId,
           identity.role,
+          lang,
         )
-      : await this.liveDataService.getLiveData(classification, identity);
+      : await this.liveDataService.getLiveData(classification, identity, undefined, lang);
 
     if (liveData.orderId !== undefined) {
       this.lastOrderIds.set(ownerKey, liveData.orderId);
@@ -694,8 +741,23 @@ export class ChatService {
       this.lastOrderIds.delete(ownerKey);
     }
 
+    if (useTemplate) {
+      // Данные уже собраны и подписаны на языке пользователя.
+      // Формировать текст через модель незачем: это лишний вызов LLM.
+      this.logger.debug(
+        `AI chat request skipped: ${identity.kind === 'user' ? `userId=${identity.userId}` : 'guest=true'}, mode=live-data-template, lang=${lang}`,
+      );
+
+      return this.finish({
+        owner, ownerKey, userRole, request,
+        answer: liveData.context,
+        kind: ChatLogKind.LIVE,
+        documentType: classification.documentType,
+      });
+    }
+
     const prompt: string = this.promptService
-      .buildPromptForChat()
+      .buildPromptForChat(lang)
       .withUserRole(userRole)
       .withContext([liveData.context])
       .withChatHistory(chatHistory)
@@ -703,10 +765,11 @@ export class ChatService {
       .build();
 
     this.logger.debug(
-      `AI chat request started: ${identity.kind === 'user' ? `userId=${identity.userId}` : 'guest=true'}, mode=live-data, promptLength=${prompt.length}`,
+      `AI chat request started: ${identity.kind === 'user' ? `userId=${identity.userId}` : 'guest=true'}, mode=live-data, lang=${lang}, promptLength=${prompt.length}`,
     );
     const protectedAnswer = this.protectPrompt(
       await this.aiService.generateResponse(prompt),
+      pack,
     );
 
     return this.finish({
@@ -717,19 +780,20 @@ export class ChatService {
     });
   }
 
-  private async finish(params: FinishParams): Promise<string> {
+  private finish(params: FinishParams): Promise<string> {
     this.addChatHistoryByOwnerKey(params.ownerKey, params.request, params.answer);
-    await this.chatLogService.record({
-      ...params.owner,
-      userRole: params.userRole,
-      question: params.request,
-      // Ответы по живым данным устаревают и содержат данные заказов: не храним.
-      answer: params.kind === ChatLogKind.LIVE ? null : params.answer,
-      kind: params.kind,
-      documentType: params.documentType,
-      chunksFound: params.chunksFound ?? null,
-    });
-    return params.answer;
+    return this.chatLogService
+      .record({
+        ...params.owner,
+        userRole: params.userRole,
+        question: params.request,
+        // Ответы по живым данным устаревают и содержат данные заказов: не храним.
+        answer: params.kind === ChatLogKind.LIVE ? null : params.answer,
+        kind: params.kind,
+        documentType: params.documentType,
+        chunksFound: params.chunksFound ?? null,
+      })
+      .then((): string => params.answer);
   }
 
   private async getChatHistoryByOwner(
@@ -783,7 +847,7 @@ export class ChatService {
     }
   }
 
-  /** Вырезает JSON-объект из ответа модели (блоки ```json и текст вокруг). */
+  /** Вырезает JSON-объект из ответа модели (блок ```json и текст вокруг). */
   private extractJson(value: string): string {
     const start: number = value.indexOf('{');
     const end: number = value.lastIndexOf('}');

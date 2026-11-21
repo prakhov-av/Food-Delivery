@@ -8,6 +8,7 @@ import {
 } from '../guest';
 import { canCreateOrder } from '../types';
 import { ORDER_LIMITS } from '../config';
+import { translate, useT } from '../i18n';
 import type {
   MenuDto,
   MenuItemDto,
@@ -106,6 +107,7 @@ export default function DishesView({
   isGuest: boolean;
   onBack: () => void;
 }) {
+  const t = useT();
   const [items, setItems] = useState<MenuItemDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -146,7 +148,7 @@ export default function DishesView({
       setItems(await api<MenuItemDto[]>(`/menu-items?menuId=${menu.id}`));
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Не удалось загрузить блюда',
+        err instanceof Error ? err.message : translate('views.dishes.loadFailed'),
       );
     } finally {
       setLoading(false);
@@ -207,7 +209,9 @@ export default function DishesView({
       setSuccess(successMessage);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Операция не выполнена');
+      setError(
+        err instanceof Error ? err.message : t('views.dishes.operationFailed'),
+      );
     } finally {
       setBusy(false);
     }
@@ -230,7 +234,7 @@ export default function DishesView({
         description: '',
         price: '',
       });
-    }, 'Блюдо добавлено');
+    }, t('views.dishes.added'));
 
   const saveEdit = (id: number) =>
     run(async () => {
@@ -244,7 +248,7 @@ export default function DishesView({
       });
 
       setEditId(null);
-    }, 'Блюдо обновлено');
+    }, t('views.dishes.updated'));
 
   const remove = (id: number) =>
     run(
@@ -252,7 +256,7 @@ export default function DishesView({
         api(`/menu-items/${id}`, {
           method: 'DELETE',
         }),
-      'Блюдо деактивировано');
+      t('views.dishes.deactivated'));
 
   /**
    * Запускает анимацию: карточка блюда летит к иконке корзины.
@@ -362,11 +366,11 @@ export default function DishesView({
         [item.id]: '1',
       });
 
-      setSuccess(`«${item.name}» добавлено в заказ`);
+      setSuccess(t('views.dishes.addedToOrder', { name: item.name }));
     } catch (err) {
       setCartLines(snapshot);
       setError(
-        err instanceof Error ? err.message : 'Не удалось добавить в заказ',
+        err instanceof Error ? err.message : t('views.dishes.addToOrderFailed'),
       );
     } finally {
       setAddingId(null);
@@ -384,10 +388,10 @@ export default function DishesView({
       <header className="view-header view-header-redesign">
         <div className="view-header-main">
           <button className="view-back-link" onClick={onBack}>
-            ← К меню {restaurant.name}
+            {t('views.dishes.back', { name: restaurant.name })}
           </button>
 
-          <h1>Блюда · {menu.name}</h1>
+          <h1>{t('views.dishes.title', { name: menu.name })}</h1>
         </div>
 
         <div className="view-header-actions">
@@ -395,7 +399,7 @@ export default function DishesView({
             className="btn btn-ghost view-refresh-button"
             onClick={() => void load()}
           >
-            Обновить
+            {t('views.dishes.refresh')}
           </button>
         </div>
       </header>
@@ -407,9 +411,9 @@ export default function DishesView({
       )}
 
       {canManage && (
-        <CollapsibleForm title="Добавить блюдо" onSubmit={create} busy={busy}>
+        <CollapsibleForm title={t('views.dishes.addTitle')} onSubmit={create} busy={busy}>
           <label>
-            Название (латиницей)
+            {t('views.dishes.nameLatin')}
             <input
               value={form.name}
               onChange={(e) =>
@@ -424,7 +428,7 @@ export default function DishesView({
           </label>
 
           <label>
-            Описание
+            {t('views.dishes.description')}
             <input
               value={form.description}
               onChange={(e) =>
@@ -439,7 +443,7 @@ export default function DishesView({
           </label>
 
           <label>
-            Цена, ₽
+            {t('views.dishes.priceWithEuro')}
             <input
               type="number"
               min="0.01"
@@ -458,9 +462,9 @@ export default function DishesView({
       )}
 
       {loading ? (
-        <div className="empty">Загрузка…</div>
+        <div className="empty">{t('views.dishes.loading')}</div>
       ) : items.length === 0 ? (
-        <div className="empty">В этом меню пока нет блюд</div>
+        <div className="empty">{t('views.dishes.empty')}</div>
       ) : (
         <div className="cards-grid dishes-grid">
           {items.map((item) =>
@@ -468,7 +472,7 @@ export default function DishesView({
               <div className="card dish-card" key={item.id}>
                 <div className="form-grid">
                   <label>
-                    Название
+                    {t('views.dishes.name')}
                     <input
                       value={edit.newName}
                       onChange={(e) =>
@@ -481,7 +485,7 @@ export default function DishesView({
                   </label>
 
                   <label>
-                    Описание
+                    {t('views.dishes.description')}
                     <input
                       value={edit.newDescription}
                       onChange={(e) =>
@@ -494,7 +498,7 @@ export default function DishesView({
                   </label>
 
                   <label>
-                    Цена
+                    {t('views.dishes.price')}
                     <input
                       type="number"
                       min="0.01"
@@ -514,14 +518,14 @@ export default function DishesView({
                       className="btn btn-primary btn-sm"
                       onClick={() => void saveEdit(item.id)}
                     >
-                      Сохранить
+                      {t('views.dishes.save')}
                     </button>
 
                     <button
                       className="btn btn-ghost btn-sm"
                       onClick={() => setEditId(null)}
                     >
-                      Отмена
+                      {t('views.dishes.cancel')}
                     </button>
                   </div>
                 </div>
@@ -561,7 +565,7 @@ export default function DishesView({
                         )
                       }
                     >
-                      В заказ
+                      {t('views.dishes.addToOrder')}
                     </button>
                   </div>
                 )}
@@ -579,7 +583,7 @@ export default function DishesView({
                         });
                       }}
                     >
-                      Изменить
+                      {t('views.dishes.edit')}
                     </button>
 
                     <button
@@ -587,7 +591,7 @@ export default function DishesView({
                       onClick={() => void remove(item.id)}
                       disabled={busy}
                     >
-                      Удалить
+                      {t('views.dishes.delete')}
                     </button>
                   </div>
                 )}
@@ -618,7 +622,7 @@ export default function DishesView({
         type="button"
         className="cart-button"
         onClick={() => setCartOpen((open) => !open)}
-        aria-label="Ваш заказ"
+        aria-label={t('views.dishes.cartAria')}
       >
         <span className="cart-button__icon">🛒</span>
 
@@ -632,20 +636,20 @@ export default function DishesView({
       {cartOpen && (
         <div className="cart-panel">
           <div className="cart-panel__head">
-            <span>Ваш заказ</span>
+            <span>{t('views.dishes.cartTitle')}</span>
 
             <button
               type="button"
               className="cart-panel__close"
               onClick={() => setCartOpen(false)}
-              aria-label="Закрыть корзину"
+              aria-label={t('views.dishes.cartCloseAria')}
             >
               ✕
             </button>
           </div>
 
           {cartLines.length === 0 ? (
-            <div className="cart-panel__empty">В заказе пока пусто</div>
+            <div className="cart-panel__empty">{t('views.dishes.cartEmpty')}</div>
           ) : (
             <ul className="cart-panel__list">
               {cartLines.map((line) => (
@@ -661,7 +665,7 @@ export default function DishesView({
           )}
 
           <div className="cart-panel__total">
-            Итого: {formatPrice(cartTotal)}
+            {t('views.dishes.total', { price: formatPrice(cartTotal) })}
           </div>
         </div>
       )}

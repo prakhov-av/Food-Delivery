@@ -23,30 +23,35 @@ import UsersView from './views/UsersView';
 import AuditView from './views/AuditView';
 import UploadView from './views/UploadView.tsx';
 import ChatWidget from './ChatWidget';
+import LanguageSwitch from './i18n/LanguageSwitch';
+import { useLang, useT } from './i18n';
 
 type ViewKey = 'restaurants' | 'orders' | 'users' | 'audit' | 'upload';
 
 const NAV: {
   key: ViewKey;
-  label: string;
+  labelKey: string;
   icon: string;
   adminOnly?: boolean;
 }[] = [
-  { key: 'restaurants', label: 'Рестораны', icon: '🍽' },
-  { key: 'orders', label: 'Заказы', icon: '🛵' },
-  { key: 'users', label: 'Пользователи', icon: '👥', adminOnly: true },
-  { key: 'audit', label: 'Журнал', icon: '📜', adminOnly: true },
-  { key: 'upload', label: 'Загрузка документа', icon: '📄', adminOnly: true },
+  { key: 'restaurants', labelKey: 'nav.restaurants', icon: '🍽' },
+  { key: 'orders', labelKey: 'nav.orders', icon: '🛵' },
+  { key: 'users', labelKey: 'nav.users', icon: '👥', adminOnly: true },
+  { key: 'audit', labelKey: 'nav.audit', icon: '📜', adminOnly: true },
+  { key: 'upload', labelKey: 'nav.upload', icon: '📄', adminOnly: true },
 ];
 
-const ROLE_LABELS: Record<Role, string> = {
-  ADMIN: 'Админ',
-  MANAGER: 'Менеджер',
-  CUSTOMER: 'Клиент',
-  COURIER: 'Курьер',
+const ROLE_LABEL_KEYS: Record<Role, string> = {
+  ADMIN: 'role.admin',
+  MANAGER: 'role.manager',
+  CUSTOMER: 'role.customer',
+  COURIER: 'role.courier',
 };
 
 export default function App() {
+  const t = useT();
+  const lang = useLang();
+
   // Гость — отдельный режим доступа, а не зарегистрированный CUSTOMER.
   const [mode, setMode] = useState<AccessMode>('anon');
   const [user, setUser] = useState<UserDto | null>(null);
@@ -142,7 +147,7 @@ export default function App() {
     resetCatalog();
   };
 
-  if (checking) return <div className="empty">Загрузка…</div>;
+  if (checking) return <div className="empty">{t('app.loading')}</div>;
   if (mode === 'anon') {
     return <AuthPage onLogin={handleLogin} onGuest={handleGuestLogin} />;
   }
@@ -171,26 +176,27 @@ export default function App() {
               onClick={() => openView(n.key)}
             >
               <span className="nav-icon">{n.icon}</span>
-              {n.key === 'orders' && isGuest ? 'Мои заказы' : n.label}
+              {n.key === 'orders' && isGuest ? t('nav.myOrders') : t(n.labelKey)}
             </button>
           ))}
         </nav>
         <div className="sidebar-footer">
           <div className="session-info">
             <div className="session-email" title={user?.name}>
-              {isGuest ? 'Гость' : user?.name}
+              {isGuest ? t('session.guest') : user?.name}
             </div>
             <div className="session-role">
-              {isGuest ? 'Гостевой режим' : ROLE_LABELS[role]}
+              {isGuest ? t('session.guestMode') : t(ROLE_LABEL_KEYS[role])}
             </div>
           </div>
+          <LanguageSwitch compact />
           <button
             className="btn btn-ghost"
             onClick={() =>
               void (isGuest ? handleGuestLogout() : handleLogout())
             }
           >
-            Выйти
+            {t('action.logout')}
           </button>
         </div>
       </aside>
@@ -229,7 +235,7 @@ export default function App() {
         {view === 'audit' && isAdmin && <AuditView />}
         {view === 'upload' && canUploadDocs(role) && <UploadView />}
       </main>
-      <ChatWidget role={role} />
+      <ChatWidget role={role} lang={lang} />
     </div>
   );
 }

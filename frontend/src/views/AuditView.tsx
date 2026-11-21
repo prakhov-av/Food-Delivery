@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react';
 import { api } from '../api';
+import { translate, useT } from '../i18n';
 import { AUDIT_ACTIONS } from '../types';
 import type { AuditPageDto } from '../types';
 import { ErrorBanner, formatDate } from '../ui';
@@ -80,6 +81,7 @@ function buildQuery(filters: Filters, page: number): string {
 }
 
 export default function AuditView() {
+  const t = useT();
   const [form, setForm] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
@@ -103,7 +105,7 @@ export default function AuditView() {
       setOpenId(null);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Не удалось загрузить журнал',
+        err instanceof Error ? err.message : translate('views.audit.loadFailed'),
       );
     } finally {
       setLoading(false);
@@ -131,9 +133,9 @@ export default function AuditView() {
   return (
     <div className="view">
       <header className="view-header">
-        <h1>Журнал</h1>
+        <h1>{t('views.audit.title')}</h1>
         <button className="btn btn-ghost" onClick={() => void load()}>
-          Обновить
+          {t('views.audit.refresh')}
         </button>
       </header>
 
@@ -148,7 +150,7 @@ export default function AuditView() {
           }}
         >
           <label style={FIELD_STYLE}>
-            Исполнитель (ID)
+            {t('views.audit.actor')}
             <input
               style={CONTROL_STYLE}
               type="number"
@@ -158,13 +160,13 @@ export default function AuditView() {
             />
           </label>
           <label style={FIELD_STYLE}>
-            Действие
+            {t('views.audit.action')}
             <select
               style={CONTROL_STYLE}
               value={form.action}
               onChange={(e) => setForm({ ...form, action: e.target.value })}
             >
-              <option value="">Все</option>
+              <option value="">{t('views.audit.all')}</option>
               {AUDIT_ACTIONS.map((a) => (
                 <option key={a} value={a}>
                   {a}
@@ -173,13 +175,13 @@ export default function AuditView() {
             </select>
           </label>
           <label style={FIELD_STYLE}>
-            Объект
+            {t('views.audit.entity')}
             <select
               style={CONTROL_STYLE}
               value={form.entityType}
               onChange={(e) => setForm({ ...form, entityType: e.target.value })}
             >
-              <option value="">Все</option>
+              <option value="">{t('views.audit.all')}</option>
               {ENTITY_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -188,7 +190,7 @@ export default function AuditView() {
             </select>
           </label>
           <label style={FIELD_STYLE}>
-            ID объекта
+            {t('views.audit.entityId')}
             <input
               style={CONTROL_STYLE}
               type="number"
@@ -198,7 +200,7 @@ export default function AuditView() {
             />
           </label>
           <label style={FIELD_STYLE}>
-            С
+            {t('views.audit.from')}
             <input
               style={CONTROL_STYLE}
               type="datetime-local"
@@ -207,7 +209,7 @@ export default function AuditView() {
             />
           </label>
           <label style={FIELD_STYLE}>
-            По
+            {t('views.audit.to')}
             <input
               style={CONTROL_STYLE}
               type="datetime-local"
@@ -219,28 +221,28 @@ export default function AuditView() {
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           <button className="btn btn-primary" type="submit">
-            Применить
+            {t('views.audit.apply')}
           </button>
           <button className="btn btn-ghost" type="button" onClick={reset}>
-            Сбросить
+            {t('views.audit.reset')}
           </button>
         </div>
       </form>
 
       {loading ? (
-        <div className="empty">Загрузка…</div>
+        <div className="empty">{t('views.audit.loading')}</div>
       ) : data.items.length === 0 ? (
-        <div className="empty">Записей нет</div>
+        <div className="empty">{t('views.audit.empty')}</div>
       ) : (
         <div className="card table-card" style={{ marginTop: 16 }}>
           <table>
             <thead>
               <tr>
-                <th>Время</th>
-                <th>Исполнитель</th>
-                <th>Действие</th>
-                <th>Объект</th>
-                <th>Результат</th>
+                <th>{t('views.audit.time')}</th>
+                <th>{t('views.audit.actorColumn')}</th>
+                <th>{t('views.audit.action')}</th>
+                <th>{t('views.audit.entity')}</th>
+                <th>{t('views.audit.result')}</th>
                 <th>IP</th>
                 <th />
               </tr>
@@ -277,7 +279,9 @@ export default function AuditView() {
                           setOpenId(openId === log.id ? null : log.id)
                         }
                       >
-                        {openId === log.id ? 'Скрыть' : 'Детали'}
+                        {openId === log.id
+                          ? t('views.audit.hide')
+                          : t('views.audit.details')}
                       </button>
                     </td>
                   </tr>
@@ -320,17 +324,21 @@ export default function AuditView() {
           disabled={page <= 1 || loading}
           onClick={() => setPage((p) => p - 1)}
         >
-          ← Назад
+          {t('views.audit.back')}
         </button>
         <span className="muted">
-          Страница {page} из {totalPages} · всего {data.total}
+          {t('views.audit.pageInfo', {
+            page,
+            total: totalPages,
+            count: data.total,
+          })}
         </span>
         <button
           className="btn btn-ghost btn-sm"
           disabled={page >= totalPages || loading}
           onClick={() => setPage((p) => p + 1)}
         >
-          Вперёд →
+          {t('views.audit.forward')}
         </button>
       </div>
     </div>

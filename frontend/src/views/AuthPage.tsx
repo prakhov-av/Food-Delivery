@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 type Tab = 'login' | 'register';
 
@@ -10,6 +11,7 @@ export default function AuthPage({
   onLogin: (email: string) => Promise<void>;
   onGuest: () => Promise<void>;
 }) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,12 +29,10 @@ export default function AuthPage({
     window.history.replaceState(null, '', window.location.pathname);
     setBusy(true);
     api<string>(`/users/confirm/${encodeURIComponent(code)}`)
-      .then(() => setInfo('Регистрация подтверждена — теперь можно войти'))
+      .then(() => setInfo(t('views.auth.confirmed')))
       .catch((err) =>
         setError(
-          err instanceof Error
-            ? err.message
-            : 'Не удалось подтвердить регистрацию',
+          err instanceof Error ? err.message : t('views.auth.confirmFailed'),
         ),
       )
       .finally(() => setBusy(false));
@@ -46,7 +46,7 @@ export default function AuthPage({
     try {
       await action();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Что-то пошло не так');
+      setError(err instanceof Error ? err.message : t('views.auth.somethingWrong'));
     } finally {
       setBusy(false);
     }
@@ -74,7 +74,7 @@ export default function AuthPage({
         body: JSON.stringify({ email, password, name, phone }),
       });
 
-      setInfo('Ссылка подтверждения отправлена на почту');
+      setInfo(t('views.auth.confirmLinkSent'));
       setTab('login');
     });
   };
@@ -101,14 +101,14 @@ export default function AuthPage({
             className={`tab ${tab === 'login' ? 'active' : ''}`}
             onClick={() => setTab('login')}
           >
-            Вход
+            {t('views.auth.tabLogin')}
           </button>
 
           <button
             className={`tab ${tab === 'register' ? 'active' : ''}`}
             onClick={() => setTab('register')}
           >
-            Регистрация
+            {t('views.auth.tabRegister')}
           </button>
         </div>
 
@@ -119,7 +119,7 @@ export default function AuthPage({
         {tab === 'login' && (
           <form className="form-grid" onSubmit={handleLogin}>
             <label>
-              Email
+              {t('views.auth.email')}
               <input
                 type="email"
                 value={email}
@@ -133,7 +133,7 @@ export default function AuthPage({
               />
             </label>
             <label>
-              Пароль
+              {t('views.auth.password')}
               <input
                 type="password"
                 value={password}
@@ -143,7 +143,7 @@ export default function AuthPage({
               />
             </label>
             <button className="btn btn-primary" type="submit" disabled={busy}>
-              {busy ? '…' : 'Войти'}
+              {busy ? '…' : t('views.auth.login')}
             </button>
           </form>
         )}
@@ -151,7 +151,7 @@ export default function AuthPage({
         {tab === 'register' && (
           <form className="form-grid" onSubmit={handleRegister}>
             <label>
-              Имя (латиницей)
+              {t('views.auth.nameLatin')}
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -161,7 +161,7 @@ export default function AuthPage({
             </label>
 
             <label>
-              Email
+              {t('views.auth.email')}
               <input
                 type="email"
                 value={email}
@@ -171,7 +171,7 @@ export default function AuthPage({
             </label>
 
             <label>
-              Телефон
+              {t('views.auth.phone')}
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
@@ -180,7 +180,7 @@ export default function AuthPage({
             </label>
 
             <label>
-              Пароль (8–20, буквы обоих регистров и цифра)
+              {t('views.auth.passwordHint')}
               <input
                 type="password"
                 value={password}
@@ -190,7 +190,7 @@ export default function AuthPage({
             </label>
 
             <button className="btn btn-primary" type="submit" disabled={busy}>
-              {busy ? '…' : 'Зарегистрироваться'}
+              {busy ? '…' : t('views.auth.register')}
             </button>
           </form>
         )}
@@ -202,12 +202,11 @@ export default function AuthPage({
             disabled={busy}
             onClick={handleGuest}
           >
-            {busy ? '…' : 'Продолжить как гость'}
+            {busy ? '…' : t('views.auth.continueAsGuest')}
           </button>
 
           <div className="auth-hint">
-            Гостевой режим: доступен AI-помощник и оформление заказа.
-            Регистрация не требуется, данные гостя нигде не сохраняются.
+            {t('views.auth.guestHint')}
           </div>
         </div>
       </div>

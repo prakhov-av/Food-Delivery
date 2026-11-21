@@ -5,7 +5,6 @@ import { ChatService } from './chat.service';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { VectorStorageModule } from '../vector-storage/vector-storage.module';
 import { AiModule } from '../ai/ai.module';
-import { PromptService } from '../prompts/prompt.service';
 import { LiveDataService } from './live-data.service';
 import { OrdersModule } from '../orders/orders.module';
 import { ContextService } from './context.service';
@@ -16,10 +15,12 @@ import { ChatIdentityGuard } from './chat-identity.guard';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { GuestSessionsModule } from '../guest-sessions/guest-sessions.module';
+import { LanguageService } from './language/language.service';
+import { LeakGuardService } from './leak-guard.service';
 
 @Module({
   controllers: [ChatController],
-  providers: [ChatService, PromptService, LiveDataService, ContextService, ChatLogService, ChatIdentityGuard],
+  providers: [ChatService, LiveDataService, ContextService, ChatLogService, ChatIdentityGuard, LanguageService, LeakGuardService],
   imports: [
     TypeOrmModule.forFeature([ChatLog]),
     EmbeddingsModule, VectorStorageModule, AiModule, OrdersModule, PromptsModule,

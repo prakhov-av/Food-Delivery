@@ -1,11 +1,14 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import type { OrderStatus, Role } from './types';
+import { translate, useT } from './i18n';
 
 export function ErrorBanner({ message, onClose }: { message: string; onClose: () => void }) {
+  const t = useT();
+
   return (
     <div className="banner banner-error">
       <span>{message}</span>
-      <button className="banner-close" onClick={onClose} aria-label="Закрыть">
+      <button className="banner-close" onClick={onClose} aria-label={t('ui.close')}>
         ×
       </button>
     </div>
@@ -19,45 +22,56 @@ export function SuccessBanner({
   message: string;
   onClose: () => void;
 }) {
+  const t = useT();
+
   return (
     <div className="banner banner-success">
       <span>{message}</span>
-      <button className="banner-close" onClick={onClose} aria-label="Закрыть">
+      <button className="banner-close" onClick={onClose} aria-label={t('ui.close')}>
         ×
       </button>
     </div>
   );
 }
 
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  NEW: 'Новый',
-  ACCEPTED: 'Принят',
-  COOKING: 'Готовится',
-  READY: 'Готов',
-  DELIVERING: 'Доставляется',
-  COMPLETED: 'Завершён',
-  CANCELLED_CUSTOMER: 'Отменён клиентом',
-  CANCELLED_COURIER: 'Отменён курьером',
-  CANCELLED_STAFF: 'Отменён персоналом',
+const STATUS_LABEL_KEYS: Record<OrderStatus, string> = {
+  NEW: 'ui.status.new',
+  ACCEPTED: 'ui.status.accepted',
+  COOKING: 'ui.status.cooking',
+  READY: 'ui.status.ready',
+  DELIVERING: 'ui.status.delivering',
+  COMPLETED: 'ui.status.completed',
+  CANCELLED_CUSTOMER: 'ui.status.cancelledCustomer',
+  CANCELLED_COURIER: 'ui.status.cancelledCourier',
+  CANCELLED_STAFF: 'ui.status.cancelledStaff',
 };
 
+/**
+ * Подпись статуса заказа.
+ *
+ * Здесь нельзя вызывать хук: функция используется в списках и callbacks,
+ * где правила хуков не выполняются. Поэтому перевод берётся из модульной
+ * функции, которая знает текущий язык.
+ */
 export function statusLabel(status?: OrderStatus): string {
-  return status ? (STATUS_LABELS[status] ?? status) : '—';
+  return status
+    ? translate(STATUS_LABEL_KEYS[status])
+    : translate('ui.status.none');
 }
 
 export function StatusBadge({ status }: { status?: OrderStatus }) {
   return <span className={`badge status-${status ?? 'unknown'}`}>{statusLabel(status)}</span>;
 }
 
-const ROLE_LABELS: Record<Role, string> = {
-  ADMIN: 'Администратор',
-  MANAGER: 'Менеджер',
-  CUSTOMER: 'Клиент',
-  COURIER: 'Курьер',
+const ROLE_LABEL_KEYS: Record<Role, string> = {
+  ADMIN: 'ui.role.admin',
+  MANAGER: 'ui.role.manager',
+  CUSTOMER: 'ui.role.customer',
+  COURIER: 'ui.role.courier',
 };
 
 export function roleLabel(role: Role): string {
-  return ROLE_LABELS[role] ?? role;
+  return translate(ROLE_LABEL_KEYS[role]);
 }
 
 export function RoleBadge({ role }: { role: Role }) {
@@ -72,14 +86,15 @@ export function formatPrice(value: number | string): string {
 
 export function formatDate(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('de-DE');
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('de-DE');
 }
 
 export function CollapsibleForm({
   title,
   children,
   onSubmit,
-  submitLabel = 'Создать',
+  submitLabel,
   busy = false,
 }: {
   title: string;
@@ -88,6 +103,7 @@ export function CollapsibleForm({
   submitLabel?: string;
   busy?: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   const handleSubmit = (e: FormEvent) => {
@@ -105,7 +121,7 @@ export function CollapsibleForm({
           {children}
           <div className="form-actions">
             <button className="btn btn-primary" type="submit" disabled={busy}>
-              {busy ? '…' : submitLabel}
+              {busy ? '…' : (submitLabel ?? t('ui.create'))}
             </button>
           </div>
         </form>

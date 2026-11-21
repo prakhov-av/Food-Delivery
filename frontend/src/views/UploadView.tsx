@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api';
+import { translate, useT } from '../i18n';
 import {
   ALL_ROLES,
   DOCUMENT_TYPES,
@@ -14,10 +15,11 @@ const LANGUAGES = ['ru', 'en', 'de'];
 
 const formatSize = (bytes: number): string =>
   bytes < 1024 * 1024
-    ? `${Math.ceil(bytes / 1024)} КБ`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+    ? `${Math.ceil(bytes / 1024)} ${translate('views.upload.kb')}`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} ${translate('views.upload.mb')}`;
 
 export default function UploadView() {
+  const t = useT();
   const [file, setFile] = useState<File | null>(null);
   const [fileKey, setFileKey] = useState(0);
   const [documentType, setDocumentType] = useState<DocumentType>('USER');
@@ -36,26 +38,31 @@ export default function UploadView() {
     );
 
   const validate = (): string => {
-    if (!file) return 'Выберите файл';
+    if (!file) return t('views.upload.selectFile');
 
     const name = file.name.toLowerCase();
 
     if (!UPLOAD_EXTENSIONS.some((ext) => name.endsWith(ext))) {
-      return `Допустимые форматы: ${UPLOAD_EXTENSIONS.join(', ')}`;
+      return t('views.upload.allowedFormats', {
+        formats: UPLOAD_EXTENSIONS.join(', '),
+      });
     }
 
-    if (file.size === 0) return 'Файл пустой';
+    if (file.size === 0) return t('views.upload.emptyFile');
 
     if (file.size > MAX_UPLOAD_BYTES) {
-      return `Файл больше ${formatSize(MAX_UPLOAD_BYTES)} (сейчас ${formatSize(file.size)})`;
+      return t('views.upload.tooLarge', {
+        max: formatSize(MAX_UPLOAD_BYTES),
+        size: formatSize(file.size),
+      });
     }
 
-    if (roles.length === 0) return 'Выберите хотя бы одну роль';
+    if (roles.length === 0) return t('views.upload.selectRole');
 
-    if (!documentId.trim()) return 'Укажите documentId';
+    if (!documentId.trim()) return t('views.upload.requireDocumentId');
 
     if (!Number.isInteger(documentVersion) || documentVersion < 1) {
-      return 'Версия должна быть целым числом от 1';
+      return t('views.upload.requireVersion');
     }
 
     return '';
@@ -94,14 +101,17 @@ export default function UploadView() {
       await api('/ingestion/upload', { method: 'POST', body });
 
       setSuccess(
-        `Документ «${documentId.trim()}» версии ${documentVersion} загружен в базу знаний`,
+        t('views.upload.success', {
+          id: documentId.trim(),
+          version: documentVersion,
+        }),
       );
       setFile(null);
       setFileKey((k) => k + 1);
       setDocumentId('');
       setDocumentVersion(1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить');
+      setError(err instanceof Error ? err.message : t('views.upload.uploadFailed'));
     } finally {
       setBusy(false);
     }
@@ -110,7 +120,7 @@ export default function UploadView() {
   return (
     <div className="view">
       <header className="view-header">
-        <h1>Загрузка документа</h1>
+        <h1>{t('views.upload.title')}</h1>
       </header>
 
       {error && <ErrorBanner message={error} onClose={() => setError('')} />}
@@ -121,31 +131,30 @@ export default function UploadView() {
 
       <details className="card" style={{ padding: 16, marginBottom: 16 }}>
         <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-          Как подготовить документ
+          {t('views.upload.prepareTitle')}
         </summary>
 
         <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
           <div>
-            <b>Права и тип задаются в форме, а не в файле.</b> Всё, что написано
-            в тексте документа (в том числе «Роль: CUSTOMER»), на доступ не
-            влияет: доступ определяют поля формы ниже.
+            <b>{t('views.upload.permissionsTitle')}</b>{' '}
+            {t('views.upload.permissionsText')}
           </div>
 
           <div>
-            <b>Формат:</b> {UPLOAD_EXTENSIONS.join(', ')}, не больше{' '}
-            {formatSize(MAX_UPLOAD_BYTES)}. Перед индексацией документ проходит
-            проверку безопасности: небезопасный отклоняется и уходит в карантин.
+            <b>{t('views.upload.formatLabel')}</b>{' '}
+            {UPLOAD_EXTENSIONS.join(', ')},{' '}
+            {t('views.upload.formatLimit', {
+              size: formatSize(MAX_UPLOAD_BYTES),
+            })}
           </div>
 
           <div>
-            <b>Версии:</b> тот же documentId с версией выше заменяет документ,
-            старая версия уходит в архив. Та же или меньшая версия отклоняется.
+            <b>{t('views.upload.versionsLabel')}</b>{' '}
+            {t('views.upload.versionsText')}
           </div>
 
           <div>
-            <b>Типы:</b> AUTH — вход и сессии, USER — правила клиента,
-            RESTAURANT — рестораны, MENU — меню и блюда, DELIVERY — доставка и
-            курьеры, ORDER — заказы и статусы, SYSTEM — общие правила сервиса.
+            <b>{t('views.upload.typesLabel')}</b> {t('views.upload.typesText')}
           </div>
         </div>
       </details>
@@ -156,7 +165,7 @@ export default function UploadView() {
         onSubmit={(e) => void submit(e)}
       >
         <label style={{ display: 'grid', gap: 4 }}>
-          Файл
+          {t('views.upload.file')}
           <input
             key={fileKey}
             type="file"
@@ -167,7 +176,7 @@ export default function UploadView() {
         </label>
 
         <label style={{ display: 'grid', gap: 4 }}>
-          Тип документа
+          {t('views.upload.documentType')}
           <select
             value={documentType}
             disabled={busy}
@@ -185,7 +194,9 @@ export default function UploadView() {
           style={{ border: 'none', padding: 0, margin: 0 }}
           disabled={busy}
         >
-          <legend style={{ marginBottom: 4 }}>Кто видит документ в чате</legend>
+          <legend style={{ marginBottom: 4 }}>
+            {t('views.upload.whoSees')}
+          </legend>
 
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             {ALL_ROLES.map((r) => (
@@ -205,7 +216,7 @@ export default function UploadView() {
         </fieldset>
 
         <label style={{ display: 'grid', gap: 4 }}>
-          Язык
+          {t('views.upload.language')}
           <select
             value={language}
             disabled={busy}
@@ -225,18 +236,14 @@ export default function UploadView() {
             value={documentId}
             disabled={busy}
             onChange={(e) => setDocumentId(e.target.value)}
-            placeholder="например, 02_C_G"
+            placeholder={t('views.upload.idPlaceholder')}
             required
           />
-          <small className="muted">
-            Уникальный код документа (не файла). Один документ — один ID
-            навсегда, разные документы — разные ID. Если указать ID, который уже
-            есть в базе знаний, это обновление: новая версия заменит старую.
-          </small>
+          <small className="muted">{t('views.upload.idHint')}</small>
         </label>
 
         <label style={{ display: 'grid', gap: 4 }}>
-          Версия
+          {t('views.upload.version')}
           <input
             type="number"
             min={1}
@@ -246,25 +253,17 @@ export default function UploadView() {
             onChange={(e) => setDocumentVersion(Number(e.target.value))}
             required
           />
-          <small className="muted">
-            Целое число от 1. Новый документ — 1. При обновлении того же ID
-            ставьте версию больше текущей (была 1 — загружайте 2). Если версия
-            не больше загруженной, система откажет, чтобы не затереть свежий
-            текст старым. Старая версия сохраняется в архиве.
-          </small>
+          <small className="muted">{t('views.upload.versionHint')}</small>
         </label>
 
         <div>
           <button className="btn btn-primary" type="submit" disabled={busy}>
-            {busy ? 'Проверка и индексация…' : 'Загрузить'}
+            {busy ? t('views.upload.busy') : t('views.upload.submit')}
           </button>
         </div>
 
         {busy && (
-          <div className="muted">
-            Документ проверяется и индексируется, это может занять до минуты. Не
-            закрывайте страницу и не нажимайте повторно.
-          </div>
+          <div className="muted">{t('views.upload.busyNote')}</div>
         )}
       </form>
     </div>

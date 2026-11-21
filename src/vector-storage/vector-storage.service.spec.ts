@@ -7,6 +7,7 @@ import { Role } from '../users/enums/role.enum';
 import { QdrantPoint } from './qdrant/types/search/qdrant-point';
 import { QdrantResult } from './qdrant/types/search/qdrant-result';
 import { DocumentVersionConflictException } from '../exceptions/types/document-version-conflict.exception';
+import { Lang } from '../chat/locales/lang';
 
 describe('VectorStorageService', (): void => {
   let service: VectorStorageService;
@@ -203,13 +204,32 @@ describe('VectorStorageService', (): void => {
       [0.1, 0.2],
       DocumentType.ORDER,
       Role.CUSTOMER,
+      Lang.DE,
     );
 
     expect(client.getRelevantChunksByAccess).toHaveBeenCalledWith(
       [0.1, 0.2],
       DocumentType.ORDER,
       Role.CUSTOMER,
+      Lang.DE,
     );
     expect(result).toBe(results);
+  });
+
+  it('should search without a language filter when the language is not given', async (): Promise<void> => {
+    client.getRelevantChunksByAccess.mockResolvedValue([]);
+
+    await service.getRelevantChunkByAccess(
+      [0.1, 0.2],
+      DocumentType.ORDER,
+      Role.CUSTOMER,
+    );
+
+    expect(client.getRelevantChunksByAccess).toHaveBeenCalledWith(
+      [0.1, 0.2],
+      DocumentType.ORDER,
+      Role.CUSTOMER,
+      undefined,
+    );
   });
 });

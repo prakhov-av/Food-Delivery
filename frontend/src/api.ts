@@ -1,3 +1,5 @@
+import { translate } from './i18n';
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -84,7 +86,7 @@ async function parseError(response: Response): Promise<ApiError> {
 
   // Серверная ошибка без конкретной причины не должна показываться пользователю.
   if (response.status >= 500) {
-    message = 'Сервер временно недоступен. Попробуйте позже.';
+    message = translate('error.server');
   }
 
   return new ApiError(response.status, message);
@@ -117,7 +119,7 @@ export async function api<T = void>(
     } else {
       onSessionExpired?.();
 
-      throw new ApiError(401, 'Сессия истекла, войдите заново');
+      throw new ApiError(401, translate('error.sessionExpired'));
     }
   }
 
