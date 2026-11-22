@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError } from './api';
 import type { Role } from './types';
 import { QUICK_QUESTIONS } from './i18n/core';
-import LanguageSwitch from './i18n/LanguageSwitch';
 import { useT, type Lang } from './i18n';
 
 interface Message {
@@ -227,8 +226,6 @@ export default function ChatWidget({
             <span>{t('chat.title')}</span>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <LanguageSwitch compact />
-
               <button
                 onClick={() => void clearHistory()}
                 disabled={busy}
