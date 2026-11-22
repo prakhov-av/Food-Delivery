@@ -25,9 +25,6 @@ export const LANG_LABELS: Record<Lang, string> = {
   de: 'Deutsch',
 };
 
-/** Key in localStorage where the chosen language is stored. */
-export const LANG_STORAGE_KEY = 'fd_lang';
-
 /**
  * Dictionary: the key is the text to translate.
  *

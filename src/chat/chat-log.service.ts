@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThan, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { ChatLog } from './chat-log.entity';
@@ -7,7 +8,7 @@ import { ChatMessage } from './types/chat-message';
 import { ChatOwner } from './types/chat-identity';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RETENTION_DAYS = Number(process.env.CHAT_HISTORY_RETENTION_DAYS) || 30;
+const DEFAULT_RETENTION_DAYS = 30;
 
 export type ChatLogEntry = ChatOwner & {
   userRole: string;
@@ -22,10 +23,27 @@ export type ChatLogEntry = ChatOwner & {
 export class ChatLogService {
   private readonly logger = new Logger(ChatLogService.name);
 
+  /** Сколько дней хранятся сообщения чата. */
+  private readonly retentionDays: number;
+
   constructor(
     @InjectRepository(ChatLog)
     private readonly repository: Repository<ChatLog>,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    // Настройка читается через ConfigService, а не из process.env на уровне
+    // модуля: в момент импорта .env ещё не загружен, и значение молча
+    // игнорировалось.
+    const configured: number = Number(
+      this.configService.get('CHAT_HISTORY_RETENTION_DAYS') ??
+        DEFAULT_RETENTION_DAYS,
+    );
+
+    this.retentionDays =
+      Number.isFinite(configured) && configured > 0
+        ? configured
+        : DEFAULT_RETENTION_DAYS;
+  }
 
   async record(entry: ChatLogEntry): Promise<void> {
     try {
@@ -55,6 +73,21 @@ export class ChatLogService {
       take: limit,
     });
     return logs.reverse();
+  }
+
+  /**
+   * Считает сообщения владельца за указанный период.
+   *
+   * Нужен для дневного лимита: без него гость может создавать сессии
+   * и спрашивать ассистента без ограничений, а счёт за LLM растёт.
+   */
+  async countSince(owner: ChatOwner, since: Date): Promise<number> {
+    return this.repository.count({
+      where: {
+        ...this.ownerWhere(owner),
+        createdAt: MoreThanOrEqual(since),
+      },
+    });
   }
 
   async getWindow(userId: number, limit: number): Promise<ChatMessage[]> {
@@ -91,7 +124,6 @@ export class ChatLogService {
   async deleteByUserId(userId: number): Promise<void> {
     await this.repository.delete({ userId });
   }
-
   async deleteByGuestSessionId(guestSessionId: string): Promise<void> {
     await this.repository.delete({ guestSessionId });
   }
@@ -102,6 +134,6 @@ export class ChatLogService {
   }
 
   private cutoff(): Date {
-    return new Date(Date.now() - RETENTION_DAYS * DAY_MS);
+    return new Date(Date.now() - this.retentionDays * DAY_MS);
   }
 }

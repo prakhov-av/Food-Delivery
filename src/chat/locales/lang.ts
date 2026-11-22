@@ -18,6 +18,12 @@ export const ALL_LANGS: Lang[] = [Lang.RU, Lang.EN, Lang.DE];
  *
  * Used when the language cannot be determined: a short message without any
  * clue, the first message of a session, a request without a language.
+ *
+ * The choice is deliberate: the interface of the application starts in
+ * English, but the backend answers API clients without a language in
+ * Russian, because the knowledge base of the service is written in Russian
+ * first. The browser always sends its language explicitly, so this default
+ * only affects direct API calls.
  */
 export const DEFAULT_LANG: Lang = Lang.RU;
 

@@ -11,6 +11,16 @@ jest.mock('axios');
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+/** Every request carries a timeout: a hanging Qdrant must not hold the connection. */
+const TIMEOUT = { timeout: 5000 };
+
+/** Error shaped like an axios response with a status code. */
+const httpError = (status: number, message: string): Error => {
+  const error: Error & { response?: { status: number } } = new Error(message);
+  error.response = { status };
+  return error;
+};
+
 describe('QdrantClient', (): void => {
   let client: QdrantClient;
   let configService: jest.Mocked<ConfigService>;
@@ -55,6 +65,7 @@ describe('QdrantClient', (): void => {
           distance: 'Cosine',
         },
       },
+      TIMEOUT,
     );
     expect(mockedAxios.put).toHaveBeenNthCalledWith(
       2,
@@ -65,7 +76,40 @@ describe('QdrantClient', (): void => {
           distance: 'Cosine',
         },
       },
+      TIMEOUT,
     );
+  });
+
+  it('should take the vector size from the configuration', async (): Promise<void> => {
+    (configService.get as jest.Mock).mockImplementation((key: string) =>
+      key === 'QDRANT_VECTOR_SIZE' ? '768' : undefined,
+    );
+
+    const sizedClient: QdrantClient = new QdrantClient(configService);
+
+    mockedAxios.put.mockResolvedValue({} as never);
+
+    await sizedClient.onModuleInit();
+
+    expect(mockedAxios.put).toHaveBeenNthCalledWith(
+      1,
+      'http://qdrant:6333/collections/food_delivery',
+      {
+        vectors: {
+          size: 768,
+          distance: 'Cosine',
+        },
+      },
+      TIMEOUT,
+    );
+  });
+
+  it('should ignore a collection that already exists', async (): Promise<void> => {
+    mockedAxios.put.mockRejectedValue(httpError(409, 'already exists'));
+
+    await expect(client.onModuleInit()).resolves.toBeUndefined();
+
+    expect(mockedAxios.put).toHaveBeenCalledTimes(2);
   });
 
   it('should ignore collection creation errors during module initialization', async (): Promise<void> => {
@@ -85,6 +129,7 @@ describe('QdrantClient', (): void => {
     expect(mockedAxios.put).toHaveBeenCalledWith(
       'http://qdrant:6333/collections/food_delivery/points',
       { points },
+      TIMEOUT,
     );
   });
 
@@ -97,6 +142,7 @@ describe('QdrantClient', (): void => {
     expect(mockedAxios.put).toHaveBeenCalledWith(
       'http://qdrant:6333/collections/food_delivery_archive/points',
       { points },
+      TIMEOUT,
     );
   });
 
@@ -134,6 +180,7 @@ describe('QdrantClient', (): void => {
           ],
         },
       },
+      TIMEOUT,
     );
     expect(result).toBe(response.data.result);
   });
@@ -166,6 +213,7 @@ describe('QdrantClient', (): void => {
         },
         offset: null,
       },
+      TIMEOUT,
     );
     expect(result).toEqual([{ id: 'point-1' }]);
   });
@@ -195,11 +243,13 @@ describe('QdrantClient', (): void => {
       1,
       'http://qdrant:6333/collections/food_delivery/points/scroll',
       expect.objectContaining({ offset: null }),
+      TIMEOUT,
     );
     expect(mockedAxios.post).toHaveBeenNthCalledWith(
       2,
       'http://qdrant:6333/collections/food_delivery/points/scroll',
       expect.objectContaining({ offset: 'offset-1' }),
+      TIMEOUT,
     );
     expect(result).toEqual([{ id: 'point-1' }, { id: 'point-2' }]);
   });
@@ -221,6 +271,7 @@ describe('QdrantClient', (): void => {
           ],
         },
       },
+      TIMEOUT,
     );
   });
 
@@ -257,12 +308,44 @@ describe('QdrantClient', (): void => {
       client.deletePointsByDocumentId('document-123'),
     ).rejects.toThrow('delete failed');
   });
+
+  it('should retry once on a server error', async (): Promise<void> => {
+    mockedAxios.post
+      .mockRejectedValueOnce(httpError(503, 'service unavailable'))
+      .mockResolvedValueOnce({
+        data: { result: [{ id: 'point-1', score: 0.5 }] },
+      } as never);
+
+    const result = await client.getRelevantChunksByAccess(
+      [0.1],
+      DocumentType.ORDER,
+      Role.CUSTOMER,
+    );
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(1);
+  });
+
+  it('should not retry a request that failed without a server error', async (): Promise<void> => {
+    mockedAxios.post.mockRejectedValue(new Error('network is down'));
+
+    await expect(
+      client.getRelevantChunksByAccess(
+        [0.1],
+        DocumentType.ORDER,
+        Role.CUSTOMER,
+      ),
+    ).rejects.toThrow('network is down');
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+  });
+
   it('should send the api-key header on every request when QDRANT_API_KEY is set', async (): Promise<void> => {
     (configService.get as jest.Mock).mockImplementation((key: string) =>
       key === 'QDRANT_API_KEY' ? ' secret-key ' : undefined,
     );
     const securedClient: QdrantClient = new QdrantClient(configService);
-    const headers = { headers: { 'api-key': 'secret-key' } };
+    const headers = { headers: { 'api-key': 'secret-key' }, timeout: 5000 };
 
     mockedAxios.put.mockResolvedValue({} as never);
     mockedAxios.post.mockResolvedValue({ data: { result: [] } } as never);

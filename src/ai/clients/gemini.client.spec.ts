@@ -63,6 +63,7 @@ describe('GeminiClient', (): void => {
     expect(postSpy).toHaveBeenCalledWith(
       'https://gemini.test/generate?key=secret-key',
       request,
+      { timeout: 120000 },
     );
   });
 
@@ -99,6 +100,7 @@ describe('GeminiClient', (): void => {
     expect(postSpy).toHaveBeenCalledWith(
       'https://gemini.test/embed?key=secret-key',
       request,
+      { timeout: 120000 },
     );
   });
 
@@ -110,12 +112,17 @@ describe('GeminiClient', (): void => {
       return 'secret-key';
     });
 
-    const error: Error = new Error('Gemini HTTP error');
-    jest.spyOn(axios, 'post').mockRejectedValue(error);
+    const error: Error & { response: { status: number } } = Object.assign(
+      new Error('Gemini HTTP error'),
+      { response: { status: 400 } },
+    );
+    const postSpy = jest.spyOn(axios, 'post').mockRejectedValue(error);
 
     await expect(
       client.generateContent({ contents: [] }),
     ).rejects.toBe(error);
+    // 400 — не временная ошибка, повторов быть не должно.
+    expect(postSpy).toHaveBeenCalledTimes(1);
   });
 
   it('should propagate an HTTP error from generateEmbedding', async (): Promise<void> => {
@@ -126,8 +133,11 @@ describe('GeminiClient', (): void => {
       return 'secret-key';
     });
 
-    const error: Error = new Error('Gemini embedding HTTP error');
-    jest.spyOn(axios, 'post').mockRejectedValue(error);
+    const error: Error & { response: { status: number } } = Object.assign(
+      new Error('Gemini embedding HTTP error'),
+      { response: { status: 400 } },
+    );
+    const postSpy = jest.spyOn(axios, 'post').mockRejectedValue(error);
 
     await expect(
       client.generateEmbedding({
@@ -135,5 +145,6 @@ describe('GeminiClient', (): void => {
         embedContentConfig: { output_dimensionality: 1536 },
       }),
     ).rejects.toBe(error);
+    expect(postSpy).toHaveBeenCalledTimes(1);
   });
 });

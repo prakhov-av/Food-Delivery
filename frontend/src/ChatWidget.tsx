@@ -129,7 +129,10 @@ export default function ChatWidget({
         },
       ]);
     } catch (err) {
-      if (err instanceof ApiError && err.status >= 500) {
+      if (err instanceof ApiError && err.status === 429) {
+        // Превышение лимита — не поломка, об этом говорим отдельно.
+        setError(t('chat.errorRateLimit'));
+      } else if (err instanceof ApiError && err.status >= 500) {
         setError(t('chat.errorUnavailable'));
       } else {
         setError(

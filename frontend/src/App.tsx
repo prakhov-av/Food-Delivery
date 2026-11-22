@@ -24,7 +24,7 @@ import AuditView from './views/AuditView';
 import UploadView from './views/UploadView.tsx';
 import ChatWidget from './ChatWidget';
 import LanguageSwitch from './i18n/LanguageSwitch';
-import { useLang, useT } from './i18n';
+import { useLang, useT, useI18n } from './i18n';
 
 type ViewKey = 'restaurants' | 'orders' | 'users' | 'audit' | 'upload';
 
@@ -51,6 +51,7 @@ const ROLE_LABEL_KEYS: Record<Role, string> = {
 export default function App() {
   const t = useT();
   const lang = useLang();
+  const { setLang } = useI18n();
 
   // Гость — отдельный режим доступа, а не зарегистрированный CUSTOMER.
   const [mode, setMode] = useState<AccessMode>('anon');
@@ -139,12 +140,15 @@ export default function App() {
     setUser(null);
     setMode('anon');
     resetCatalog();
+    // Интерфейс всегда начинается с английского: язык выбора не хранится.
+    setLang('en');
   };
 
   const handleGuestLogout = async () => {
     await revokeGuestSession();
     setMode('anon');
     resetCatalog();
+    setLang('en');
   };
 
   if (checking) return <div className="empty">{t('app.loading')}</div>;

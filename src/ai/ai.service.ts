@@ -90,7 +90,13 @@ export class AiService {
 
       case 'openai': {
         const request: OpenAiRequest = new OpenAiRequest();
-        request.model = this.configService.getOrThrow('OPENAI_MODEL');
+
+        // Классификатор отвечает коротким JSON и не нуждается в большой
+        // модели: отдельная модель экономит время до ответа пользователя.
+        request.model = options?.classification
+          ? this.configService.get('OPENAI_CLASSIFIER_MODEL') ??
+            this.configService.getOrThrow('OPENAI_MODEL')
+          : this.configService.getOrThrow('OPENAI_MODEL');
         request.input = prompt;
 
         return this.openAiClient.generateContent(request);
