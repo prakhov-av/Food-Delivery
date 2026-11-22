@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { QdrantPoint } from './types/search/qdrant-point';
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { ConfigService } from '@nestjs/config';
@@ -14,15 +14,35 @@ import { ConfigurationException } from '../../exceptions/types/configuration.exc
 import { Lang } from '../../chat/locales/lang';
 
 /**
+ * Размерность вектора коллекции по умолчанию.
+ *
+ * Значение не должно быть зашито в коде: у другой модели эмбеддингов
+ * размерность другая (у text-embedding-004 по умолчанию 768), и новая
+ * среда создаст коллекцию, в которую ничего не запишется.
+ */
+const DEFAULT_VECTOR_SIZE = 1536;
+
+/** Таймаут одного запроса к Qdrant по умолчанию, мс. */
+const DEFAULT_TIMEOUT_MS = 5000;
+
+/**
    * Инкапсулирует HTTP-взаимодействие с Qdrant: сохранение, поиск, чтение и удаление точек векторной коллекции.
    */
 @Injectable()
 export class QdrantClient {
+  private readonly logger: Logger = new Logger(QdrantClient.name);
+
   private readonly baseUrl: string;
   private readonly archiveUrl: string;
 
   /** Поля, для которых создаётся keyword-индекс. */
   private readonly keywordIndexFields: string[] = ['language'];
+
+  /** Размерность вектора коллекции. */
+  private readonly vectorSize: number;
+
+  /** Таймаут одного запроса к Qdrant, мс. */
+  private readonly requestTimeoutMs: number;
 
   // Заголовок api-key добавляется только если задан QDRANT_API_KEY.
   // Без ключа запросы уходят как раньше (локальный Qdrant без защиты).
@@ -49,6 +69,24 @@ export class QdrantClient {
     if (apiKey) {
       this.requestConfig = { headers: { 'api-key': apiKey } };
     }
+
+    const configuredSize: number = Number(
+      this.configService.get('QDRANT_VECTOR_SIZE') ?? DEFAULT_VECTOR_SIZE,
+    );
+
+    this.vectorSize =
+      Number.isInteger(configuredSize) && configuredSize > 0
+        ? configuredSize
+        : DEFAULT_VECTOR_SIZE;
+
+    const configuredTimeout: number = Number(
+      this.configService.get('QDRANT_TIMEOUT_MS') ?? DEFAULT_TIMEOUT_MS,
+    );
+
+    this.requestTimeoutMs =
+      Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : DEFAULT_TIMEOUT_MS;
   }
 
   /**
@@ -59,12 +97,23 @@ export class QdrantClient {
       try {
         await this.put(url, {
           vectors: {
-            size: 1536,
+            size: this.vectorSize,
             distance: 'Cosine',
           },
         });
-      } catch {
-        // Collection already exists
+      } catch (error) {
+        // Коллекция уже есть (409) — это нормальное состояние.
+        // Любая другая ошибка (неверный ключ, недоступный Qdrant) должна
+        // быть видна: молчаливый catch прятал её до первого чата.
+        if (this.isConflict(error)) {
+          continue;
+        }
+
+        this.logger.error(
+          `Failed to create Qdrant collection ${url}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     }
 
@@ -73,6 +122,14 @@ export class QdrantClient {
     if (this.shouldCreatePayloadIndexes()) {
       await this.createPayloadIndexes();
     }
+  }
+
+  /** Статус ответа: 409 означает «уже существует». */
+  private isConflict(error: unknown): boolean {
+    const status: unknown = (error as { response?: { status?: number } })
+      ?.response?.status;
+
+    return status === 409;
   }
 
   /**
@@ -233,16 +290,55 @@ export class QdrantClient {
 
   // Единая точка для всех HTTP-вызовов: так api-key не пропустит ни один метод.
   // Без ключа третий аргумент не передаётся вовсе.
+  //
+  // У каждого запроса есть таймаут: зависший Qdrant больше не держит
+  // соединение и не съедает все попытки поиска подряд.
   private put(url: string, body: unknown): Promise<AxiosResponse> {
-    return this.requestConfig
-      ? axios.put(url, body, this.requestConfig)
-      : axios.put(url, body);
+    return this.requestWithRetry('put', url, body);
   }
 
   private post(url: string, body: unknown): Promise<AxiosResponse> {
-    return this.requestConfig
-      ? axios.post(url, body, this.requestConfig)
-      : axios.post(url, body);
+    return this.requestWithRetry('post', url, body);
+  }
+
+  /**
+   * HTTP-вызов с таймаутом и одной повторной попыткой на 5xx.
+   *
+   * Таймаут обязателен: зависший Qdrant иначе держит соединение, а поиск
+   * делает до четырёх попыток подряд. Повтор делается только на ошибке
+   * сервера: сетевой сбой и таймаут повторять бессмысленно.
+   */
+  private async requestWithRetry(
+    method: 'put' | 'post',
+    url: string,
+    body: unknown,
+  ): Promise<AxiosResponse> {
+    const config: AxiosRequestConfig = {
+      ...(this.requestConfig ?? {}),
+      timeout: this.requestTimeoutMs,
+    };
+
+    try {
+      return await axios[method](url, body, config);
+    } catch (error) {
+      if (!this.isServerError(error)) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `Qdrant ${method} ${url} failed with a server error, retrying once`,
+      );
+
+      return axios[method](url, body, config);
+    }
+  }
+
+  /** Ответ сервера с кодом 5xx: такой запрос имеет смысл повторить. */
+  private isServerError(error: unknown): boolean {
+    const status: unknown = (error as { response?: { status?: number } })
+      ?.response?.status;
+
+    return typeof status === 'number' && status >= 500 && status < 600;
   }
 
   // QDRANT_URL принимает ровно один адрес (без запятых и без /dashboard).

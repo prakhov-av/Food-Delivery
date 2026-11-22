@@ -21,6 +21,8 @@ export interface OrderLabels {
   noSuchOrderCourier: string;
   noSuchOrderCustomer: string;
   liveDataRequired: string;
+  /** Строка про «ещё N заказов» в списке заказов. {count} — число скрытых заказов. */
+  moreOrders: string;
 }
 
 export interface LocalePack {
@@ -31,6 +33,15 @@ export interface LocalePack {
   greetingAnswer: string;
   noKnowledgeAnswer: string;
   promptLeakAnswer: string;
+  /**
+   * Ответ, когда внешний сервис (LLM, эмбеддинги, векторная база) недоступен.
+   *
+   * Пользователь должен получить внятный ответ вместо 500: сбой провайдера
+   * не должен выглядеть как поломка приложения.
+   */
+  unavailableAnswer: string;
+  /** Ответ, когда идентичность исчерпала дневной лимит сообщений. */
+  dailyLimitAnswer: string;
 
   orderListPatterns: RegExp[];
   orderNumberPattern: RegExp;

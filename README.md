@@ -13,7 +13,7 @@ This is an educational project. Demo accounts and demo data are for local develo
 
 ## Stack and layout
 
-Backend: NestJS 11, TypeORM 1.1, PostgreSQL 15+, Qdrant over HTTP (optional API key), JWT in httpOnly cookies, `@nestjs/throttler` rate limiting, CSRF Origin check for state-changing requests, Swagger, Winston, Nodemailer, Mammoth for DOCX, `pdf-parse` for PDF, `class-validator`. Frontend: Vite 6, React 18, TypeScript, a native `fetch` client with cookie auth and automatic token refresh, and a dev-server proxy. Tests: Jest, ESLint and Prettier.
+Backend: NestJS 11, TypeORM 1.1, PostgreSQL 15+, Qdrant over HTTP (optional API key), JWT in httpOnly cookies, `@nestjs/throttler` rate limiting, CSRF Origin check for state-changing requests, Swagger, Winston, Nodemailer, Mammoth for DOCX, `pdf-parse` for PDF, `class-validator`. Frontend: Vite 6, React 18, TypeScript, a native `fetch` client with cookie auth and automatic token refresh, and a dev-server proxy. Tests: Jest, ESLint and Prettier, CI on GitHub Actions.
 
 ```text
 src/                    # Backend (NestJS + TypeORM)
@@ -34,6 +34,7 @@ src/                    # Backend (NestJS + TypeORM)
 └── main.ts             # Entry point
 frontend/               # React SPA (views per role, ChatWidget, api client)
 test/                   # Integration / API tests
+scripts/                # Knowledge base helpers: generate, upload, translate, inspect
 docs/knowledge-base/    # Starter documents for the assistant (+ demo/ for the safety check)
 database-demo/          # Demo data for local DB
 ```
@@ -168,8 +169,13 @@ The catalog part of the knowledge base can also be rebuilt from a running API in
 
 - `node scripts/generate-catalog-docs.mjs` reads the restaurants, menus and dishes through the API and writes `docs/knowledge-base/catalog/*.txt` together with `manifest.json`
 - `node scripts/upload-knowledge.mjs` uploads every file from the manifest through `POST /ingestion/upload`
+- `node scripts/translate-base-docs.mjs` translates the base documents of the knowledge base into English and German. The source texts are taken from the already uploaded documents in Qdrant, so the originals do not have to be in the repository. The result goes to `docs/knowledge-base/en/` and `docs/knowledge-base/de/` and is added to `manifest.json` with its own `documentId` (`auth-guide-en`, `auth-guide-de`)
+- `node scripts/export-base-docs.mjs` writes the base documents of the knowledge base back to `docs/knowledge-base/base/` and adds them to `manifest.json`. It is the way to edit a document that was uploaded by hand and therefore exists nowhere else
+- `node scripts/check-knowledge.mjs` shows what is in the knowledge collection and in the archive, which documents are outdated compared with the local files and which documents are not in the manifest
+- `node scripts/remove-document-points.mjs <documentId> [--confirm]` deletes the points of a document from the knowledge collection. Without `--confirm` it only shows what would be deleted
+- `node scripts/backfill-language.mjs` fills the missing `language` field of the points uploaded before the field was introduced. It is idempotent: the points that already have a language are not touched
 
-Both take their settings from the environment or from the `.env` file in the project root (`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `BASE_URL`, `ORIGIN`, `DOCS_DIR`); for another file set `$env:ENV_FILE = '.env.prod'`. The uploader also understands `ONLY_PREFIX` (upload only the documents whose id starts with it) and `DRY_RUN=1` (show what would be uploaded without sending anything). The generated documents are not tracked in git, so rebuild them after a fresh clone.
+All of them take their settings from the environment or from the `.env` file in the project root (`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `BASE_URL`, `ORIGIN`, `DOCS_DIR`); for another file set `$env:ENV_FILE = '.env.prod'`. The uploader also understands `ONLY_PREFIX` (upload only the documents whose id starts with it), `ONLY_IDS` (upload only the listed documents, separated by commas) and `DRY_RUN=1` (show what would be uploaded without sending anything). The generated documents are not tracked in git, so rebuild them after a fresh clone.
 
 The knowledge base of every environment is separate: the local Qdrant and the one on the Droplet do not synchronize, so the documents have to be uploaded in each of them.
 
@@ -186,13 +192,15 @@ The assistant tries to spend as few model calls as it can. The checks run in thi
 3. **Order fast path.** A question about a concrete order is recognized by its wording: an order number together with a phrase like "what's in", "status" or "when will it be delivered". Questions about the list of your orders ("what are my orders?", "show all orders") are recognized the same way. Both are answered straight from the database, so only the wording of the answer is generated: one model call instead of two.
 4. **Everything else** goes through the classifier. It picks the document type, decides whether live order data is needed and rewrites the question when it only makes sense together with the history. If the classifier returns something unusable, the assistant falls back to a general answer instead of failing.
 
-**Caches.** A classification is cached for ten minutes, so the same question in the same context does not pay for the classifier twice. Query embeddings are cached as well.
+**Caches.** A classification is cached for ten minutes, so the same question in the same context does not pay for the classifier twice. Query embeddings are cached as well. A ready answer is cached for five minutes: a question that does not refer to the previous turn gets the same answer for everybody, and the second time it is asked there is no model call at all. An answer that refers to the earlier turns ("as you asked before, ...") is not cached, because without the context it would be wrong.
 
-**Prefetching.** The embedding of the question is requested in parallel with the classification call, so the search can start as soon as the classification is known. It is skipped whenever the embedding would be wasted: for a question about an order (that one is answered from live data and needs no search) and for a follow-up, where the classifier rewrites the question and the embedding of the original wording is never used.
+**Prefetching.** The embedding of the question is requested in parallel with the classification call, so the search can start as soon as the classification is known. It is skipped when the embedding would be wasted: for a follow-up, where the classifier rewrites the question, and for a question about the data of an order ("what is the status of my order?"), which is answered from live data and needs no search. A question about the rules of an order ("how do I cancel an order?") is prefetched, because that one goes to the knowledge base.
+
+**Classifier model.** The classifier only has to answer with a short JSON, so it can use a cheaper and faster model than the answer: `OPENAI_CLASSIFIER_MODEL` (for example `gpt-4.1-nano`) falls back to `OPENAI_MODEL` when it is not set.
 
 **History.** Conversation history is stored per owner: by user id for authenticated users and by guest session id for guests. The persisted chat log is retained for 30 days by default (`CHAT_HISTORY_RETENTION_DAYS`); recent messages are loaded separately for each owner. The assistant also remembers the order that was discussed last within the corresponding chat context, so "and what about it?" is understood as a question about that order.
 
-**Measured effect.** On the local benchmark of 47 questions (14 about live orders, 33 from the knowledge base) the model calls per set went from 94 to 77. Greetings and injection attempts cost nothing at all, a live order question needs one call instead of two (median 2.3 s → 1.3 s), and a follow-up about an order still needs two calls, because the classifier has to resolve the reference to the last discussed order.
+**Measured effect.** On the local benchmark of 47 questions (14 about live orders, 33 from the knowledge base) the model calls per set went from 94 to 77. Greetings and injection attempts cost nothing at all, a live order question needs one call instead of two (median 2.3 s → 1.3 s), and a follow-up about an order still needs two calls, because the classifier has to resolve the reference to the last discussed order. A knowledge base question costs two model calls: the classifier and the answer. The duration of every request is written to the log as `chat branch=... lang=... llmCalls=... durationMs=...`, which is where the effect of the caches and of the prefetching is visible.
 
 ### Frontend
 
@@ -342,13 +350,32 @@ npm run build             # Type check and production build
 
 Run `npm test`, `npm run test:integration` and `npm run test:api` before every push. `npm run test:cov` prints the coverage.
 
+The unit suite has about 890 tests in 70 suites. CI runs on every push and pull request to `main` (`.github/workflows/ci.yml`): it installs the dependencies with the npm version the lockfile was built with (`npm@10.9.9`), builds the backend, checks that the entry point `dist/main.js` exists, runs the unit tests and builds the frontend.
+
 What is covered: authentication and authorization (service, controller, guards, JWT, cookies), the CSRF Origin check, the CRUD services, controllers and DTO validation, the order business rules (access by role, status transitions, courier assignment, limits, item changes and totals), error handling, the audit log, the RAG pipeline (ingestion with the safety verdict, chunking, embeddings, Qdrant client with and without an API key, chat including the "nothing found" answer) and the live order data used by the assistant.
+
+The newer parts have tests too: the language packs of all three languages (injection patterns, greetings, order markers), the caches of the assistant and the prefetching of the embedding, the retry helper of the AI clients (429, 503 and network errors are repeated, 400 is not), the money and date formatting of the live data and the daily limit.
 
 Not covered: browser end-to-end tests, the endpoint-by-role matrix against a live database and frontend tests.
 
 Services that write to the audit log receive a mock `AuditService` (`{ record: jest.fn() }`) in their specs, so unit tests never touch the database. When you change a constructor or a repository method, update the matching mock, that is almost always the reason a spec breaks. Chat specs mock the Qdrant search: a test that expects a model answer must return at least one chunk, an empty result now produces the fixed "no information" answer.
 
 The integration and API tests call the backend without a browser, so they send no `Origin` header. They need `CSRF_ALLOW_NO_ORIGIN=true` or an explicit `Origin` header.
+
+## Recent fixes
+
+Things that were broken and are not anymore:
+
+- The safety check sent innocent documents to quarantine. The FAQ of the administrator describes the safety check itself, and the model read "upload a file with the same documentId" as an order to the assistant. Those sentences are plain facts now, in all three languages. Real injections still go to quarantine.
+- "How do I cancel an order?" was answered three times over. The embedding was prefetched only for questions without the word "order", so classifier, embedding and answer ran one after another.
+- Prices carried a ruble sign although they are in euros.
+- Two documents of the knowledge base lived under the ids `ca1` and `cm1` instead of `capabilities-admin` and `capabilities-courier`.
+- `CHAT_HISTORY_RETENTION_DAYS` was read from `process.env` at import time, where the `.env` file is not loaded yet. The value was ignored without a word.
+- A single 400 from the model failed the whole upload of a document. Temporary errors are repeated now.
+- The login screen had no language switcher: the language came from the browser, the switcher appeared after the login.
+- The catalog was generated with the locale `en-DE`. No such locale exists.
+- The Gemini free tier allows 20 requests per day, not per minute, so the whole knowledge base does not fit into one day with that model.
+- The knowledge base had only Russian base documents. English and German fell back to Russian. All three languages are in now.
 
 ## Deployment (DigitalOcean)
 
@@ -409,7 +436,10 @@ The volume keeps the data when the container is recreated, `--restart unless-sto
 - Lists of orders, order items and users are loaded and filtered in application code and are not paginated yet
 - The database schema is managed by TypeORM migrations (`synchronize: false`). Migration execution is an explicit deployment step; review pending migrations and their rollback behaviour before applying them
 - Access denials (`403`), rate limit hits (`429`) and sign-outs are not in the audit log yet
-- Prices are displayed in ₽ regardless of the data
+- The upload of a document is audited without the documentId, so a failed upload cannot be attributed to a document from the log alone
+- The caches of the assistant (classification, embedding, answer) live in the memory of the process: with several instances of the backend they are not shared
+- The archive of the knowledge base grows with every new version of a document and is never cleaned up
+- The currency is hardcoded to euro. Only the number format follows the language of the answer (`12.50 €`, `12,50 €`)
 - Qdrant is reached over plain HTTP, so the API key travels unencrypted. The key stops casual access, but real protection needs TLS (a reverse proxy with a domain in front of Qdrant) or a private network
 - The Droplet has 512 MB of RAM, which is enough for a small knowledge base but not for a large one
 - The knowledge base of the local Qdrant and the one on the Droplet are separate and have to be filled separately
@@ -424,7 +454,7 @@ The volume keeps the data when the container is recreated, `--restart unless-sto
 - Pagination and SQL-level filtering for large lists
 - TLS in front of Qdrant (or a private network between the app and the Droplet)
 - Persistent refresh tokens and per-account login lockout
-- A CI pipeline
+- Streaming answers: the text of the assistant appears while it is written (SSE) instead of after the whole answer is ready
 - Deployment hardening (swap, log rotation, connection pool, audit retention)
 - Reason of a quarantine verdict stored with the document, a list of quarantined documents in the admin UI
 - Retrieval calibrated per document type, so that a question without an answer is caught without a model call

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { useT } from '../i18n';
+import LanguageSwitch from '../i18n/LanguageSwitch';
 
 type Tab = 'login' | 'register';
 
@@ -88,6 +89,14 @@ export default function AuthPage({
   return (
     <div className="auth-wrap">
       <div className="auth-card card">
+        {/*
+          Переключатель языка на экране входа: иначе язык нельзя сменить
+          до входа, а интерфейс всегда стартует с английского.
+        */}
+        <div className="auth-lang">
+          <LanguageSwitch />
+        </div>
+
         <div className="logo auth-logo">
           <span className="logo-mark">🍔</span>
 

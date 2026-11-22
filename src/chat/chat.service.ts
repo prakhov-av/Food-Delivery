@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { VectorStorageService } from '../vector-storage/vector-storage.service';
 import { AiService } from '../ai/ai.service';
@@ -22,6 +23,7 @@ import { LanguageService } from './language/language.service';
 import { LeakGuardService } from './leak-guard.service';
 import { ALL_LANGS, DEFAULT_LANG, Lang } from './locales/lang';
 import { LocalePack } from './locales/locale-pack';
+import { ChatBranch } from './enums/chat-branch.enum';
 import {
   ALL_FOLLOW_UP_PRONOUNS,
   ALL_FOLLOW_UP_START,
@@ -38,10 +40,59 @@ import {
 const MAX_HISTORY_LIMIT = 100;
 const MAX_HISTORY_MESSAGES = 10;
 const CLASSIFIER_CACHE_TTL_MS = 10 * 60 * 1000;
-const CLASSIFIER_CACHE_LIMIT = 100;
+const CLASSIFIER_CACHE_LIMIT = 500;
 const EMBEDDING_CACHE_LIMIT = 200;
+
+/**
+ * Сколько сессий держится в памяти.
+ *
+ * Карты памяти процесса живут, пока живёт процесс: без границы каждый
+ * гость добавлял ключ, и память росла вместе с числом посетителей.
+ */
+const MAX_SESSION_ENTRIES = 5000;
+
+/** Сколько живёт кэш готового ответа. */
+const ANSWER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Сколько ответов помещается в кэш. */
+const ANSWER_CACHE_LIMIT = 200;
+
+/**
+ * Слова, по которым видно, что ответ привязан к предыдущим репликам.
+ *
+ * Такой ответ нельзя отдавать другому вопросу с тем же текстом: он
+ * потеряет смысл без контекста диалога. В кэш попадают только ответы,
+ * которые сами по себе.
+ */
+const CONTEXT_BOUND_MARKERS: RegExp[] = [
+  /вы\s+(уже\s+)?спрашива/i,
+  /вы\s+упомянули/i,
+  /как\s+я\s+(уже\s+)?(сказал|объяснил|ответил)/i,
+  /как\s+я\s+отвечал/i,
+  /выше\s+я\s+(написал|сказал|упомянул)/i,
+  /предыдущ(ий|его|ем)\s+(вопрос|сообщени|реплик|отв)/i,
+  /вы\s+уточняли/i,
+  /as\s+(you\s+)?(asked|mentioned)\s+(earlier|before|above)/i,
+  /like\s+(you\s+)?(asked|mentioned)\s+(earlier|before|above)/i,
+  /your\s+(previous|last)\s+(question|message)/i,
+  /(wie\s+)?sie\s+haben\s+(vorher|früher)\s+gefragt/i,
+  /ihre\s+(letzte|vorige)\s+frage/i,
+  /wie\s+ich\s+(schon\s+)?gesagt\s+habe/i,
+];
+
+/** Сколько сообщений в сутки разрешено одной идентичности. */
+const DEFAULT_DAILY_LIMIT = 100;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 interface CachedClassification {
   raw: string;
+  expiresAt: number;
+}
+
+interface CachedAnswer {
+  answer: string;
+  documentType: DocumentType;
   expiresAt: number;
 }
 
@@ -56,6 +107,33 @@ interface FinishParams {
   chunksFound?: number;
 }
 
+/**
+ * Состояние одного запроса.
+ *
+ * Живёт вместе с запросом: по нему считается число вызовов модели и
+ * пишется строка метрик с веткой обработки.
+ */
+interface ChatRequestContext {
+  lang: Lang;
+  branch: ChatBranch;
+  llmCalls: number;
+  startedAt: number;
+  /** Дневной лимит уже проверен в этом запросе. */
+  limitChecked: boolean;
+}
+
+/**
+ * Результат распознавания запроса про заказы.
+ *
+ * useTemplate отвечает на вопрос, показывать ли сырой блок заказа или
+ * отдать данные модели, чтобы она сформулировала ответ на конкретный
+ * вопрос пользователя.
+ */
+interface LiveMatch {
+  classification: ChatClassification;
+  useTemplate: boolean;
+}
+
 const MAX_STANDALONE_QUESTION_LENGTH = 300;
 
 /**
@@ -65,6 +143,13 @@ const MAX_STANDALONE_QUESTION_LENGTH = 300;
  * лучше отдать документ на языке по умолчанию, чем ответить «нет информации».
  */
 const DEFAULT_LANG_FALLBACK_MIN_SCORE = 0.3;
+
+/**
+ * Порог релевантности фрагмента: ниже него фрагмент не идёт в контекст.
+ *
+ * Ноль по умолчанию: порог подбирается по eval-набору, а не на глаз.
+ */
+const DEFAULT_MIN_CHUNK_SCORE = 0;
 
 const toWords = (text: string): string[] =>
   text
@@ -80,6 +165,21 @@ const hasProperNoun = (text: string): boolean =>
     .slice(1)
     .some((word: string): boolean => /^\p{Lu}\p{Ll}+$/u.test(word));
 
+/**
+ * Нормализация текста перед проверкой инъекций.
+ *
+ *  - NFKC сворачивает совместимые символы (например, полноширинные буквы).
+ *  - Символы нулевой ширины вырезаются: «ignore<ZWSP> all previous» иначе
+ *    проходит мимо регексов.
+ *  - Пробелы схлопываются, чтобы переносы строк не ломали шаблоны.
+ */
+const normalizeForDetection = (text: string): string =>
+  text
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 /** Приветствия и вопросы о возможностях по всем языкам. */
 const ALL_GREETINGS: Set<string> = new Set(
   ALL_LANGS.flatMap((lang: Lang): string[] => LOCALE_PACKS[lang].greetings),
@@ -89,12 +189,6 @@ const ALL_CAPABILITY_QUESTIONS: Set<string> = new Set(
   ALL_LANGS.flatMap((lang: Lang): string[] =>
     LOCALE_PACKS[lang].capabilityQuestions,
   ),
-);
-
-const MIN_CHUNK_SCORE: number = Number(process.env.CHAT_MIN_SCORE ?? 0);
-
-const LANG_FALLBACK_MIN_SCORE: number = Number(
-  process.env.CHAT_LANG_FALLBACK_MIN_SCORE ?? DEFAULT_LANG_FALLBACK_MIN_SCORE,
 );
 
 /**
@@ -113,6 +207,16 @@ export class ChatService {
   private readonly classificationCache: Map<string, CachedClassification> =
     new Map();
   private readonly embeddingCache: Map<string, Promise<number[]>> = new Map();
+  private readonly answerCache: Map<string, CachedAnswer> = new Map();
+
+  /** Порог релевантности фрагмента. */
+  private readonly minChunkScore: number;
+
+  /** Порог, ниже которого поиск повторяется на другом языке. */
+  private readonly langFallbackMinScore: number;
+
+  /** Сколько сообщений в сутки разрешено одной идентичности. */
+  private readonly dailyLimit: number;
 
   constructor(
     private readonly embeddingsService: EmbeddingsService,
@@ -124,27 +228,97 @@ export class ChatService {
     private readonly chatLogService: ChatLogService,
     private readonly languageService: LanguageService,
     private readonly leakGuardService: LeakGuardService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.minChunkScore = this.readNumber(
+      'CHAT_MIN_SCORE',
+      DEFAULT_MIN_CHUNK_SCORE,
+    );
+    this.langFallbackMinScore = this.readNumber(
+      'CHAT_LANG_FALLBACK_MIN_SCORE',
+      DEFAULT_LANG_FALLBACK_MIN_SCORE,
+    );
+    this.dailyLimit = this.readNumber('CHAT_DAILY_LIMIT', DEFAULT_DAILY_LIMIT);
+  }
+
+  /**
+   * Читает числовую настройку из конфигурации.
+   *
+   * Настройки читаются через ConfigService, а не из process.env на уровне
+   * модуля: process.env в момент импорта ещё не содержит .env, и локально
+   * значения молча игнорировались.
+   */
+  private readNumber(key: string, fallback: number): number {
+    const raw: unknown = this.configService.get(key);
+
+    if (raw === undefined || raw === null || raw === '') {
+      return fallback;
+    }
+
+    const value: number = Number(raw);
+
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  /**
+   * Кладёт значение в карту памяти, ограничивая её размер.
+   *
+   * Значение становится самым свежим, а самое старое вытесняется, когда
+   * карта переполняется.
+   */
+  private setBounded<K, V>(
+    map: Map<K, V>,
+    key: K,
+    value: V,
+    limit: number = MAX_SESSION_ENTRIES,
+  ): void {
+    map.delete(key);
+    map.set(key, value);
+
+    if (map.size > limit) {
+      const oldest: K | undefined = map.keys().next().value;
+
+      if (oldest !== undefined) {
+        map.delete(oldest);
+      }
+    }
+  }
 
   /**
    * Предзагружать эмбеддинг стоит только тогда, когда классификатор не станет
    * переписывать вопрос: для уточняющих реплик он вернёт standaloneQuestion,
    * и эмбеддинг исходной фразы уйдёт в пустоту (лишний вызов embeddings).
    *
-   * Вопрос про заказы почти всегда уходит в live-ветку, где поиск не нужен.
+   * Вопрос про заказы предзагружается только когда спрашивают про правила
+   * («Как отменить заказ?»): такой вопрос уходит в базу знаний, и без
+   * предзагрузки ответ ждал три запроса подряд — классификатор, эмбеддинг,
+   * генерация. Вопрос про данные заказа («статус моего заказа») уходит в
+   * живую ветку, где поиск не нужен.
    */
   private shouldPrefetchEmbedding(
     request: string,
     chatHistory: ChatMessage[],
   ): boolean {
-    if (this.looksLikeOrderQuestion(request)) {
+    // Уточняющая реплика: классификатор перепишет вопрос.
+    if (chatHistory.length > 0 && this.isFollowUp(request, chatHistory)) {
       return false;
     }
 
-    // Без истории классификатору нечего переписывать: поиск пойдёт по фразе
-    // пользователя, и предзагрузка точно пригодится.
+    if (this.looksLikeOrderQuestion(request)) {
+      return this.isNotAboutOrderData(request);
+    }
+
+    return true;
+  }
+
+  /**
+   * Уточняющая реплика: вопрос продолжает предыдущую тему.
+   *
+   * От этого зависит, попадёт ли история в ключ кэша классификации.
+   */
+  private isFollowUp(request: string, chatHistory: ChatMessage[]): boolean {
     if (chatHistory.length === 0) {
-      return true;
+      return false;
     }
 
     if (
@@ -153,7 +327,7 @@ export class ChatService {
       ) ||
       ALL_FOLLOW_UP_START.some((pattern: RegExp): boolean => pattern.test(request))
     ) {
-      return false;
+      return true;
     }
 
     // Предыдущий вопрос был про конкретный ресторан или блюдо, а текущий
@@ -161,11 +335,7 @@ export class ChatService {
     const lastRequest: string =
       chatHistory[chatHistory.length - 1]?.userRequest ?? '';
 
-    if (hasProperNoun(lastRequest) && !hasProperNoun(request)) {
-      return false;
-    }
-
-    return true;
+    return hasProperNoun(lastRequest) && !hasProperNoun(request);
   }
 
   /** Вопрос про заказы по любому из поддерживаемых языков. */
@@ -227,10 +397,14 @@ export class ChatService {
     lastOrderId: number | undefined,
     lang: Lang,
   ): string {
-    const tail: string = history
-      .slice(-2)
-      .map((message: ChatMessage): string => message.userRequest)
-      .join('|');
+    // История попадает в ключ только для уточняющих реплик: для обычного
+    // вопроса история меняла ключ, и кэш почти никогда не попадал.
+    const tail: string = this.isFollowUp(request, history)
+      ? history
+          .slice(-2)
+          .map((message: ChatMessage): string => message.userRequest)
+          .join('|')
+      : '';
 
     return `${userRole}|${lang}|${lastOrderId ?? ''}|${tail}|${request}`;
   }
@@ -271,6 +445,73 @@ export class ChatService {
     }
   }
 
+  /**
+   * Ключ кэша готовых ответов.
+   *
+   * Кэшируются только ответы из базы знаний: они не зависят от состояния
+   * заказов и одинаковы для всех гостей с тем же вопросом.
+   */
+  private answerCacheKey(
+    userRole: Role,
+    request: string,
+    lang: Lang,
+  ): string {
+    const normalized: string = request
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return `${lang}|${userRole}|${normalized}`;
+  }
+
+  private readAnswerCache(key: string): CachedAnswer | undefined {
+    const hit: CachedAnswer | undefined = this.answerCache.get(key);
+
+    if (!hit) {
+      return undefined;
+    }
+
+    if (hit.expiresAt <= Date.now()) {
+      this.answerCache.delete(key);
+      return undefined;
+    }
+
+    return hit;
+  }
+
+  private rememberAnswer(
+    key: string,
+    answer: string,
+    documentType: DocumentType,
+  ): void {
+    this.answerCache.set(key, {
+      answer,
+      documentType,
+      expiresAt: Date.now() + ANSWER_CACHE_TTL_MS,
+    });
+
+    if (this.answerCache.size > ANSWER_CACHE_LIMIT) {
+      const oldest: string | undefined = this.answerCache.keys().next().value;
+
+      if (oldest !== undefined) {
+        this.answerCache.delete(oldest);
+      }
+    }
+  }
+
+  /**
+   * Привязан ли ответ к предыдущим репликам диалога.
+   *
+   * Такой ответ нельзя отдать другому гостю с тем же вопросом: без контекста
+   * он теряет смысл. Определение по словам намеренно грубое: лишний ответ,
+   * который не попадёт в кэш, безопаснее, чем перепутанный ответ у гостя.
+   */
+  private refersToEarlierTurn(answer: string): boolean {
+    return CONTEXT_BOUND_MARKERS.some((marker: RegExp): boolean =>
+      marker.test(answer),
+    );
+  }
+
   private protectPrompt(
     answer: string,
     pack: LocalePack,
@@ -287,14 +528,59 @@ export class ChatService {
   }
 
   /**
+   * Выполняет внешний вызов, не роняя запрос.
+   *
+   * Сбой провайдера (лимит, таймаут, недоступность базы) не должен
+   * выглядеть как поломка приложения: пользователь получает внятный ответ.
+   */
+  private async safely<T>(
+    label: string,
+    job: () => Promise<T>,
+  ): Promise<T | undefined> {
+    try {
+      return await job();
+    } catch (error) {
+      this.logger.error(
+        `${label} failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      return undefined;
+    }
+  }
+
+  /**
+   * Вызов модели с учётом счётчика вызовов.
+   */
+  private async callModel(
+    ctx: ChatRequestContext,
+    prompt: string,
+    options?: { classification?: boolean },
+  ): Promise<string | undefined> {
+    ctx.llmCalls += 1;
+
+    return this.safely('AI generation', () =>
+      this.aiService.generateResponse(prompt, options),
+    );
+  }
+
+  /**
    * Попытка инъекции промпта.
    *
    * Паттерны берутся из всех языковых паков сразу: атакующий пишет на любом
    * языке независимо от того, какой язык определился для запроса.
    */
   private isInjectionAttempt(request: string): boolean {
+    const normalized: string = normalizeForDetection(request);
+
+    if (normalized.length === 0) {
+      return false;
+    }
+
     return ALL_INJECTION_PATTERNS.some((pattern: RegExp): boolean =>
-      pattern.test(request),
+      pattern.test(normalized),
     );
   }
 
@@ -333,6 +619,45 @@ export class ChatService {
     });
   }
 
+  /**
+   * Проверяет дневной лимит сообщений для идентичности.
+   *
+   * Счётчик считается по журналу чата: он уже есть и не требует
+   * дополнительного хранилища.
+   */
+  private async dailyLimitAnswer(
+    ctx: ChatRequestContext,
+    owner: ChatOwner,
+    pack: LocalePack,
+  ): Promise<string | undefined> {
+    if (this.dailyLimit <= 0) {
+      return undefined;
+    }
+
+    // Проверка нужна один раз на запрос: запрос может дойти до модели и по
+    // пути классификатора, и по пути живых данных.
+    if (ctx.limitChecked) {
+      return undefined;
+    }
+
+    ctx.limitChecked = true;
+
+    const since: Date = new Date(Date.now() - DAY_MS);
+
+    const count: number | undefined = await this.safely(
+      'Daily limit check',
+      () => this.chatLogService.countSince(owner, since),
+    );
+
+    // Сбой проверки не должен блокировать чат: неизвестный счётчик
+    // трактуется как «лимит не исчерпан».
+    if (count === undefined || count < this.dailyLimit) {
+      return undefined;
+    }
+
+    return pack.dailyLimitAnswer;
+  }
+
   /** Обрабатывает запрос чата с изолированной идентичностью пользователя или гостя. */
   async generateResponseForIdentity(
     request: string,
@@ -360,9 +685,19 @@ export class ChatService {
     );
     const pack: LocalePack = LOCALE_PACKS[lang];
 
+    const ctx: ChatRequestContext = {
+      lang,
+      branch: ChatBranch.NO_KNOWLEDGE,
+      llmCalls: 0,
+      startedAt: Date.now(),
+      limitChecked: false,
+    };
+
     if (this.isInjectionAttempt(request)) {
+      ctx.branch = ChatBranch.INJECTION;
       this.logger.warn(`Prompt injection pattern in request: ${identityLabel}`);
-      return this.finish({
+
+      return this.finish(ctx, {
         owner, ownerKey, userRole, request,
         answer: pack.promptLeakAnswer,
         kind: ChatLogKind.BLOCKED,
@@ -372,7 +707,9 @@ export class ChatService {
 
     const canned: string | undefined = this.cannedAnswer(request, pack);
     if (canned !== undefined) {
-      return this.finish({
+      ctx.branch = ChatBranch.CANNED;
+
+      return this.finish(ctx, {
         owner, ownerKey, userRole, request,
         answer: canned,
         kind: ChatLogKind.KNOWLEDGE,
@@ -380,18 +717,64 @@ export class ChatService {
       });
     }
 
-    const fastLiveClassification: ChatClassification | undefined =
+    const fastLiveMatch: LiveMatch | undefined =
       this.matchLiveClassification(request, ownerKey);
 
-    if (fastLiveClassification !== undefined) {
+    if (fastLiveMatch !== undefined) {
       // Вопрос про заказы распознан без модели: данные из БД уже готовы
-      // и подписаны на языке пользователя, вызывать LLM не нужно.
+      // и подписаны на языке пользователя.
       return this.answerLive(
-        fastLiveClassification, request, identity, ownerKey, chatHistory, lang, true,
+        ctx, fastLiveMatch.classification, request, identity, ownerKey,
+        chatHistory, lang, fastLiveMatch.useTemplate,
       );
     }
 
+    // Ответы из базы знаний не зависят от состояния заказов: одинаковый
+    // вопрос получает одинаковый ответ. Вопрос, который не уточняет
+    // предыдущую реплику, кэшируется даже при наличии истории: ответ всё
+    // равно одинаковый, а экономия — два запроса к модели.
+    const cacheable: boolean = !this.isFollowUp(request, chatHistory);
+    const answerCacheKey: string | undefined = cacheable
+      ? this.answerCacheKey(userRole, request, lang)
+      : undefined;
+
+    if (answerCacheKey !== undefined) {
+      const cachedAnswer: CachedAnswer | undefined =
+        this.readAnswerCache(answerCacheKey);
+
+      if (cachedAnswer !== undefined) {
+        ctx.branch = ChatBranch.RAG;
+
+        return this.finish(ctx, {
+          owner, ownerKey, userRole, request,
+          answer: cachedAnswer.answer,
+          kind: ChatLogKind.KNOWLEDGE,
+          documentType: cachedAnswer.documentType,
+        });
+      }
+    }
+
     const lastOrderId = this.lastOrderIds.get(ownerKey);
+
+    // Дневной лимит ограничивает расход на модель, поэтому он проверяется
+    // перед первым вызовом модели, а не перед шаблонными ответами: список
+    // заказов и ответ по номеру остаются доступными всегда.
+    const limited: string | undefined = await this.dailyLimitAnswer(
+      ctx,
+      owner,
+      pack,
+    );
+    if (limited !== undefined) {
+      ctx.branch = ChatBranch.NO_KNOWLEDGE;
+
+      return this.finish(ctx, {
+        owner, ownerKey, userRole, request,
+        answer: limited,
+        kind: ChatLogKind.NO_ANSWER,
+        documentType: DocumentType.SYSTEM,
+      });
+    }
+
     const classifierPrompt: string = this.promptService
       .buildPromptForDocumentType(lang)
       .withUserRole(userRole)
@@ -415,41 +798,74 @@ export class ChatService {
         ? this.embedQuery(request)
         : undefined;
 
-    let classificationResponse: string;
+    let classificationResponse: string | undefined;
     if (cachedClassification !== undefined) {
       classificationResponse = cachedClassification;
     } else {
       this.logger.debug(
         `AI classification request started: ${identityLabel}, lang=${lang}, provider=configured, promptLength=${classifierPrompt.length}`,
       );
-      classificationResponse = await this.aiService.generateResponse(
-        classifierPrompt,
-        { classification: true },
-      );
+      classificationResponse = await this.callModel(ctx, classifierPrompt, {
+        classification: true,
+      });
+
+      if (classificationResponse === undefined) {
+        return this.finish(ctx, {
+          owner, ownerKey, userRole, request,
+          answer: pack.unavailableAnswer,
+          kind: ChatLogKind.NO_ANSWER,
+          documentType: DocumentType.SYSTEM,
+        });
+      }
+
       this.rememberClassification(classificationKey, classificationResponse);
     }
 
     const classification: ChatClassification = this.classify(classificationResponse);
     if (classification.liveDataRequired) {
       return this.answerLive(
-        classification, request, identity, ownerKey, chatHistory, lang, false,
+        ctx, classification, request, identity, ownerKey, chatHistory, lang,
+        false,
       );
     }
 
     const documentType: DocumentType = classification.documentType;
     const searchQuery: string = classification.standaloneQuestion ?? request;
-    const embedding: number[] =
+    const embeddingPromise: Promise<number[]> =
       prefetchedEmbedding && searchQuery === request
-        ? await prefetchedEmbedding
-        : await this.embedQuery(searchQuery);
+        ? prefetchedEmbedding
+        : this.embedQuery(searchQuery);
 
-    const relevantChunks: QdrantResult[] = await this.searchChunks(
+    const embedding: number[] | undefined = await this.safely(
+      'Embedding generation',
+      () => embeddingPromise,
+    );
+
+    if (embedding === undefined) {
+      return this.finish(ctx, {
+        owner, ownerKey, userRole, request,
+        answer: pack.unavailableAnswer,
+        kind: ChatLogKind.NO_ANSWER,
+        documentType,
+      });
+    }
+
+    const relevantChunks: QdrantResult[] | undefined = await this.searchChunks(
       embedding, documentType, userRole, lang,
     );
 
+    if (relevantChunks === undefined) {
+      return this.finish(ctx, {
+        owner, ownerKey, userRole, request,
+        answer: pack.unavailableAnswer,
+        kind: ChatLogKind.NO_ANSWER,
+        documentType,
+      });
+    }
+
     // Слабые фрагменты в контекст не берём: дешевле ответить «нет информации».
     const strongChunks: QdrantResult[] = relevantChunks.filter(
-      (chunk: QdrantResult): boolean => (chunk.score ?? 0) >= MIN_CHUNK_SCORE,
+      (chunk: QdrantResult): boolean => (chunk.score ?? 0) >= this.minChunkScore,
     );
 
     this.logger.debug(
@@ -459,7 +875,9 @@ export class ChatService {
     );
 
     if (strongChunks.length === 0) {
-      return this.finish({
+      ctx.branch = ChatBranch.NO_KNOWLEDGE;
+
+      return this.finish(ctx, {
         owner, ownerKey, userRole, request,
         answer: pack.noKnowledgeAnswer,
         kind: ChatLogKind.NO_ANSWER,
@@ -480,12 +898,36 @@ export class ChatService {
     this.logger.debug(
       `AI chat request started: ${identityLabel}, mode=knowledge-base, lang=${lang}, promptLength=${prompt.length}`,
     );
-    const protectedAnswer = this.protectPrompt(
-      await this.aiService.generateResponse(prompt),
-      pack,
-    );
 
-    return this.finish({
+    const rawAnswer: string | undefined = await this.callModel(ctx, prompt);
+
+    if (rawAnswer === undefined) {
+      return this.finish(ctx, {
+        owner, ownerKey, userRole, request,
+        answer: pack.unavailableAnswer,
+        kind: ChatLogKind.NO_ANSWER,
+        documentType,
+        chunksFound: strongChunks.length,
+      });
+    }
+
+    const protectedAnswer = this.protectPrompt(rawAnswer, pack);
+
+    if (
+      answerCacheKey !== undefined &&
+      !protectedAnswer.blocked &&
+      !this.refersToEarlierTurn(protectedAnswer.answer)
+    ) {
+      this.rememberAnswer(
+        answerCacheKey,
+        protectedAnswer.answer,
+        documentType,
+      );
+    }
+
+    ctx.branch = protectedAnswer.blocked ? ChatBranch.INJECTION : ChatBranch.RAG;
+
+    return this.finish(ctx, {
       owner, ownerKey, userRole, request,
       answer: protectedAnswer.answer,
       kind: protectedAnswer.blocked ? ChatLogKind.BLOCKED : ChatLogKind.KNOWLEDGE,
@@ -501,13 +943,16 @@ export class ChatService {
    * любой тип документа. Попытка следующего языка делается, только если
    * лучший результат текущего хуже порога: иначе качественный ответ на
    * языке пользователя не был бы заменён документом на другом языке.
+   *
+   * undefined означает, что все попытки провалились: наверху отдаётся
+   * ответ о недоступности сервиса, а не «нет информации».
    */
   private async searchChunks(
     embedding: number[],
     documentType: DocumentType,
     userRole: Role,
     lang: Lang,
-  ): Promise<QdrantResult[]> {
+  ): Promise<QdrantResult[] | undefined> {
     const attempts: { lang?: Lang; documentType?: DocumentType }[] = [
       { lang, documentType },
     ];
@@ -521,15 +966,24 @@ export class ChatService {
 
     let best: QdrantResult[] = [];
     let bestScore: number = -1;
+    let failures: number = 0;
 
     for (const attempt of attempts) {
-      const chunks: QdrantResult[] =
-        await this.vectorStorageService.getRelevantChunkByAccess(
-          embedding,
-          attempt.documentType,
-          userRole,
-          attempt.lang,
-        );
+      const chunks: QdrantResult[] | undefined = await this.safely(
+        'Qdrant search',
+        () =>
+          this.vectorStorageService.getRelevantChunkByAccess(
+            embedding,
+            attempt.documentType,
+            userRole,
+            attempt.lang,
+          ),
+      );
+
+      if (chunks === undefined) {
+        failures += 1;
+        continue;
+      }
 
       const score: number = this.topScore(chunks);
 
@@ -538,9 +992,13 @@ export class ChatService {
         bestScore = score;
       }
 
-      if (score >= LANG_FALLBACK_MIN_SCORE) {
+      if (score >= this.langFallbackMinScore) {
         return chunks;
       }
+    }
+
+    if (failures === attempts.length) {
+      return undefined;
     }
 
     return best;
@@ -611,17 +1069,28 @@ export class ChatService {
     }));
   }
 
+  /**
+   * Распознаёт запрос про заказы без LLM-классификатора.
+   *
+   * Шаблон (useTemplate) остаётся для списка заказов и для запроса
+   * «номер + маркер»: там данные и есть ответ. Вопрос «мой заказ» —
+   * это конкретный вопрос пользователя, поэтому данные уходят модели,
+   * и она формулирует ответ по вопросу.
+   */
   private matchLiveClassification(
     request: string,
     ownerKey: string,
-  ): ChatClassification | undefined {
+  ): LiveMatch | undefined {
     const explicitOrderId: number | undefined = this.matchLiveOrderId(request);
     if (explicitOrderId !== undefined) {
       return {
-        documentType: DocumentType.ORDER,
-        liveDataRequired: true,
-        resource: LiveDataResource.ORDER,
-        resourceId: explicitOrderId,
+        classification: {
+          documentType: DocumentType.ORDER,
+          liveDataRequired: true,
+          resource: LiveDataResource.ORDER,
+          resourceId: explicitOrderId,
+        },
+        useTemplate: true,
       };
     }
 
@@ -634,9 +1103,12 @@ export class ChatService {
       )
     ) {
       return {
-        documentType: DocumentType.ORDER,
-        liveDataRequired: true,
-        resource: LiveDataResource.ORDER,
+        classification: {
+          documentType: DocumentType.ORDER,
+          liveDataRequired: true,
+          resource: LiveDataResource.ORDER,
+        },
+        useTemplate: true,
       };
     }
 
@@ -647,12 +1119,16 @@ export class ChatService {
       )
     ) {
       return {
-        documentType: DocumentType.ORDER,
-        liveDataRequired: true,
-        resource: LiveDataResource.ORDER,
-        resourceId: lastOrderId,
+        classification: {
+          documentType: DocumentType.ORDER,
+          liveDataRequired: true,
+          resource: LiveDataResource.ORDER,
+          resourceId: lastOrderId,
+        },
+        useTemplate: false,
       };
     }
+
     return undefined;
   }
 
@@ -713,6 +1189,7 @@ export class ChatService {
   }
 
   private async answerLive(
+    ctx: ChatRequestContext,
     classification: ChatClassification,
     request: string,
     identity: ChatIdentity,
@@ -726,17 +1203,41 @@ export class ChatService {
       ? { userId: identity.userId }
       : { guestSessionId: identity.guestSessionId };
     const pack: LocalePack = LOCALE_PACKS[lang];
-    const liveData: LiveDataResult = identity.kind === 'user'
-      ? await this.liveDataService.getLiveData(
-          classification,
-          identity.userId,
-          identity.role,
-          lang,
-        )
-      : await this.liveDataService.getLiveData(classification, identity, undefined, lang);
+    const identityLabel: string = identity.kind === 'user'
+      ? `userId=${identity.userId}`
+      : 'guest=true';
+
+    const liveData: LiveDataResult | undefined = await this.safely(
+      'Live data request',
+      () =>
+        identity.kind === 'user'
+          ? this.liveDataService.getLiveData(
+              classification,
+              identity.userId,
+              identity.role,
+              lang,
+            )
+          : this.liveDataService.getLiveData(
+              classification,
+              identity,
+              undefined,
+              lang,
+            ),
+    );
+
+    if (liveData === undefined) {
+      ctx.branch = ChatBranch.LIVE_LLM;
+
+      return this.finish(ctx, {
+        owner, ownerKey, userRole, request,
+        answer: pack.unavailableAnswer,
+        kind: ChatLogKind.NO_ANSWER,
+        documentType: classification.documentType,
+      });
+    }
 
     if (liveData.orderId !== undefined) {
-      this.lastOrderIds.set(ownerKey, liveData.orderId);
+      this.setBounded(this.lastOrderIds, ownerKey, liveData.orderId);
     } else {
       this.lastOrderIds.delete(ownerKey);
     }
@@ -744,14 +1245,33 @@ export class ChatService {
     if (useTemplate) {
       // Данные уже собраны и подписаны на языке пользователя.
       // Формировать текст через модель незачем: это лишний вызов LLM.
+      ctx.branch = ChatBranch.LIVE_TEMPLATE;
+
       this.logger.debug(
-        `AI chat request skipped: ${identity.kind === 'user' ? `userId=${identity.userId}` : 'guest=true'}, mode=live-data-template, lang=${lang}`,
+        `AI chat request skipped: ${identityLabel}, mode=live-data-template, lang=${lang}`,
       );
 
-      return this.finish({
+      return this.finish(ctx, {
         owner, ownerKey, userRole, request,
         answer: liveData.context,
         kind: ChatLogKind.LIVE,
+        documentType: classification.documentType,
+      });
+    }
+
+    ctx.branch = ChatBranch.LIVE_LLM;
+
+    // Ответ формулирует модель, поэтому дневной лимит проверяется здесь.
+    const limited: string | undefined = await this.dailyLimitAnswer(
+      ctx,
+      owner,
+      pack,
+    );
+    if (limited !== undefined) {
+      return this.finish(ctx, {
+        owner, ownerKey, userRole, request,
+        answer: limited,
+        kind: ChatLogKind.NO_ANSWER,
         documentType: classification.documentType,
       });
     }
@@ -765,14 +1285,23 @@ export class ChatService {
       .build();
 
     this.logger.debug(
-      `AI chat request started: ${identity.kind === 'user' ? `userId=${identity.userId}` : 'guest=true'}, mode=live-data, lang=${lang}, promptLength=${prompt.length}`,
-    );
-    const protectedAnswer = this.protectPrompt(
-      await this.aiService.generateResponse(prompt),
-      pack,
+      `AI chat request started: ${identityLabel}, mode=live-data, lang=${lang}, promptLength=${prompt.length}`,
     );
 
-    return this.finish({
+    const rawAnswer: string | undefined = await this.callModel(ctx, prompt);
+
+    if (rawAnswer === undefined) {
+      return this.finish(ctx, {
+        owner, ownerKey, userRole, request,
+        answer: pack.unavailableAnswer,
+        kind: ChatLogKind.NO_ANSWER,
+        documentType: classification.documentType,
+      });
+    }
+
+    const protectedAnswer = this.protectPrompt(rawAnswer, pack);
+
+    return this.finish(ctx, {
       owner, ownerKey, userRole, request,
       answer: protectedAnswer.answer,
       kind: protectedAnswer.blocked ? ChatLogKind.BLOCKED : ChatLogKind.LIVE,
@@ -780,8 +1309,23 @@ export class ChatService {
     });
   }
 
-  private finish(params: FinishParams): Promise<string> {
+  /**
+   * Записывает ответ в историю и журнал.
+   *
+   * Ошибка записи в журнал не должна ронять ответ: он уже готов, и
+   * пользователь не должен получать 500 из-за недоступной базы.
+   */
+  private finish(
+    ctx: ChatRequestContext,
+    params: FinishParams,
+  ): Promise<string> {
     this.addChatHistoryByOwnerKey(params.ownerKey, params.request, params.answer);
+
+    this.logger.log(
+      `chat branch=${ctx.branch} lang=${ctx.lang} llmCalls=${ctx.llmCalls} ` +
+        `durationMs=${Date.now() - ctx.startedAt}`,
+    );
+
     return this.chatLogService
       .record({
         ...params.owner,
@@ -793,7 +1337,16 @@ export class ChatService {
         documentType: params.documentType,
         chunksFound: params.chunksFound ?? null,
       })
-      .then((): string => params.answer);
+      .then((): string => params.answer)
+      .catch((error: unknown): string => {
+        this.logger.error(
+          `Failed to record chat log: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+
+        return params.answer;
+      });
   }
 
   private async getChatHistoryByOwner(
@@ -808,7 +1361,7 @@ export class ChatService {
             owner.guestSessionId!,
             MAX_HISTORY_MESSAGES,
           );
-      this.chatHistory.set(ownerKey, [...history]);
+      this.setBounded(this.chatHistory, ownerKey, [...history]);
     }
     return history.slice(-MAX_HISTORY_MESSAGES);
   }
@@ -823,7 +1376,11 @@ export class ChatService {
     message.aiAnswer = aiResponse;
     const history = this.chatHistory.get(ownerKey) ?? [];
     history.push(message);
-    this.chatHistory.set(ownerKey, history.slice(-MAX_HISTORY_MESSAGES));
+    this.setBounded(
+      this.chatHistory,
+      ownerKey,
+      history.slice(-MAX_HISTORY_MESSAGES),
+    );
   }
 
   /**

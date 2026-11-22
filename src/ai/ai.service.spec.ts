@@ -130,6 +130,33 @@ describe('AiService', (): void => {
       );
     });
 
+    it('should use the separate classifier model for OpenAI when it is configured', async (): Promise<void> => {
+      configService.getOrThrow.mockImplementation(
+        (key: string, defaultValue?: unknown): any => {
+          if (key === 'PRIMARY_GENERATION_AI_PROVIDER') return 'openai';
+          if (key === 'OPENAI_MODEL') return 'gpt-answer';
+          return undefined;
+        },
+      );
+      configService.get.mockImplementation((key: string): unknown => {
+        if (key === 'OPENAI_CLASSIFIER_MODEL') return 'gpt-classifier';
+        return undefined;
+      });
+      openAiClient.generateContent.mockResolvedValue('{"documentType":"SYSTEM"}');
+
+      await service.generateResponse('classify me', { classification: true });
+
+      expect(openAiClient.generateContent).toHaveBeenCalledWith(
+        expect.objectContaining<OpenAiRequest>({ model: 'gpt-classifier' }),
+      );
+
+      await service.generateResponse('answer me');
+
+      expect(openAiClient.generateContent).toHaveBeenCalledWith(
+        expect.objectContaining<OpenAiRequest>({ model: 'gpt-answer' }),
+      );
+    });
+
     it('should use the separate classifier URL when it is configured', async (): Promise<void> => {
       configService.getOrThrow.mockImplementation(
         (key: string, defaultValue?: unknown): any =>

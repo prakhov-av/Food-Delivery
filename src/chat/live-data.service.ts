@@ -21,6 +21,24 @@ import {
 } from '../orders/types/order-with-items';
 
 /**
+ * Сколько заказов показывать в списке.
+ *
+ * Больше десяти — это стена текста: в шаблоне пользователь её не читает,
+ * а в ветке LLM она съедает контекст и дорого стоит.
+ */
+const MAX_ORDERS_IN_LIST = 10;
+
+/** Локаль форматирования чисел и дат по языку ответа. */
+const NUMBER_LOCALES: Record<Lang, string> = {
+  [Lang.RU]: 'ru-RU',
+  [Lang.EN]: 'en-GB',
+  [Lang.DE]: 'de-DE',
+};
+
+/** Часовой пояс, в котором показываются даты заказов. */
+const ORDER_TIME_ZONE = 'Europe/Berlin';
+
+/**
  * Получает актуальные данные приложения для ответов чат-ассистента и ограничивает доступ к ресурсам с учётом пользователя и его роли.
  *
  * Подписи полей и статусов берутся из пака языка: модель их не переводит,
@@ -85,7 +103,7 @@ export class LiveDataService {
         }
 
         return {
-          context: this.formatOrdersData(pack, visibleOrders),
+          context: this.formatOrdersData(pack, lang, visibleOrders),
           orderId: visibleOrders.length === 1 ? visibleOrders[0].id : undefined,
         };
       } catch (error) {
@@ -109,7 +127,7 @@ export class LiveDataService {
           );
 
       return {
-        context: this.formatOrderData(pack, details.order, details.items),
+        context: this.formatOrderData(pack, lang, details.order, details.items),
         orderId: details.order.id,
       };
     } catch (error) {
@@ -138,10 +156,23 @@ export class LiveDataService {
     return this.guestOrdersService;
   }
 
-  private formatOrdersData(pack: LocalePack, orders: OrderDto[]): string {
-    return orders
-      .map((order: OrderDto): string => this.formatOrderData(pack, order))
-      .join('\n\n');
+  private formatOrdersData(
+    pack: LocalePack,
+    lang: Lang,
+    orders: OrderDto[],
+  ): string {
+    const visible: OrderDto[] = orders.slice(0, MAX_ORDERS_IN_LIST);
+    const hidden: number = orders.length - visible.length;
+
+    const blocks: string[] = visible.map(
+      (order: OrderDto): string => this.formatOrderData(pack, lang, order),
+    );
+
+    if (hidden > 0) {
+      blocks.push(pack.orderLabels.moreOrders.replace('{count}', String(hidden)));
+    }
+
+    return blocks.join('\n\n');
   }
 
   private formatNoOrdersMessage(
@@ -180,6 +211,7 @@ export class LiveDataService {
 
   private formatOrderData(
     pack: LocalePack,
+    lang: Lang,
     order: OrderDto,
     items?: OrderItemLine[],
   ): string {
@@ -193,14 +225,56 @@ export class LiveDataService {
     return [
       `${labels.order}${order.id}`,
       `${labels.status} ${statusDescription}`,
-      `${labels.total} ${order.totalPrice} €`,
+      `${labels.total} ${this.formatPrice(lang, order.totalPrice)}`,
       `${labels.restaurant} ${order.restaurant.name}`,
       `${labels.customer} ${order.customer?.name ?? labels.guestCustomer}`,
       `${labels.courier} ${order.courier?.name ?? labels.noCourier}`,
-      `${labels.created} ${order.createdAt.toISOString()}`,
+      `${labels.created} ${this.formatDate(lang, order.createdAt)}`,
       ...(emptyCart ? [labels.emptyCart] : []),
       ...(items !== undefined && !emptyCart ? this.formatItems(pack, items) : []),
     ].join('\n');
+  }
+
+  /**
+   * Сумма заказа в валюте и формате языка ответа.
+   *
+   * Раньше число подставлялось как есть: немецкий пользователь видел
+   * «12.5 €» вместо «12,50 €».
+   */
+  private formatPrice(lang: Lang, totalPrice: number): string {
+    try {
+      return new Intl.NumberFormat(NUMBER_LOCALES[lang], {
+        style: 'currency',
+        currency: 'EUR',
+      }).format(Number(totalPrice));
+    } catch {
+      return `${Number(totalPrice)} €`;
+    }
+  }
+
+  /**
+   * Дата создания заказа в читаемом виде.
+   *
+   * Раньше уходил ISO-строка в UTC: «2026-11-21T16:31:33.102Z» —
+   * это не ответ пользователю, а дамп базы.
+   */
+  private formatDate(lang: Lang, createdAt: Date): string {
+    const date: Date =
+      createdAt instanceof Date ? createdAt : new Date(createdAt);
+
+    if (Number.isNaN(date.getTime())) {
+      return String(createdAt);
+    }
+
+    try {
+      return new Intl.DateTimeFormat(NUMBER_LOCALES[lang], {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: ORDER_TIME_ZONE,
+      }).format(date);
+    } catch {
+      return date.toISOString();
+    }
   }
 
   private formatItems(pack: LocalePack, items: OrderItemLine[]): string[] {

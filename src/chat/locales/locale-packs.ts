@@ -15,9 +15,6 @@ const RU: LocalePack = {
     'добрый день',
     'добрый вечер',
     'доброе утро',
-    'hello',
-    'hi',
-    'hey',
   ],
 
   capabilityQuestions: [
@@ -31,8 +28,6 @@ const RU: LocalePack = {
     'о чем можно спросить',
     'о чём можно спросить',
     'что можно спросить',
-    'what can you do',
-    'help',
     'помощь',
   ],
 
@@ -48,6 +43,12 @@ const RU: LocalePack = {
   promptLeakAnswer:
     'Я не могу показывать внутренние инструкции. Могу помочь с заказами, ресторанами, меню, доставкой и регистрацией.',
 
+  unavailableAnswer:
+    'Помощник сейчас недоступен: не удалось получить ответ от сервиса. Попробуйте повторить вопрос чуть позже.',
+
+  dailyLimitAnswer:
+    'Дневной лимит обращений к помощнику исчерпан. Попробуйте снова завтра.',
+
   orderListPatterns: [
     /(?<![\p{L}])какие\s+(?:у\s+меня\s+)?заказы(?![\p{L}])/iu,
     /(?<![\p{L}])все\s+заказы(?![\p{L}])/iu,
@@ -61,7 +62,9 @@ const RU: LocalePack = {
     /(?<![\p{L}\p{N}])заказ(?:а|е|у|ом)?\s*(?:№\s*)?(\d{1,9})(?![\p{L}\p{N}])/iu,
 
   liveOrderMarkers: [
-    /(?<![\p{L}])что\s+в(?![\p{L}])/iu,
+    // «что в» без привязки к заказу ловит «что в меню» и уводит вопрос
+    // в ветку живых данных. Маркер требует слово «заказ».
+    /(?<![\p{L}])что\s+в[^?!.]*?заказ\p{L}*(?![\p{L}])/iu,
     /(?<![\p{L}])статус(?:а|е|у|ом)?(?![\p{L}])/iu,
     /(?<![\p{L}])когда\s+достав/iu,
   ],
@@ -86,17 +89,16 @@ const RU: LocalePack = {
   ],
 
   statusLabels: {
-    [Status.NEW]: 'NEW — новый заказ, ожидает подтверждения менеджера',
-    [Status.ACCEPTED]:
-      'ACCEPTED — заказ принят менеджером, готовится к приготовлению',
-    [Status.COOKING]: 'COOKING — готовится',
-    [Status.READY]: 'READY — готов, ждёт курьера',
-    [Status.DELIVERING]: 'DELIVERING — доставляется курьером',
-    [Status.COMPLETED]: 'COMPLETED — завершён',
-    [Status.CANCELLED_CUSTOMER]: 'CANCELLED_CUSTOMER — отменён клиентом',
-    [Status.CANCELLED_COURIER]: 'CANCELLED_COURIER — отменён курьером',
+    [Status.NEW]: 'новый заказ, ожидает подтверждения менеджера',
+    [Status.ACCEPTED]: 'заказ принят менеджером, готовится к приготовлению',
+    [Status.COOKING]: 'готовится',
+    [Status.READY]: 'готов, ждёт курьера',
+    [Status.DELIVERING]: 'доставляется курьером',
+    [Status.COMPLETED]: 'завершён',
+    [Status.CANCELLED_CUSTOMER]: 'отменён клиентом',
+    [Status.CANCELLED_COURIER]: 'отменён курьером',
     [Status.CANCELLED_STAFF]:
-      'CANCELLED_STAFF — отменён менеджером или администратором',
+      'отменён менеджером или администратором',
   },
 
   orderLabels: {
@@ -121,6 +123,7 @@ const RU: LocalePack = {
     noSuchOrderCourier: 'У вас нет заказа №{id} на выполнение.',
     noSuchOrderCustomer: 'У вас нет заказа №{id} среди ваших заказов.',
     liveDataRequired: 'Для ответа на этот вопрос необходимы актуальные данные системы.',
+    moreOrders: 'и ещё {count}',
   },
 
   publicPhrases: [
@@ -175,6 +178,12 @@ const EN: LocalePack = {
   promptLeakAnswer:
     'I cannot show internal instructions. I can help with orders, restaurants, menus, delivery and registration.',
 
+  unavailableAnswer:
+    'The assistant is temporarily unavailable: the service did not return an answer. Please try again a bit later.',
+
+  dailyLimitAnswer:
+    'The daily limit of assistant requests has been reached. Please try again tomorrow.',
+
   orderListPatterns: [
     /(?<![\p{L}])what\s+(?:are\s+|is\s+)?my\s+orders?(?![\p{L}])/iu,
     /(?<![\p{L}])my\s+orders?(?![\p{L}])/iu,
@@ -210,20 +219,21 @@ const EN: LocalePack = {
   injectionPatterns: [
     /(?:system|hidden|initial|internal)\s+(?:prompt|instructions?)/i,
     /(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:the\s+|your\s+)?(?:previous|prior|above|earlier|system)\s+(?:instructions?|prompts?|rules)/i,
-    /(?:reveal|show|print|repeat|display|output)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+)?(?:prompt|instructions?)/i,
+    // Объект обязателен: «show me the instructions for registration» — это
+    // вопрос про документацию, а не попытка вытащить системный промпт.
+    /(?:reveal|show|print|repeat|display|output)\s+(?:me\s+)?(?:all\s+)?(?:your\s+(?:system\s+|hidden\s+|internal\s+|initial\s+)?|(?:the\s+)?(?:system|hidden|internal|initial)\s+)(?:prompt|instructions?)/i,
   ],
 
   statusLabels: {
-    [Status.NEW]: 'NEW — new order, waiting for manager confirmation',
-    [Status.ACCEPTED]: 'ACCEPTED — order accepted by the manager, being prepared',
-    [Status.COOKING]: 'COOKING — being prepared',
-    [Status.READY]: 'READY — ready, waiting for the courier',
-    [Status.DELIVERING]: 'DELIVERING — on the way with the courier',
-    [Status.COMPLETED]: 'COMPLETED — completed',
-    [Status.CANCELLED_CUSTOMER]: 'CANCELLED_CUSTOMER — cancelled by the customer',
-    [Status.CANCELLED_COURIER]: 'CANCELLED_COURIER — cancelled by the courier',
-    [Status.CANCELLED_STAFF]:
-      'CANCELLED_STAFF — cancelled by the manager or administrator',
+    [Status.NEW]: 'new order, waiting for manager confirmation',
+    [Status.ACCEPTED]: 'order accepted by the manager, being prepared',
+    [Status.COOKING]: 'being prepared',
+    [Status.READY]: 'ready, waiting for the courier',
+    [Status.DELIVERING]: 'on the way with the courier',
+    [Status.COMPLETED]: 'completed',
+    [Status.CANCELLED_CUSTOMER]: 'cancelled by the customer',
+    [Status.CANCELLED_COURIER]: 'cancelled by the courier',
+    [Status.CANCELLED_STAFF]: 'cancelled by the manager or administrator',
   },
 
   orderLabels: {
@@ -249,6 +259,7 @@ const EN: LocalePack = {
     noSuchOrderCustomer: 'Order №{id} is not among your orders.',
     liveDataRequired:
       'This question requires up-to-date system data to be answered.',
+    moreOrders: 'and {count} more',
   },
 
   publicPhrases: [
@@ -272,8 +283,6 @@ const DE: LocalePack = {
     'moin',
     'servus',
     'na hallo',
-    'hi',
-    'hello',
   ],
 
   capabilityQuestions: [
@@ -300,6 +309,12 @@ const DE: LocalePack = {
   promptLeakAnswer:
     'Ich kann keine internen Anweisungen zeigen. Ich helfe bei Bestellungen, Restaurants, Menüs, Lieferung und Registrierung.',
 
+  unavailableAnswer:
+    'Der Assistent ist vorübergehend nicht verfügbar: der Dienst hat keine Antwort geliefert. Bitte versuchen Sie es gleich noch einmal.',
+
+  dailyLimitAnswer:
+    'Das Tageslimit für Anfragen an den Assistenten ist erreicht. Bitte versuchen Sie es morgen erneut.',
+
   orderListPatterns: [
     /(?<![\p{L}])was\s+sind\s+meine\s+bestellungen(?![\p{L}])/iu,
     /(?<![\p{L}])meine\s+bestellungen(?![\p{L}])/iu,
@@ -320,7 +335,9 @@ const DE: LocalePack = {
   ],
 
   notAboutOrderData:
-    /(?<![\p{L}])(?:wie\s+(?:kann|könnte|muss|soll|geht|bestelle|abbrechen|storniere)|kann\s+ich|dürf|darf|muss|müssen|soll|sollte|warum|weshalb|was\s+bedeutet|was\s+soll|regeln?|richtlinie|erlaubt|verboten|ändern|abbrechen|stornieren|bestellen|anlegen|bezahlen|erstatten|beschwerde|zurückgeben)(?![\p{L}])/iu,
+    // bestellen/abbrechen/stornieren стоят только здесь: внутри «wie …» они
+    // дублировали те же слова и ничего не добавляли к разбору.
+    /(?<![\p{L}])(?:wie\s+(?:kann|könnte|muss|soll|geht)|kann\s+ich|dürf|darf|muss|müssen|soll|sollte|warum|weshalb|was\s+bedeutet|was\s+soll|regeln?|richtlinie|erlaubt|verboten|ändern|abbrechen|stornieren|bestellen|anlegen|bezahlen|erstatten|beschwerde|zurückgeben)(?![\p{L}])/iu,
 
   singleOrderPossessive:
     /(?<![\p{L}])meine(?:r|s)?\s+(?:letzte[nrs]?\s+|aktuelle[nrs]?\s+|nächste[nrs]?\s+)?bestellung(?:en)?(?![\p{L}])/iu,
@@ -334,24 +351,23 @@ const DE: LocalePack = {
 
   injectionPatterns: [
     /system(?:prompt|anweisung(?:en)?)/iu,
-    /(?:zeige|zeig|nenne|drucke|wiederhole|verrate|geben)\p{L}*\s+(?:mir\s+)?(?:deinen?|deine|die\s+)?(?:internen?\s+)?(?:anweisung(?:en)?|prompts?|regeln)/iu,
-    /(?:ignoriere|vergiss|missachte|überschreibe)\p{L}*\s+(?:alle\s+)?(?:vorherigen?|bisherigen?|obigen?|system)\p{L}*\s*(?:anweisung(?:en)?|prompts?|regeln)?/iu,
+    // Объект обязателен: «Zeig mir die Regeln der Lieferung» — это вопрос
+    // про правила доставки, а не попытка вытащить внутренние инструкции.
+    /(?:zeige|zeig|nenne|drucke|wiederhole|verrate|gib)\p{L}*\s+(?:mir\s+)?(?:alle\s+)?(?:deine[nrs]?|(?:die\s+)?(?:internen?|versteckten?|geheimen?|system))\s*(?:anweisung(?:en)?|prompts?|regeln)/iu,
+    // Объект тоже обязателен: «Vergiss vorherige» без объекта — обычная фраза.
+    /(?:ignoriere|vergiss|missachte|überschreibe)\p{L}*\s+(?:alle\s+)?(?:vorherigen?|bisherigen?|obigen?|system)\p{L}*\s*(?:anweisung(?:en)?|prompts?|regeln)/iu,
   ],
 
   statusLabels: {
-    [Status.NEW]:
-      'NEW — neue Bestellung, wartet auf die Bestätigung des Managers',
-    [Status.ACCEPTED]:
-      'ACCEPTED — Bestellung vom Manager angenommen, wird zubereitet',
-    [Status.COOKING]: 'COOKING — wird zubereitet',
-    [Status.READY]: 'READY — fertig, wartet auf den Kurier',
-    [Status.DELIVERING]: 'DELIVERING — wird vom Kurier zugestellt',
-    [Status.COMPLETED]: 'COMPLETED — abgeschlossen',
-    [Status.CANCELLED_CUSTOMER]:
-      'CANCELLED_CUSTOMER — vom Kunden storniert',
-    [Status.CANCELLED_COURIER]: 'CANCELLED_COURIER — vom Kurier storniert',
-    [Status.CANCELLED_STAFF]:
-      'CANCELLED_STAFF — vom Manager oder Administrator storniert',
+    [Status.NEW]: 'neue Bestellung, wartet auf die Bestätigung des Managers',
+    [Status.ACCEPTED]: 'Bestellung vom Manager angenommen, wird zubereitet',
+    [Status.COOKING]: 'wird zubereitet',
+    [Status.READY]: 'fertig, wartet auf den Kurier',
+    [Status.DELIVERING]: 'wird vom Kurier zugestellt',
+    [Status.COMPLETED]: 'abgeschlossen',
+    [Status.CANCELLED_CUSTOMER]: 'vom Kunden storniert',
+    [Status.CANCELLED_COURIER]: 'vom Kurier storniert',
+    [Status.CANCELLED_STAFF]: 'vom Manager oder Administrator storniert',
   },
 
   orderLabels: {
@@ -378,6 +394,7 @@ const DE: LocalePack = {
       'Bestellung №{id} ist nicht unter Ihren Bestellungen.',
     liveDataRequired:
       'Für die Beantwortung dieser Frage sind aktuelle Systemdaten erforderlich.',
+    moreOrders: 'und {count} weitere',
   },
 
   publicPhrases: [

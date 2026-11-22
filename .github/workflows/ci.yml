@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # npm 10.9.9 — та версия, которой собран package-lock.json.
+      # Без фиксации новая версия npm может по-другому разрешить
+      # peer-зависимости и сломать `npm ci` на ровном месте.
+      - name: Install dependencies
+        run: npx npm@10.9.9 ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      # Точка входа обязана существовать: иначе образ падает при старте.
+      - name: Check the entry point
+        run: test -f dist/main.js
+
+      - name: Test
+        run: npx jest --ci --silent
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build

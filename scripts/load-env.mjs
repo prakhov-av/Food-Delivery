@@ -2,11 +2,28 @@
 // Работает на Node 18+, без зависимостей.
 //
 // Читаются только ключи из списка KEYS: остальное содержимое .env (ключи БД,
-// Qdrant, LLM) скриптам не нужно, оно не загружается.
+// LLM) скриптам не нужно, оно не загружается.
 // Переменные, уже заданные в окружении ($env:...), имеют приоритет над файлом.
 import { readFileSync } from 'node:fs';
 
-const KEYS = ['ADMIN_EMAIL', 'ADMIN_PASSWORD', 'BASE_URL', 'ORIGIN', 'DOCS_DIR'];
+const KEYS = [
+  'ADMIN_EMAIL',
+  'ADMIN_PASSWORD',
+  'BASE_URL',
+  'ORIGIN',
+  'DOCS_DIR',
+  'QDRANT_URL',
+  'KNOWLEDGE_DB_COLLECTION_NAME',
+  'ARCHIVE_DB_COLLECTION_NAME',
+  'QDRANT_API_KEY',
+  'DEFAULT_LANGUAGE',
+  'GEMINI_API_URL',
+  'GEMINI_API_KEY',
+  'OPENAI_API_URL',
+  'OPENAI_EMBEDDING_URL',
+  'OPENAI_API_KEY',
+  'OPENAI_MODEL',
+];
 const file = process.env.ENV_FILE ?? '.env';
 
 let content;

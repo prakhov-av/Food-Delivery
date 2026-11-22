@@ -87,7 +87,8 @@ export class PromptService {
       .join('\n');
 
     return `LANGUAGE INSTRUCTIONS:
-- The user is using the ${languageName} interface. Always answer the user in ${languageName}.
+- Answer the user in the language of their last message. The interface is in ${languageName}, but the user may write in another language: follow the language of the message, not the language of the interface.
+- If the language of the message cannot be determined, answer in ${languageName}.
 - Keep the answer short and to the point.
 - When you list the topics you can help with, or suggest what the user can ask about, use exactly these wordings in ${languageName}:
 ${publicPhrases}`;

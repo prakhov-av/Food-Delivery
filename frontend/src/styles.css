@@ -903,6 +903,13 @@ tbody tr:last-child td {
   font-size: 24px;
 }
 
+/* Переключатель языка на экране входа: прижат к правому верхнему углу. */
+.auth-lang {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -6px;
+}
+
 .auth-card .form-grid {
   grid-template-columns: 1fr;
 }

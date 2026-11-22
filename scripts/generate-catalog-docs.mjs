@@ -72,11 +72,11 @@ const TEXTS = {
     cuisinesTitle: 'Какие рестораны есть по кухням',
     whatToOrderTitle: 'Что заказать: рестораны и кухни',
     hint:
-      'Помощник в чате может подсказать, что заказать: достаточно написать, какая кухня или какое блюдо вам хочется, например пицца, суши, роллы, барбекю, итальянская кухня, бургеры, стейки, здоровая еда или кофе с десертом. Меню каждого ресторана открывается на вкладке «Рестораны» кнопкой «Меню».',
+      'Доступные кухни: пицца, суши и роллы, барбекю, итальянская кухня, бургеры, стейки, здоровая еда, кофе и десерты. У каждого ресторана своё меню с названиями блюд, описаниями и ценами в евро.',
     cuisine: (restaurant) => CUISINES[restaurant]?.[0],
   },
   en: {
-    locale: 'en-DE',
+    locale: 'en-GB',
     suffix: '-en',
     menuTitle: (name) => `Menu of the restaurant ${name}`,
     restaurantLine: (name, cuisine, address, phone) =>
@@ -94,7 +94,7 @@ const TEXTS = {
     cuisinesTitle: 'Which restaurants are there by cuisine',
     whatToOrderTitle: 'What to order: restaurants and cuisines',
     hint:
-      'The chat assistant can suggest what to order: just write which cuisine or which dish you feel like, for example pizza, sushi, rolls, barbecue, Italian cuisine, burgers, steaks, healthy food or coffee with dessert. The menu of every restaurant is opened on the "Restaurants" tab with the "Menu" button.',
+      'Available cuisines: pizza, sushi and rolls, barbecue, Italian cuisine, burgers, steaks, healthy food, coffee and desserts. Every restaurant has its own menu with dish names, descriptions and prices in euro.',
     cuisine: (restaurant) => CUISINES[restaurant]?.[1],
   },
   de: {
@@ -116,7 +116,7 @@ const TEXTS = {
     cuisinesTitle: 'Welche Restaurants gibt es nach Küche',
     whatToOrderTitle: 'Was bestellen: Restaurants und Küchen',
     hint:
-      'Der Chat-Assistent kann vorschlagen, was zu bestellen ist: Schreiben Sie einfach, welche Küche oder welches Gericht Sie möchten, zum Beispiel Pizza, Sushi, Rolls, Barbecue, italienische Küche, Burger, Steaks, gesundes Essen oder Kaffee mit Dessert. Das Menü jedes Restaurants öffnet sich im Tab "Restaurants" über die Schaltfläche "Menü".',
+      'Verfügbare Küchen: Pizza, Sushi und Rolls, Barbecue, italienische Küche, Burger, Steaks, gesundes Essen, Kaffee und Desserts. Jedes Restaurant hat eine eigene Speisekarte mit Gerichtnamen, Beschreibungen und Preisen in Euro.',
     cuisine: (restaurant) => CUISINES[restaurant]?.[2],
   },
 };

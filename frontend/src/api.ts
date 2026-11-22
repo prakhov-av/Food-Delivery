@@ -89,6 +89,12 @@ async function parseError(response: Response): Promise<ApiError> {
     message = translate('error.server');
   }
 
+  // Превышение лимита — это не поломка: нужен понятный текст, а не
+  // технический статус, который выглядит как ошибка приложения.
+  if (response.status === 429) {
+    message = translate('error.rateLimit');
+  }
+
   return new ApiError(response.status, message);
 }
 

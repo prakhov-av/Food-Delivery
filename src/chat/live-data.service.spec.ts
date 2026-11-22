@@ -10,6 +10,7 @@ import { EntityNotFoundException } from '../exceptions/types/entity-not-found.ex
 import { DocumentType } from '../ingestion/enums/document-type.enum';
 import { LiveDataResource } from './enums/live-data-resource.enum';
 import { LiveDataResult } from './types/live-data-result';
+import { Lang } from './locales/lang';
 
 describe('LiveDataService', (): void => {
   const ORDER: OrderDto = {
@@ -72,7 +73,10 @@ describe('LiveDataService', (): void => {
     );
 
     expect(result.context).toContain('Заказ №123');
-    expect(result.context).toContain('Статус: NEW');
+    // Статус показывается словами, а не кодом из базы: «NEW» пользователю
+    // ничего не говорит.
+    expect(result.context).toContain('Статус: новый заказ');
+    expect(result.context).not.toContain('NEW');
 
     expect(getOrderWithItemsByIdForUser).toHaveBeenCalledWith(123, {
       id: 10,
@@ -82,8 +86,42 @@ describe('LiveDataService', (): void => {
     expect(getCurrentOrders).not.toHaveBeenCalled();
   });
 
-  it('should return live order data for its courier', async (): Promise<void> => {
+  it('should format the price and the date for the language of the answer', async (): Promise<void> => {
     const result: LiveDataResult = await service.getLiveData(
+      classification,
+      10,
+      Role.CUSTOMER,
+      Lang.DE,
+    );
+
+    // Немецкий формат: запятая вместо точки.
+    expect(result.context).toContain('25,00');
+    expect(result.context).not.toContain('25.00');
+    // Дата в читаемом виде, а не ISO-строка.
+    expect(result.context).not.toContain('2026-09-06T10:00:00.000Z');
+    expect(result.context).toContain('2026');
+  });
+
+  it('should show ten orders at most and mention the rest', async (): Promise<void> => {
+    const many: OrderDto[] = Array.from({ length: 12 }, (unused, index) => ({
+      ...ORDER,
+      id: index + 1,
+    }));
+
+    getCurrentOrders.mockResolvedValue(many);
+
+    const result: LiveDataResult = await service.getLiveData(
+      ordersClassification,
+      10,
+      Role.CUSTOMER,
+    );
+
+    expect(result.context).toContain('Заказ №10');
+    expect(result.context).not.toContain('Заказ №11');
+    expect(result.context).toContain('и ещё 2');
+  });
+
+  it('should return live order data for its courier', async (): Promise<void> => {    const result: LiveDataResult = await service.getLiveData(
       classification,
       20,
       Role.COURIER,
@@ -153,10 +191,11 @@ describe('LiveDataService', (): void => {
       Role.CUSTOMER,
     );
 
-    expect(result.context).toContain('Статус: DELIVERING');
+    expect(result.context).toContain('Статус: доставляется курьером');
     expect(result.context).not.toContain('COMPLETED');
     expect(result.context).not.toContain('CANCELLED_CUSTOMER');
     expect(result.context).not.toContain('CANCELLED_COURIER');
+    expect(result.context).not.toContain('DELIVERING');
 
     expect(getCurrentOrders).toHaveBeenCalledWith({
       id: 10,

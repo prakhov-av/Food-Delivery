@@ -60,6 +60,7 @@ describe('OpenAiClient', (): void => {
           Authorization: 'Bearer secret-key',
           'Content-Type': 'application/json',
         },
+        timeout: 120000,
       },
     );
   });
@@ -102,6 +103,7 @@ describe('OpenAiClient', (): void => {
           Authorization: 'Bearer secret-key',
           'Content-Type': 'application/json',
         },
+        timeout: 120000,
       },
     );
   });
@@ -135,12 +137,17 @@ describe('OpenAiClient', (): void => {
       return 'secret-key';
     });
 
-    const error: Error = new Error('OpenAI HTTP error');
-    jest.spyOn(axios, 'post').mockRejectedValue(error);
+    const error: Error & { response: { status: number } } = Object.assign(
+      new Error('OpenAI HTTP error'),
+      { response: { status: 400 } },
+    );
+    const postSpy = jest.spyOn(axios, 'post').mockRejectedValue(error);
 
     await expect(
       client.generateContent({ model: 'gpt-test', input: 'hello' }),
     ).rejects.toBe(error);
+    // 400 — не временная ошибка, повторов быть не должно.
+    expect(postSpy).toHaveBeenCalledTimes(1);
   });
 
   it('should propagate an HTTP error from generateEmbeddings', async (): Promise<void> => {
@@ -151,11 +158,15 @@ describe('OpenAiClient', (): void => {
       return 'secret-key';
     });
 
-    const error: Error = new Error('OpenAI embeddings HTTP error');
-    jest.spyOn(axios, 'post').mockRejectedValue(error);
+    const error: Error & { response: { status: number } } = Object.assign(
+      new Error('OpenAI embeddings HTTP error'),
+      { response: { status: 400 } },
+    );
+    const postSpy = jest.spyOn(axios, 'post').mockRejectedValue(error);
 
     await expect(
       client.generateEmbeddings({ model: 'embedding-test', input: ['hello'] }),
     ).rejects.toBe(error);
+    expect(postSpy).toHaveBeenCalledTimes(1);
   });
 });

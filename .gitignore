@@ -63,9 +63,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 benchmark-results
 /src/chat/benchmark
 scripts/bench-*.mjs
-
 # Local build artifacts
-frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 # Local skill archives
 skill/*.zip

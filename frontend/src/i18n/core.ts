@@ -44,6 +44,8 @@ export const CORE_RU: Dict = {
   'chat.thinking': 'Думаю…',
   'chat.placeholder': 'Ваш вопрос…',
   'chat.errorUnavailable': 'Помощник временно недоступен, попробуйте позже',
+  'chat.errorRateLimit':
+    'Слишком много запросов. Подождите минуту и попробуйте снова.',
   'chat.errorGeneric': 'Не удалось получить ответ',
   'chat.errorClearFailed': 'Не удалось очистить историю',
   'chat.clearConfirm': 'Удалить всю историю переписки с помощником?',
@@ -67,6 +69,8 @@ export const CORE_RU: Dict = {
 
   'error.server': 'Сервер временно недоступен. Попробуйте позже.',
   'error.sessionExpired': 'Сессия истекла, войдите заново',
+  'error.rateLimit':
+    'Слишком много запросов. Подождите минуту и попробуйте снова.',
 
   'i18n.label': 'Язык',
 };
@@ -106,6 +110,8 @@ export const CORE_EN: Dict = {
   'chat.thinking': 'Thinking…',
   'chat.placeholder': 'Your question…',
   'chat.errorUnavailable': 'The assistant is temporarily unavailable, try later',
+  'chat.errorRateLimit':
+    'Too many requests. Please wait a minute and try again.',
   'chat.errorGeneric': 'Could not get an answer',
   'chat.errorClearFailed': 'Could not clear the history',
   'chat.clearConfirm': 'Delete the whole conversation with the assistant?',
@@ -129,6 +135,8 @@ export const CORE_EN: Dict = {
 
   'error.server': 'The server is temporarily unavailable. Please try later.',
   'error.sessionExpired': 'Your session has expired, please sign in again',
+  'error.rateLimit':
+    'Too many requests. Please wait a minute and try again.',
 
   'i18n.label': 'Language',
 };
@@ -170,6 +178,8 @@ export const CORE_DE: Dict = {
   'chat.placeholder': 'Ihre Frage…',
   'chat.errorUnavailable':
     'Der Assistent ist vorübergehend nicht erreichbar, versuchen Sie es später',
+  'chat.errorRateLimit':
+    'Zu viele Anfragen. Bitte warten Sie eine Minute und versuchen Sie es erneut.',
   'chat.errorGeneric': 'Keine Antwort erhalten',
   'chat.errorClearFailed': 'Der Verlauf konnte nicht gelöscht werden',
   'chat.clearConfirm':
@@ -196,6 +206,8 @@ export const CORE_DE: Dict = {
     'Der Server ist vorübergehend nicht erreichbar. Bitte versuchen Sie es später.',
   'error.sessionExpired':
     'Ihre Sitzung ist abgelaufen, bitte melden Sie sich erneut an',
+  'error.rateLimit':
+    'Zu viele Anfragen. Bitte warten Sie eine Minute und versuchen Sie es erneut.',
 
   'i18n.label': 'Sprache',
 };

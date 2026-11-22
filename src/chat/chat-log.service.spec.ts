@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { ChatLogEntry, ChatLogService } from './chat-log.service';
 import { ChatLog } from './chat-log.entity';
@@ -32,6 +33,12 @@ describe('ChatLogService', (): void => {
             save: jest.fn(),
             find: jest.fn(),
             delete: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn(() => undefined),
           },
         },
       ],
